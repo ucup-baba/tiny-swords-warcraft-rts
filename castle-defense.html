@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Swords — Castle Defense</title>
+  <link rel="stylesheet" href="castle-defense.css">
+</head>
+<body>
+  <div id="game-shell">
+    <!-- Top HUD -->
+    <header class="hud-top" aria-label="Status Permainan">
+      <div class="hud-group hud-castle blue">
+        <span class="badge blue">BLUE</span>
+        <div class="bar-wrap" title="HP Kastil Biru">
+          <div id="blue-hp-bar" class="bar-fill blue" style="width: 100%"></div>
+          <span id="blue-hp-text" class="bar-label">1000 / 1000</span>
+        </div>
+      </div>
+
+      <div class="hud-group hud-center">
+        <div class="stat-pill" title="Emas">
+          <img src="Tiny%20Swords%20(Free%20Pack)/Tiny%20Swords%20(Free%20Pack)/Terrain/Resources/Gold/Gold%20Resource/Gold_Resource.png" alt="Gold" class="stat-icon">
+          <span id="gold-count">200</span>
+        </div>
+        <div class="stat-pill" title="Gelombang Musuh">
+          <span class="stat-tag">WAVE</span>
+          <span id="wave-count">1</span>
+        </div>
+        <div class="stat-pill" title="Skor">
+          <span class="stat-tag">SCORE</span>
+          <span id="score-count">0</span>
+        </div>
+      </div>
+
+      <div class="hud-group hud-castle red">
+        <div class="bar-wrap" title="HP Kastil Merah">
+          <div id="red-hp-bar" class="bar-fill red" style="width: 100%"></div>
+          <span id="red-hp-text" class="bar-label">1200 / 1200</span>
+        </div>
+        <span class="badge red">RED</span>
+      </div>
+
+      <div class="hud-actions">
+        <button id="btn-sound" class="icon-btn" type="button" title="Suara (M)" aria-label="Toggle Suara">🔊</button>
+        <button id="btn-pause" class="icon-btn" type="button" title="Jeda (P)" aria-label="Jeda">⏸</button>
+        <button id="btn-help" class="icon-btn" type="button" title="Bantuan (H)" aria-label="Bantuan">?</button>
+      </div>
+    </header>
+
+    <!-- Main Canvas -->
+    <main class="canvas-stage">
+      <canvas id="game-canvas" aria-label="Arena Tiny Swords"></canvas>
+      <div id="banner-toast" class="banner-toast" role="status" aria-live="polite"></div>
+
+      <!-- Loading overlay -->
+      <div id="loading-overlay" class="overlay-screen">
+        <div class="parchment-card">
+          <h1>TINY SWORDS</h1>
+          <p class="subtitle">Castle Defense</p>
+          <p id="loading-status">Memuat aset sprite...</p>
+          <div class="loading-track"><div id="loading-fill" class="loading-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Start Menu overlay -->
+      <div id="start-overlay" class="overlay-screen hidden">
+        <div class="parchment-card">
+          <h1>TINY SWORDS</h1>
+          <p class="subtitle">Pertahankan Kastil Biru &amp; Hancurkan Kastil Merah!</p>
+          <div class="controls-grid">
+            <div><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> Gerakkan Hero</div>
+            <div><kbd>Space</kbd> / <kbd>Klik Kiri</kbd> Serang</div>
+            <div><kbd>Shift</kbd> / <kbd>Klik Kanan</kbd> Bertahan (Guard)</div>
+            <div><kbd>1</kbd>–<kbd>8</kbd> Rekrut Pasukan &amp; Boss (Golem/Dragon) • <kbd>R</kbd> Serang/Bertahan</div>
+          </div>
+          <button id="btn-start" class="primary-btn" type="button">MULAI PERTEMPURAN</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Command Bar -->
+    <footer class="hud-bottom" aria-label="Rekrutmen Pasukan">
+      <div class="unit-buttons">
+        <button class="unit-btn" data-unit="warrior" type="button">
+          <span class="hotkey">1</span>
+          <span class="unit-name">Warrior</span>
+          <span class="unit-cost">30g</span>
+        </button>
+        <button class="unit-btn" data-unit="archer" type="button">
+          <span class="hotkey">2</span>
+          <span class="unit-name">Archer</span>
+          <span class="unit-cost">40g</span>
+        </button>
+        <button class="unit-btn" data-unit="lancer" type="button">
+          <span class="hotkey">3</span>
+          <span class="unit-name">Lancer</span>
+          <span class="unit-cost">60g</span>
+        </button>
+        <button class="unit-btn" data-unit="monk" type="button">
+          <span class="hotkey">4</span>
+          <span class="unit-name">Monk</span>
+          <span class="unit-cost">55g</span>
+        </button>
+        <button class="unit-btn" data-unit="pawn" type="button">
+          <span class="hotkey">5</span>
+          <span class="unit-name">Pawn</span>
+          <span class="unit-cost">25g</span>
+        </button>
+        <button class="unit-btn unit-new" data-unit="mage" type="button" title="Serangan Sihir Area (AoE)">
+          <span class="hotkey">6</span>
+          <span class="unit-name">Mage</span>
+          <span class="unit-cost">65g</span>
+        </button>
+        <button class="unit-btn unit-golem" data-unit="golem" type="button" title="Boss Raksasa — Tank HP Besar & Ground Slam AoE">
+          <span class="hotkey">7</span>
+          <span class="boss-tag">BOSS</span>
+          <span class="unit-name">Golem</span>
+          <span class="unit-cost">110g</span>
+        </button>
+        <button class="unit-btn unit-dragon" data-unit="dragon" type="button" title="Boss Naga Terbang — Semburan Bola Api Area">
+          <span class="hotkey">8</span>
+          <span class="boss-tag dragon">BOSS</span>
+          <span class="unit-name">Dragon</span>
+          <span class="unit-cost">150g</span>
+        </button>
+      </div>
+
+      <div class="command-right">
+        <div class="hero-hp-box" title="HP Hero">
+          <span class="hero-label">HERO</span>
+          <div class="bar-wrap small">
+            <div id="hero-hp-bar" class="bar-fill green" style="width: 100%"></div>
+            <span id="hero-hp-text" class="bar-label">220 / 220</span>
+          </div>
+        </div>
+        <button id="btn-rally" class="rally-btn attack" type="button" title="Ubah strategi pasukan (R)">
+          <span class="hotkey">R</span>
+          <span id="rally-label">⚔ SERANG</span>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Help / Pause / End Dialog -->
+  <dialog id="game-dialog" class="game-dialog">
+    <div class="parchment-card dialog-card">
+      <h2 id="dialog-title">Jeda</h2>
+      <p id="dialog-body"></p>
+      <div id="dialog-stats" class="dialog-stats"></div>
+      <div class="dialog-actions">
+        <button id="dialog-primary" class="primary-btn" type="button">Lanjutkan</button>
+        <button id="dialog-secondary" class="secondary-btn" type="button">Main Lagi</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="castle-defense.js"></script>
+</body>
+</html>

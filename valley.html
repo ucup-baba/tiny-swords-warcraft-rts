@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Swords Valley — Farming &amp; Life Sim</title>
+  <link rel="stylesheet" href="valley.css">
+</head>
+<body>
+  <div id="game-shell">
+    <!-- Top Stardew-Style HUD -->
+    <header class="hud-top" aria-label="Status Pertanian">
+      <div class="hud-group hud-identity">
+        <button id="btn-wardrobe" class="profile-btn" type="button" title="Ubah Gaya Karakter (C)">
+          <canvas id="hud-avatar" width="44" height="44"></canvas>
+          <div class="profile-meta">
+            <span id="hud-player-name" class="player-name">Ichigo</span>
+            <span id="hud-farm-name" class="farm-name">Kebun Harapan</span>
+          </div>
+          <span class="edit-pill">🎨</span>
+        </button>
+
+        <div class="clock-box" title="Hari, Musim, dan Waktu">
+          <div id="hud-day" class="clock-day">Hari 1 • Musim Semi</div>
+          <div id="hud-time" class="clock-time">☀ 06:00</div>
+        </div>
+      </div>
+
+      <div class="hud-group hud-resources">
+        <div class="res-pill gold" title="Emas">
+          <img src="Tiny%20Swords%20(Free%20Pack)/Tiny%20Swords%20(Free%20Pack)/Terrain/Resources/Gold/Gold%20Resource/Gold_Resource.png" alt="Gold" class="res-icon">
+          <span id="gold-count">150</span>g
+        </div>
+        <div class="res-pill" title="Kayu">
+          <img src="Tiny%20Swords%20(Free%20Pack)/Tiny%20Swords%20(Free%20Pack)/Terrain/Resources/Wood/Wood%20Resource/Wood%20Resource.png" alt="Wood" class="res-icon">
+          <span id="wood-count">12</span>
+        </div>
+        <div class="res-pill" title="Bijih Emas">
+          <span class="res-emoji">⛏</span>
+          <span id="ore-count">0</span>
+        </div>
+        <div class="res-pill" title="Hasil Panen di Tas (Jual di Peti / Toko)">
+          <span class="res-emoji">🧺</span>
+          <span id="harvest-count">0</span>
+        </div>
+      </div>
+
+      <div class="hud-group hud-right">
+        <div class="energy-box" title="Energi / Stamina">
+          <span class="energy-tag">⚡</span>
+          <div class="bar-wrap">
+            <div id="energy-bar" class="bar-fill energy" style="width: 100%"></div>
+            <span id="energy-text" class="bar-label">100 / 100</span>
+          </div>
+        </div>
+
+        <div class="hud-actions">
+          <button id="btn-shop" class="action-btn shop" type="button" title="Buka Toko Desa (B)">🛒 Toko</button>
+          <button id="btn-sleep" class="action-btn sleep" type="button" title="Tidur &amp; Ganti Hari (T)">🛏 Tidur</button>
+          <button id="btn-sound" class="icon-btn" type="button" title="Suara (M)" aria-label="Toggle Suara">🔊</button>
+          <button id="btn-help" class="icon-btn" type="button" title="Bantuan (H)" aria-label="Bantuan">?</button>
+          <a href="character-assets.html" class="action-btn assets" title="Lihat Showcase Semua 9 Animasi Aset 2.5D">🎞 Aset 2.5D</a>
+          <a href="castle-defense.html" class="icon-btn link-btn" title="Buka Mode Castle Defense">⚔</a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Interactive World Canvas -->
+    <main class="canvas-stage">
+      <canvas id="game-canvas" aria-label="Kebun Tiny Swords Valley"></canvas>
+
+      <!-- Floating Toast & Context Interact Prompt -->
+      <div id="banner-toast" class="banner-toast" role="status" aria-live="polite"></div>
+      <div id="interact-hint" class="interact-hint hidden">
+        <kbd>E</kbd> <span id="interact-text">Interaksi</span>
+      </div>
+
+      <!-- Cozy Stardew NPC Dialogue Box -->
+      <div id="dialogue-box" class="dialogue-box hidden" role="region" aria-label="Dialog NPC">
+        <div class="dialogue-portrait">
+          <canvas id="dialogue-avatar" width="76" height="76"></canvas>
+        </div>
+        <div class="dialogue-body">
+          <div class="dialogue-header">
+            <span id="dialogue-name" class="dialogue-name">Pedagang Desa</span>
+            <span id="dialogue-hearts" class="dialogue-hearts">♥ ♡ ♡</span>
+          </div>
+          <p id="dialogue-text" class="dialogue-text">Selamat pagi!</p>
+          <div class="dialogue-footer">
+            <button id="dialogue-shop-btn" class="mini-btn hidden" type="button">🛒 Buka Toko</button>
+            <button id="dialogue-close-btn" class="mini-btn primary" type="button">Lanjut (E / Klik)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading Overlay -->
+      <div id="loading-overlay" class="overlay-screen">
+        <div class="parchment-card loading-card">
+          <h1>TINY SWORDS VALLEY</h1>
+          <p class="subtitle">Memuat desa, kebun, dan karakter...</p>
+          <p id="loading-status">Menyiapkan aset...</p>
+          <div class="loading-track"><div id="loading-fill" class="loading-fill"></div></div>
+        </div>
+      </div>
+
+      <!-- Stardew Character Creator / Wardrobe Overlay -->
+      <div id="creator-overlay" class="overlay-screen hidden">
+        <div class="parchment-card creator-card">
+          <div class="creator-header">
+            <h1 id="creator-title">TINY SWORDS VALLEY</h1>
+            <p class="subtitle">Ciptakan karakter petani petualangmu — gaya Tiny Swords!</p>
+          </div>
+
+          <div class="creator-grid">
+            <!-- Left: Live Animated Preview & Gender/Name -->
+            <div class="creator-preview-col">
+              <div class="gender-tabs" role="tablist" aria-label="Pilih Karakter">
+                <button id="gender-male" class="gender-btn active" type="button" data-gender="male">
+                  👦 Pemuda (Ichigo)
+                </button>
+                <button id="gender-female" class="gender-btn" type="button" data-gender="female">
+                  👧 Perempuan (Nami)
+                </button>
+              </div>
+
+              <div class="preview-stage">
+                <canvas id="creator-preview" width="220" height="220"></canvas>
+                <div class="preview-pose-bar">
+                  <button class="pose-btn active" type="button" data-pose="walk_down">Depan</button>
+                  <button class="pose-btn" type="button" data-pose="walk_up">Belakang</button>
+                  <button class="pose-btn" type="button" data-pose="walk_side">Samping</button>
+                  <button class="pose-btn" type="button" data-pose="sword">Pedang</button>
+                  <button class="pose-btn" type="button" data-pose="fish">Mancing</button>
+                  <button class="pose-btn" type="button" data-pose="bow">Panah</button>
+                </div>
+              </div>
+
+              <div class="name-inputs">
+                <label class="field">
+                  <span>Nama Karakter</span>
+                  <input id="input-player-name" type="text" maxlength="16" value="Ichigo" placeholder="Nama kamu...">
+                </label>
+                <label class="field">
+                  <span>Nama Kebun</span>
+                  <input id="input-farm-name" type="text" maxlength="20" value="Kebun Harapan" placeholder="Kebun...">
+                </label>
+              </div>
+            </div>
+
+            <!-- Right: Hair, Skin, and Outfit Color Customizer -->
+            <div class="creator-colors-col">
+              <section class="color-section">
+                <div class="section-head">
+                  <h3>🎨 Warna Rambut</h3>
+                  <label class="custom-color-label" title="Pilih warna rambut bebas">
+                    <span>Bebas:</span>
+                    <input id="custom-hair-color" type="color" value="#f28c28">
+                  </label>
+                </div>
+                <div id="hair-swatches" class="swatch-grid"></div>
+              </section>
+
+              <section class="color-section">
+                <div class="section-head">
+                  <h3>✨ Warna Kulit</h3>
+                  <label class="custom-color-label" title="Pilih warna kulit bebas">
+                    <span>Bebas:</span>
+                    <input id="custom-skin-color" type="color" value="#f3cba5">
+                  </label>
+                </div>
+                <div id="skin-swatches" class="swatch-grid"></div>
+              </section>
+
+              <section class="color-section">
+                <div class="section-head">
+                  <h3>👕 Warna Baju</h3>
+                  <label class="custom-color-label" title="Pilih warna baju bebas">
+                    <span>Bebas:</span>
+                    <input id="custom-outfit-color" type="color" value="#4697ac">
+                  </label>
+                </div>
+                <div id="outfit-swatches" class="swatch-grid"></div>
+              </section>
+
+              <div class="creator-tips">
+                <div><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> Jalan • <kbd>Klik</kbd>/<kbd>Space</kbd> Pakai Alat • <kbd>E</kbd> Interaksi &amp; Tidur • <kbd>1</kbd>–<kbd>6</kbd> Ganti Alat</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="creator-footer">
+            <button id="btn-random-look" class="secondary-btn" type="button">🎲 Acak Gaya</button>
+            <button id="btn-start-farm" class="primary-btn" type="button">🌾 MULAI BERTANI!</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Stardew Tool Hotbar & Seed Selector -->
+    <footer class="hud-bottom" aria-label="Peralatan Bertani">
+      <div class="tool-bar">
+        <button class="tool-btn active" data-tool="hoe" type="button" title="Cangkul (1) — Garap rumput jadi tanah">
+          <span class="hotkey">1</span>
+          <span class="tool-emoji">⛏️</span>
+          <span class="tool-name">Cangkul</span>
+        </button>
+        <button class="tool-btn" data-tool="water" type="button" title="Penyiram (2) — Siram tanah agar tanaman tumbuh">
+          <span class="hotkey">2</span>
+          <span class="tool-emoji">💧</span>
+          <span class="tool-name">Siram</span>
+          <span id="water-badge" class="sub-badge">16/16</span>
+        </button>
+        <button class="tool-btn" data-tool="seed" type="button" title="Tanam Benih (3) — Tekan Q untuk ganti benih">
+          <span class="hotkey">3</span>
+          <span id="active-seed-emoji" class="tool-emoji">🥕</span>
+          <span id="active-seed-name" class="tool-name">Lobak</span>
+          <span id="active-seed-count" class="sub-badge">x6</span>
+        </button>
+        <button class="tool-btn" data-tool="axe" type="button" title="Kapak (4) — Tebang pohon untuk Kayu">
+          <span class="hotkey">4</span>
+          <span class="tool-emoji">🪓</span>
+          <span class="tool-name">Kapak</span>
+        </button>
+        <button class="tool-btn" data-tool="pickaxe" type="button" title="Beliung (5) — Tambang batu emas">
+          <span class="hotkey">5</span>
+          <span class="tool-emoji">⚒️</span>
+          <span class="tool-name">Beliung</span>
+        </button>
+        <button class="tool-btn" data-tool="fish" type="button" title="Pancing (6) — Mancing ikan di kolam atau pantai!">
+          <span class="hotkey">6</span>
+          <span class="tool-emoji">🎣</span>
+          <span class="tool-name">Mancing</span>
+        </button>
+        <button class="tool-btn" data-tool="sword" type="button" title="Pedang (7) — Tebas dengan pedang Tiny Swords!">
+          <span class="hotkey">7</span>
+          <span class="tool-emoji">⚔️</span>
+          <span class="tool-name">Pedang</span>
+        </button>
+        <button class="tool-btn" data-tool="bow" type="button" title="Panah (8) — Berburu dengan busur &amp; panah!">
+          <span class="hotkey">8</span>
+          <span class="tool-emoji">🏹</span>
+          <span class="tool-name">Panah</span>
+        </button>
+        <button class="tool-btn" data-tool="hand" type="button" title="Tangan / Panen (9) — Panen tanaman, elus domba, obrol NPC">
+          <span class="hotkey">9</span>
+          <span class="tool-emoji">🧺</span>
+          <span class="tool-name">Panen</span>
+        </button>
+      </div>
+
+      <div class="seed-selector" aria-label="Pilih Jenis Benih">
+        <span class="seed-label">Benih (<kbd>Q</kbd>):</span>
+        <button class="seed-pill active" data-seed="turnip" type="button">🥕 <span id="seed-turnip">6</span></button>
+        <button class="seed-pill" data-seed="strawberry" type="button">🍓 <span id="seed-strawberry">2</span></button>
+        <button class="seed-pill" data-seed="pumpkin" type="button">🎃 <span id="seed-pumpkin">0</span></button>
+        <button class="seed-pill" data-seed="starflower" type="button">🌻 <span id="seed-starflower">0</span></button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Village Shop / Daily Summary / Help Dialog -->
+  <dialog id="modal-dialog" class="game-dialog">
+    <div class="parchment-card dialog-card">
+      <div class="dialog-top">
+        <h2 id="modal-title">Toko Desa</h2>
+        <button id="modal-close-x" class="close-x" type="button" aria-label="Tutup">✕</button>
+      </div>
+      <div id="modal-content" class="modal-content"></div>
+      <div id="modal-footer" class="dialog-actions"></div>
+    </div>
+  </dialog>
+
+  <script src="valley.js"></script>
+</body>
+</html>

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Swords 2.5D — Showcase Aset Karakter Lengkap</title>
+  <style>
+    :root {
+      --wood-dark: #3b2314;
+      --wood-mid: #5e3820;
+      --parchment: #f6e7c5;
+      --border: #bd8f52;
+      --ink: #2c1a0e;
+      --gold: #f5c542;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      min-height: 100vh;
+      background: #2b5d6c;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--parchment);
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 18px;
+      background: linear-gradient(180deg, var(--wood-mid), var(--wood-dark));
+      border-bottom: 3px solid #201109;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.15rem; letter-spacing: 0.04em; color: var(--gold); }
+    .nav-links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .nav-btn {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 2px solid var(--border);
+      background: #7c4d30;
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .nav-btn:hover { filter: brightness(1.12); }
+
+    main {
+      max-width: 1220px;
+      width: 100%;
+      margin: 14px auto 24px;
+      padding: 0 14px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, #faf0d8, #ead2a0);
+      color: var(--ink);
+      border: 4px solid var(--wood-dark);
+      outline: 3px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+    }
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+    @media (max-width: 900px) { .top-grid { grid-template-columns: 1fr; } }
+
+    .sandbox-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sandbox-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .sandbox-head h2 { font-size: 1.05rem; color: #3d210f; }
+    .sandbox-hint { font-size: 0.78rem; font-weight: 700; color: #5b371d; }
+    #sandbox-canvas {
+      width: 100%;
+      height: 300px;
+      border: 3px solid var(--wood-dark);
+      border-radius: 12px;
+      background: #84b366;
+      image-rendering: pixelated;
+      display: block;
+    }
+    .action-bar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .act-btn {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 2px solid var(--wood-dark);
+      background: #e3c894;
+      color: var(--ink);
+      font-size: 0.78rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .act-btn.active, .act-btn:hover {
+      background: #3d8461;
+      color: #fff;
+    }
+
+    .controls-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .gender-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .g-btn {
+      padding: 9px;
+      border-radius: 10px;
+      border: 2.5px solid var(--wood-dark);
+      background: #e3c894;
+      color: var(--ink);
+      font-weight: 800;
+      font-size: 0.84rem;
+      cursor: pointer;
+    }
+    .g-btn.active {
+      background: linear-gradient(180deg, #4697ac, #316980);
+      color: #fff;
+    }
+    .swatch-box {
+      background: rgba(94,56,32,0.09);
+      border: 2px solid rgba(140,96,52,0.3);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+    .swatch-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sw {
+      width: 28px; height: 28px;
+      border-radius: 7px;
+      border: 2px solid var(--wood-dark);
+      cursor: pointer;
+    }
+    .sw.active { outline: 2.5px solid #fff; box-shadow: 0 0 0 4px var(--wood-dark); }
+
+    .grid-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .grid-title h2 { font-size: 1.08rem; color: #3d210f; }
+
+    .anim-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 12px;
+    }
+    .anim-card {
+      background: rgba(94,56,32,0.08);
+      border: 2.5px solid var(--wood-mid);
+      border-radius: 12px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .anim-card canvas {
+      width: 156px;
+      height: 156px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 50% 55%, #9bd073, #73a655);
+      border: 2px solid var(--wood-dark);
+      image-rendering: pixelated;
+    }
+    .anim-label { font-weight: 900; font-size: 0.88rem; color: #3d210f; }
+    .anim-sub { font-size: 0.72rem; font-weight: 700; color: #694122; }
+    kbd {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--wood-dark);
+      color: var(--parchment);
+      font-size: 0.72rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🎞 Tiny Swords 2.5D — Showcase Aset Karakter Lengkap (Ichigo &amp; Nami)</h1>
+    <div class="nav-links">
+      <a class="nav-btn" href="index.html">🌾 Mainkan Tiny Swords Valley</a>
+      <a class="nav-btn" href="castle-defense.html">⚔ Castle Defense</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel top-grid">
+      <div class="sandbox-wrap">
+        <div class="sandbox-head">
+          <h2>🕹 Sandbox 2.5D (Harvest Moon: Grand Bazaar Style)</h2>
+          <span class="sandbox-hint"><kbd>WASD</kbd>/<kbd>↑↓←→</kbd> Jalan 4 Arah • <kbd>1</kbd>–<kbd>6</kbd> / Klik Tombol Aksi</span>
+        </div>
+        <canvas id="sandbox-canvas" width="660" height="300"></canvas>
+        <div class="action-bar">
+          <button class="act-btn" data-act="Hoe">1 ⛏️ Mencangkul</button>
+          <button class="act-btn" data-act="Axe">2 🪓 Mengkapak</button>
+          <button class="act-btn" data-act="Water">3 💧 Menyiram</button>
+          <button class="act-btn" data-act="Fish">4 🎣 Mancing</button>
+          <button class="act-btn" data-act="Sword">5 ⚔️ Pedang</button>
+          <button class="act-btn" data-act="Bow">6 🏹 Panah</button>
+        </div>
+      </div>
+
+      <div class="controls-col">
+        <div class="gender-row">
+          <button id="btn-male" class="g-btn active" type="button">👦 Pemuda (Ichigo)</button>
+          <button id="btn-female" class="g-btn" type="button">👧 Perempuan (Nami)</button>
+        </div>
+
+        <div class="swatch-box">
+          <div class="swatch-title"><span>🎨 Warna Rambut</span><input id="pick-hair" type="color" value="#f28c28"></div>
+          <div id="sw-hair" class="swatches"></div>
+        </div>
+        <div class="swatch-box">
+          <div class="swatch-title"><span>✨ Warna Kulit</span><input id="pick-skin" type="color" value="#f3cba5"></div>
+          <div id="sw-skin" class="swatches"></div>
+        </div>
+        <div class="swatch-box">
+          <div class="swatch-title"><span>👕 Warna Baju</span><input id="pick-outfit" type="color" value="#4697ac"></div>
+          <div id="sw-outfit" class="swatches"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="grid-title">
+        <h2>📦 Daftar 9 Animasi Lengkap (192×192 / frame + Color Mask Real-Time)</h2>
+        <span class="sandbox-hint">Semua 9 spritesheet otomatis ter-recolor secara real-time!</span>
+      </div>
+      <div id="anim-grid" class="anim-grid"></div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const ANIMS = [
+        { key: 'Walk_Down', label: 'Jalan ke Bawah (Depan)', sub: '2.5D Front View • 4 frame', fps: 7 },
+        { key: 'Walk_Up',   label: 'Jalan ke Atas (Belakang)', sub: '2.5D Back View • 4 frame', fps: 7 },
+        { key: 'Walk_Side', label: 'Jalan ke Samping (Kanan/Kiri)', sub: '2.5D Side Profile • 4 frame', fps: 8 },
+        { key: 'Hoe',       label: 'Mencangkul (Hoe)', sub: 'Cangkul Tanah + Cipratan • 4 frame', fps: 7 },
+        { key: 'Axe',       label: 'Mengkapak (Axe)', sub: 'Tebang Kayu • 4 frame', fps: 7 },
+        { key: 'Water',     label: 'Menyiram (Watering Can)', sub: 'Siram Tanaman + Air • 4 frame', fps: 6.5 },
+        { key: 'Fish',      label: 'Mancing (Fishing Rod)', sub: 'Lempar Kail & Dapat Ikan • 4 frame', fps: 5 },
+        { key: 'Sword',     label: 'Pakai Pedang (Sword)', sub: 'Tebasan Pedang + Arc • 4 frame', fps: 8 },
+        { key: 'Bow',       label: 'Berburu Panah (Bow)', sub: 'Tarik Busur & Panah • 4 frame', fps: 6.5 },
+      ];
+
+      const HAIR = ['#f28c28', '#2d3244', '#3b82d6', '#db4854', '#f0c446', '#dce5f2', '#3da868', '#ec74a8', '#985ad6'];
+      const SKIN = ['#fae0ca', '#f3cba5', '#e3b184', '#c88f62', '#a56c43', '#784930'];
+      const OUTFIT = ['#4697ac', '#d95858', '#4f9c5f', '#845aa8', '#cf9e3e', '#4e5869'];
+
+      const state = { gender: 'Male', hair: '#f28c28', skin: '#f3cba5', outfit: '#4697ac' };
+      const raw = {};
+      const recolored = {};
+      const cards = [];
+
+      const sbCanvas = document.getElementById('sandbox-canvas');
+      const sbCtx = sbCanvas.getContext('2d');
+      const keys = new Set();
+      const player = { x: 330, y: 175, dir: 'down', facing: 1, moving: false, action: null, actionT: 0, animT: 0 };
+      const props = { house: null, tree: null };
+
+      const hexToRgb = (h) => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+      function recolorSheet(baseImg, maskImg) {
+        const w = baseImg.width, h = baseImg.height;
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(baseImg, 0, 0);
+        const m = document.createElement('canvas'); m.width = w; m.height = h;
+        const mx = m.getContext('2d', { willReadFrequently: true }); mx.drawImage(maskImg, 0, 0);
+        const bd = cx.getImageData(0, 0, w, h);
+        const md = mx.getImageData(0, 0, w, h).data;
+        const p = bd.data;
+        const [hr,hg,hb] = hexToRgb(state.hair);
+        const [sr,sg,sb] = hexToRgb(state.skin);
+        const [or,og,ob] = hexToRgb(state.outfit);
+        for (let i = 0; i < p.length; i += 4) {
+          if (p[i+3] < 128) continue;
+          const mr = md[i], mg = md[i+1], mb = md[i+2];
+          if (mr > 0) {
+            const f = mr < 130 ? 0.62 : (mr < 210 ? 0.86 : 1.12);
+            const lift = mr > 210 ? 14 : 0;
+            p[i] = clamp(Math.round(hr*f+lift),0,255); p[i+1] = clamp(Math.round(hg*f+lift),0,255); p[i+2] = clamp(Math.round(hb*f+lift),0,255);
+          } else if (mg > 0) {
+            const f = mg < 190 ? 0.78 : 1.04;
+            p[i] = clamp(Math.round(sr*f),0,255); p[i+1] = clamp(Math.round(sg*f),0,255); p[i+2] = clamp(Math.round(sb*f),0,255);
+          } else if (mb > 0) {
+            const f = mb < 190 ? 0.72 : 1.06;
+            p[i] = clamp(Math.round(or*f),0,255); p[i+1] = clamp(Math.round(og*f),0,255); p[i+2] = clamp(Math.round(ob*f),0,255);
+          }
+        }
+        cx.putImageData(bd, 0, 0);
+        return c;
+      }
+
+      function rebuildAll() {
+        for (const a of ANIMS) {
+          const b = raw[`${state.gender}_${a.key}`];
+          const m = raw[`${state.gender}_${a.key}_Mask`];
+          if (b && m) recolored[a.key] = recolorSheet(b, m);
+        }
+      }
+
+      function loadImg(src) {
+        return new Promise((res) => {
+          const im = new Image();
+          im.onload = () => res(im);
+          im.onerror = () => res(null);
+          im.src = encodeURI(src);
+        });
+      }
+
+      function makeSwatches(id, list, prop, pickerId) {
+        const box = document.getElementById(id);
+        const picker = document.getElementById(pickerId);
+        list.forEach((hex) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'sw' + (state[prop] === hex ? ' active' : '');
+          b.style.background = hex;
+          b.dataset.hex = hex;
+          b.addEventListener('click', () => {
+            state[prop] = hex; picker.value = hex;
+            box.querySelectorAll('.sw').forEach(el => el.classList.toggle('active', el.dataset.hex === hex));
+            rebuildAll();
+          });
+          box.appendChild(b);
+        });
+        picker.addEventListener('input', (e) => {
+          state[prop] = e.target.value;
+          box.querySelectorAll('.sw').forEach(el => el.classList.toggle('active', el.dataset.hex === state[prop]));
+          rebuildAll();
+        });
+      }
+
+      const grid = document.getElementById('anim-grid');
+      for (const a of ANIMS) {
+        const card = document.createElement('div');
+        card.className = 'anim-card';
+        const c = document.createElement('canvas'); c.width = 156; c.height = 156;
+        const lbl = document.createElement('div'); lbl.className = 'anim-label'; lbl.textContent = a.label;
+        const sub = document.createElement('div'); sub.className = 'anim-sub'; sub.textContent = a.sub;
+        card.append(c, lbl, sub);
+        grid.appendChild(card);
+        cards.push({ anim: a, ctx: c.getContext('2d') });
+      }
+
+      makeSwatches('sw-hair', HAIR, 'hair', 'pick-hair');
+      makeSwatches('sw-skin', SKIN, 'skin', 'pick-skin');
+      makeSwatches('sw-outfit', OUTFIT, 'outfit', 'pick-outfit');
+
+      document.getElementById('btn-male').addEventListener('click', () => {
+        state.gender = 'Male';
+        document.getElementById('btn-male').classList.add('active');
+        document.getElementById('btn-female').classList.remove('active');
+        rebuildAll();
+      });
+      document.getElementById('btn-female').addEventListener('click', () => {
+        state.gender = 'Female';
+        document.getElementById('btn-female').classList.add('active');
+        document.getElementById('btn-male').classList.remove('active');
+        rebuildAll();
+      });
+
+      function triggerAction(name) {
+        player.action = name;
+        player.actionT = 0;
+        document.querySelectorAll('.act-btn').forEach(b => b.classList.toggle('active', b.dataset.act === name));
+      }
+      document.querySelectorAll('.act-btn').forEach(b => b.addEventListener('click', () => triggerAction(b.dataset.act)));
+
+      window.addEventListener('keydown', (e) => {
+        if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+        keys.add(e.code);
+        const map = { Digit1:'Hoe', Digit2:'Axe', Digit3:'Water', Digit4:'Fish', Digit5:'Sword', Digit6:'Bow' };
+        if (map[e.code]) triggerAction(map[e.code]);
+      });
+      window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+      let last = 0, t = 0;
+      function loop(ts) {
+        const dt = Math.min(0.05, (ts - last) / 1000 || 0.016);
+        last = ts; t += dt;
+
+        // Update 2.5D Sandbox Player
+        if (player.action) {
+          player.actionT += dt;
+          if (player.actionT >= 0.72) {
+            player.action = null;
+            document.querySelectorAll('.act-btn').forEach(b => b.classList.remove('active'));
+          }
+        } else {
+          let mx = 0, my = 0;
+          if (keys.has('KeyW') || keys.has('ArrowUp')) my -= 1;
+          if (keys.has('KeyS') || keys.has('ArrowDown')) my += 1;
+          if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;
+          if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
+          player.moving = (mx !== 0 || my !== 0);
+          if (player.moving) {
+            const len = Math.hypot(mx, my);
+            player.x = clamp(player.x + (mx / len) * 165 * dt, 46, 614);
+            player.y = clamp(player.y + (my / len) * 140 * dt, 85, 272);
+            if (Math.abs(mx) >= Math.abs(my)) {
+              player.dir = 'side';
+              player.facing = mx > 0 ? 1 : -1;
+            } else {
+              player.dir = my < 0 ? 'up' : 'down';
+            }
+            player.animT += dt;
+          } else {
+            player.animT = 0;
+          }
+        }
+
+        // Render Sandbox with 2.5D Harvest Moon depth sorting!
+        sbCtx.imageSmoothingEnabled = false;
+        sbCtx.fillStyle = '#84b366';
+        sbCtx.fillRect(0, 0, 660, 300);
+
+        // Cozy 2.5D path + farm soil + pond
+        sbCtx.fillStyle = 'rgba(182,146,92,0.5)';
+        sbCtx.beginPath(); sbCtx.roundRect(60, 148, 540, 48, 20); sbCtx.fill();
+        // Tilled soil
+        for (let i = 0; i < 3; i++) {
+          sbCtx.fillStyle = '#161c2e'; sbCtx.fillRect(210 + i * 54, 210, 46, 46);
+          sbCtx.fillStyle = '#8b5e38'; sbCtx.fillRect(212 + i * 54, 212, 42, 42);
+        }
+        // Pond on right for fishing test
+        sbCtx.fillStyle = '#387e91'; sbCtx.beginPath(); sbCtx.roundRect(495, 195, 130, 80, 22); sbCtx.fill();
+        sbCtx.fillStyle = '#53b5c7'; sbCtx.beginPath(); sbCtx.roundRect(501, 201, 118, 68, 18); sbCtx.fill();
+
+        const drawList = [];
+        if (props.house) {
+          drawList.push({ y: 125, draw: () => sbCtx.drawImage(props.house, 72, 16, 108, 142) });
+        }
+        if (props.tree) {
+          drawList.push({ y: 132, draw: () => {
+            const fr = Math.floor(t * 5) % 8;
+            sbCtx.drawImage(props.tree, fr * 192, 0, 192, 256, 470, -18, 140, 186);
+          }});
+        }
+        drawList.push({ y: player.y, draw: () => {
+          const animKey = player.action
+            ? player.action
+            : (player.dir === 'up' ? 'Walk_Up' : player.dir === 'down' ? 'Walk_Down' : 'Walk_Side');
+          const sh = recolored[animKey];
+          if (!sh) return;
+          const fr = player.action
+            ? Math.min(3, Math.floor((player.actionT / 0.72) * 4))
+            : (player.moving ? Math.floor(player.animT * 8) % 4 : 0);
+          const flip = (player.action || player.dir === 'side') ? player.facing : 1;
+          sbCtx.save();
+          sbCtx.translate(player.x, player.y - 34);
+          sbCtx.scale(flip, 1);
+          sbCtx.drawImage(sh, fr * 192, 0, 192, 192, -84, -84, 168, 168);
+          sbCtx.restore();
+        }});
+        drawList.sort((a,b) => a.y - b.y);
+        drawList.forEach(item => item.draw());
+
+        // Render all 9 live animation cards
+        for (const c of cards) {
+          const sh = recolored[c.anim.key];
+          if (!sh) continue;
+          c.ctx.imageSmoothingEnabled = false;
+          c.ctx.clearRect(0, 0, 156, 156);
+          const fr = Math.floor(t * c.anim.fps) % 4;
+          c.ctx.drawImage(sh, fr * 192 + 24, 16, 144, 144, 6, 6, 144, 144);
+        }
+        requestAnimationFrame(loop);
+      }
+
+      (async () => {
+        const jobs = [];
+        for (const g of ['Male', 'Female']) {
+          for (const a of ANIMS) {
+            jobs.push(loadImg(`custom_assets/Farmers/${g}/${a.key}.png?v=4`).then(im => raw[`${g}_${a.key}`] = im));
+            jobs.push(loadImg(`custom_assets/Farmers/${g}/${a.key}_Mask.png?v=4`).then(im => raw[`${g}_${a.key}_Mask`] = im));
+          }
+        }
+        jobs.push(loadImg('Tiny Swords (Free Pack)/Tiny Swords (Free Pack)/Buildings/Blue Buildings/House1.png').then(im => props.house = im));
+        jobs.push(loadImg('Tiny Swords (Free Pack)/Tiny Swords (Free Pack)/Terrain/Resources/Wood/Trees/Tree1.png').then(im => props.tree = im));
+        await Promise.all(jobs);
+        rebuildAll();
+        requestAnimationFrame(loop);
+      })();
+    })();
+  </script>
+</body>
+</html>
