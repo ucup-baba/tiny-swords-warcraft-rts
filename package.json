@@ -1,0 +1,24 @@
+{
+  "name": "hope-for-the-future",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:tonton": "vitest",
+    "typecheck": "tsc -b packages/shared packages/sim packages/aset packages/net packages/render packages/ui packages/client packages/server",
+    "bersih": "tsc -b --clean packages/* && rm -rf packages/*/dist",
+    "periksa:headless": "node scripts/periksa-headless.mjs",
+    "periksa": "npm run typecheck && npm test && npm run periksa:headless"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}

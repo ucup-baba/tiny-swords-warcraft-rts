@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../shared"
+    },
+    {
+      "path": "../sim"
+    },
+    {
+      "path": "../aset"
+    },
+    {
+      "path": "../net"
+    },
+    {
+      "path": "../render"
+    },
+    {
+      "path": "../ui"
+    }
+  ]
+}
