@@ -1,7 +1,7 @@
-import { KURSOR, type PeranHeroAset } from '@hftf/aset'
+import { BARIS, KURSOR, UNIT_BLUE, type PeranHeroAset } from '@hftf/aset'
 import {
   Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera,
-  gambarEntitas, keLayarX, keLayarY, muatSemuaAset, pusatkan,
+  gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongSprite, pusatkan,
 } from '@hftf/render'
 import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
@@ -127,6 +127,24 @@ class Permainan {
       console.error('Aset gagal dimuat:', hasil.gagal)
       this.hud.tampilkanToast(`${hasil.gagal.length} aset gagal dimuat — cek console`)
     }
+    // Kartu produksi memakai sprite unit yang sebenarnya, dipotong sekali
+    // setelah aset dimuat. `ui` tidak boleh mengimpor `render`, jadi client
+    // yang menyambungkan keduanya.
+    this.hud.pasangPotret((peran) => {
+      switch (peran) {
+        case 'pawn':
+        case 'warrior':
+        case 'archer': {
+          const a = UNIT_BLUE[peran]
+          return potongSprite(a, BARIS.idle * a.kolom, 64)
+        }
+        case 'lancer': return potongSprite(UNIT_BLUE.lancerIdle, 0, 64)
+        case 'monk': return potongSprite(UNIT_BLUE.monkIdle, 0, 64)
+        case 'mage': return potongSprite(UNIT_BLUE.mageIdle, 0, 64)
+        default: return null
+      }
+    })
+
     this.fase = 'lobi'
     this.lobi.tampil(true)
     this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
@@ -238,7 +256,7 @@ class Permainan {
     // layarnya hitam total sampai snapshot pertama tiba.
     hitungFog(this.dunia)
     this.lobi.tampil(false)
-    this.kursor.style.display = ''
+    this.kursor.style.display = 'block'
     this.fase = 'main'
     this.perbaruiHud()
   }
@@ -257,7 +275,7 @@ class Permainan {
     this.hud.setTim('blue')
     fokusKeCastle(this.dunia, 'blue', this.kam)
     this.lobi.tampil(false)
-    this.kursor.style.display = ''
+    this.kursor.style.display = 'block'
     this.fase = 'main'
     this.perbaruiHud()
   }
@@ -332,7 +350,7 @@ class Permainan {
       this.kursor.style.display = 'none'
     })
     k.addEventListener('mouseenter', () => {
-      if (this.fase === 'main') this.kursor.style.display = ''
+      if (this.fase === 'main') this.kursor.style.display = 'block'
     })
 
     k.addEventListener('mousemove', (e) => {

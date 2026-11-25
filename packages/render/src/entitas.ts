@@ -14,6 +14,18 @@ import { pandangan } from './kamera.js'
 const asetTim = <T>(tim: Tim, blue: T, red: T): T => (tim === 'red' ? red : blue)
 
 /**
+ * Frame pohon yang sedang goyang.
+ *
+ * Tree.png adalah sheet 4x3, tapi hanya BARIS 0 yang berisi pohon utuh:
+ * baris 1 punya 2 frame lalu 2 frame kosong, baris 2 hanya tunggul lalu
+ * 3 frame kosong. Memutar kedua belas frame membuat pohon lenyap 42% waktu.
+ */
+const FRAME_POHON_GOYANG = 4
+function framePohon(detik: number, benih: number): number {
+  return Math.floor(detik * 4 + benih) % FRAME_POHON_GOYANG
+}
+
+/**
  * Porsi tinggi frame tempat KAKI karakter berada. Sprite Tiny Swords digambar
  * di kanvas 192x192 dengan banyak ruang kosong di atas; kakinya ada di sekitar
  * 68% ke bawah. Menggambar dari tepi bawah frame membuat unit tampak melayang
@@ -146,7 +158,7 @@ export function gambarEntitas(
   // Pohon, tambang, domba, daging
   for (const o of dunia.pohon) {
     if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.pohon, Math.floor(t * 4 + o.id), o.x, o.y, 0.62, false, 0.78) })
+    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78) })
   }
   for (const o of dunia.tambang) {
     if (!diingat(o.x, o.y)) continue

@@ -1,4 +1,4 @@
-import { SEMUA, url, type Aset } from '@hftf/aset'
+import { SEMUA, frame, url, type Aset } from '@hftf/aset'
 
 /** Cache gambar yang sudah dimuat, diindeks oleh url. */
 const cache = new Map<string, HTMLImageElement>()
@@ -47,4 +47,82 @@ export async function muatSemuaAset(
     ),
   )
   return k
+}
+
+const cachePotong = new Map<string, string>()
+
+/**
+ * Memotong satu frame sprite jadi data URL berukuran tetap.
+ *
+ * Dipakai kartu produksi di sidebar: menampilkan sprite unit yang SEBENARNYA
+ * jauh lebih jelas daripada ikon generik, dan tidak bisa salah pasang.
+ * Hasilnya di-cache karena kartu dibangun ulang tiap kali seleksi berubah.
+ */
+export function potongSprite(a: Aset, indeks: number, ukuran = 64): string | null {
+  const kunci = `${url(a)}#${indeks}@${ukuran}`
+  const ada = cachePotong.get(kunci)
+  if (ada) return ada
+
+  const im = gambarDari(a)
+  if (!im) return null
+
+  const f = frame(a, indeks)
+  const isi = kotakIsi(im, f)
+  if (!isi) return null
+
+  const k = document.createElement('canvas')
+  k.width = ukuran
+  k.height = ukuran
+  const c = k.getContext('2d')
+  if (!c) return null
+  c.imageSmoothingEnabled = false
+
+  // Diskalakan ke ISI sprite, bukan ke ukuran frame. Frame Tiny Swords punya
+  // banyak ruang kosong, dan ukurannya berbeda-beda (192 vs 256 vs 320), jadi
+  // skala tetap membuat sebagian unit tampak jauh lebih kecil dari yang lain.
+  const margin = 0.88
+  const skala = Math.min((ukuran * margin) / isi.w, (ukuran * margin) / isi.h)
+  const w = isi.w * skala
+  const h = isi.h * skala
+  c.drawImage(im, isi.x, isi.y, isi.w, isi.h, (ukuran - w) / 2, (ukuran - h) / 2, w, h)
+
+  const hasil = k.toDataURL('image/png')
+  cachePotong.set(kunci, hasil)
+  return hasil
+}
+
+/** Kotak piksel yang benar-benar berisi di dalam sebuah frame. */
+function kotakIsi(
+  im: HTMLImageElement, f: { sx: number; sy: number; sw: number; sh: number },
+): { x: number; y: number; w: number; h: number } | null {
+  const k = document.createElement('canvas')
+  k.width = f.sw
+  k.height = f.sh
+  const c = k.getContext('2d', { willReadFrequently: true })
+  if (!c) return null
+  c.drawImage(im, f.sx, f.sy, f.sw, f.sh, 0, 0, f.sw, f.sh)
+
+  let data: Uint8ClampedArray
+  try {
+    data = c.getImageData(0, 0, f.sw, f.sh).data
+  } catch {
+    // Kanvas ternoda (mis. aset lintas-origin): pakai seluruh frame.
+    return { x: f.sx, y: f.sy, w: f.sw, h: f.sh }
+  }
+
+  let x1 = f.sw
+  let y1 = f.sh
+  let x2 = -1
+  let y2 = -1
+  for (let y = 0; y < f.sh; y++) {
+    for (let x = 0; x < f.sw; x++) {
+      if (data[(y * f.sw + x) * 4 + 3]! <= 24) continue
+      if (x < x1) x1 = x
+      if (x > x2) x2 = x
+      if (y < y1) y1 = y
+      if (y > y2) y2 = y
+    }
+  }
+  if (x2 < 0) return null
+  return { x: f.sx + x1, y: f.sy + y1, w: x2 - x1 + 1, h: y2 - y1 + 1 }
 }

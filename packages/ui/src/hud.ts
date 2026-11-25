@@ -1,4 +1,4 @@
-import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, IKON, UNIT_BLUE } from '@hftf/aset'
+import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, SUMBER, UNIT_BLUE } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
 import {
   BANGUNAN, UNIT, URUTAN_BANGUN, UNIT_HERO, UNIT_REGULER,
@@ -8,6 +8,15 @@ import { urlAset } from './sembilan.js'
 
 export type Tab = 'bangun' | 'pasukan' | 'hero'
 
+/**
+ * Penyedia gambar kecil untuk kartu produksi.
+ *
+ * `ui` tidak boleh mengimpor `render` (arah dependensi PRD §8.2), jadi client
+ * yang menyuntikkan fungsi ini: ia memotong frame idle sprite unit yang
+ * sebenarnya jadi data URL.
+ */
+export type PenyediaPotret = (peran: string) => string | null
+
 export interface AksiHud {
   pilihTab(t: Tab): void
   mulaiBangun(jenis: string): void
@@ -15,13 +24,20 @@ export interface AksiHud {
   bangkitkanHero(): void
 }
 
-/** Ikon untuk tiap jenis bangunan/unit. Dipisah supaya tidak tersebar di kode. */
-const IKON_UNIT: Record<string, string> = {
-  pawn: 'regular01', warrior: 'regular02', archer: 'regular03',
-  lancer: 'regular04', monk: 'regular05', mage: 'regular06',
-  berserker: 'regular07', king: 'regular08', knight: 'regular09', champion: 'regular10',
-}
-const IKON_SUMBER = { gold: 'regular03', kayu: 'regular02', daging: 'regular04', supply: 'regular06' } as const
+/**
+ * Ikon sumber daya memakai sprite sumber daya ASLI dari Update 010.
+ *
+ * Sebelumnya di sini dipakai UI/Icons/Regular_01..10, yang ternyata BUKAN ikon
+ * unit atau sumber daya melainkan ikon menu generik: silang, gir, speaker,
+ * angka 1/2/3, keranjang, plus, minus, gembok. Itu sebabnya panel sumber daya
+ * menampilkan simbol yang tidak nyambung sama sekali.
+ */
+const IKON_SUMBER = {
+  gold: SUMBER.goldDiam,
+  kayu: SUMBER.kayuDiam,
+  daging: SUMBER.dagingDiam,
+  supply: BANGUNAN_BLUE.house,
+} as const
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K, kelas?: string, isi?: string,
@@ -47,6 +63,13 @@ export class Hud {
   private toast: HTMLElement
   private toastTimer = 0
   private tab: Tab = 'bangun'
+
+  private potret: PenyediaPotret = () => null
+
+  /** Dipasang client setelah aset selesai dimuat. */
+  pasangPotret(p: PenyediaPotret): void {
+    this.potret = p
+  }
 
   constructor(private basis: string, private aksi: AksiHud) {
     this.akar = el('div')
@@ -97,10 +120,10 @@ export class Hud {
 
     const sd = el('div')
     sd.id = 'sumber-daya'
-    for (const [kunci, ikon] of Object.entries(IKON_SUMBER)) {
+    for (const [kunci, aset] of Object.entries(IKON_SUMBER)) {
       const kotak = el('div', 'sumber')
       const im = el('img')
-      im.src = urlAset(IKON[ikon]!, basis)
+      im.src = urlAset(aset, basis)
       const teks = el('span', undefined, '0')
       this.sumberEl[kunci] = teks
       kotak.append(im, teks)
@@ -198,7 +221,7 @@ export class Hud {
         const dari = bangunanTerpilih?.jenis === def.dariBangunan
         const mampu = s.gold >= def.gold && s.kayu >= def.kayu && s.daging >= def.daging
         this.kisi.append(this.kartu({
-          ikon: urlAset(IKON[IKON_UNIT[peran]!]!, this.basis),
+          ikon: this.potret(peran) ?? urlAset(AVATAR['avatar01']!, this.basis),
           nama: def.nama,
           biaya: `${def.gold}g ${def.daging}d`,
           mati: !mampu || !dari,

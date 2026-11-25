@@ -55,47 +55,53 @@ img, canvas { image-rendering: pixelated; }
 
 /* --- Sidebar kanan --- */
 #sisi {
-  width: 268px; flex: none;
+  width: 304px; flex: none; min-width: 0;
   display: flex; flex-direction: column; gap: 8px;
-  padding: 12px;
-  ${sembilanIris(UI.panelUkir, 22, basis)};
+  padding: 10px;
+  ${sembilanIris(UI.panelUkir, 18, basis)};
   background: var(--kayu-gelap);
   overflow: hidden;
 }
+/* Tanpa min-width:0 anak grid/flex menolak mengecil dan memaksa scroll. */
+#sisi > *, #tab > *, #kisi-produksi > * { min-width: 0; }
 
 #peta-mini-bingkai { ${sembilanIris(UI.bannerH, 16, basis)}; background: #26303a; padding: 2px; }
-#peta-mini { display: block; width: 100%; height: 212px; cursor: crosshair; }
+#peta-mini { display: block; width: 100%; height: 196px; cursor: crosshair; }
 
 #sumber-daya { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .sumber {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; font-size: 15px; font-weight: 700;
-  color: #2b1d12;
-  ${sembilanIris(UI.panelUkir3, 14, basis)};
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 6px; font-size: 14px; font-weight: 700;
+  color: #2b1d12; overflow: hidden; white-space: nowrap;
+  ${sembilanIris(UI.panelUkir3, 12, basis)};
 }
-.sumber img { width: 22px; height: 22px; }
+.sumber img { width: 24px; height: 24px; flex: none; object-fit: contain; }
 
-#tab { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#tab { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .tab-tombol {
-  padding: 8px 4px; font-family: inherit; font-size: 14px; font-weight: 700;
+  padding: 6px 2px; font-family: inherit; font-size: 13px; font-weight: 700;
   color: #2b1d12; cursor: pointer; background: transparent;
-  ${sembilanIris(UI.tombolBlue, 16, basis)};
+  white-space: nowrap; overflow: hidden;
+  ${sembilanIris(UI.tombolBlue, 12, basis)};
 }
-.tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolBlueTekan, 16, basis)}; }
-#akar.red .tab-tombol { ${sembilanIris(UI.tombolRed, 16, basis)}; }
-#akar.red .tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolRedTekan, 16, basis)}; }
+.tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolBlueTekan, 12, basis)}; }
+#akar.red .tab-tombol { ${sembilanIris(UI.tombolRed, 12, basis)}; }
+#akar.red .tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolRedTekan, 12, basis)}; }
 
-#kisi-produksi { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; overflow-y: auto; flex: 1; align-content: start; }
-.kartu {
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 7px 4px; cursor: pointer; background: transparent;
-  font-family: inherit; color: #2b1d12;
-  ${sembilanIris(UI.tombolBlue, 15, basis)};
+#kisi-produksi {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  overflow-y: auto; overflow-x: hidden; flex: 1; align-content: start;
 }
-.kartu:disabled { ${sembilanIris(UI.tombolMati, 15, basis)}; cursor: not-allowed; opacity: 0.85; }
-.kartu img { width: 34px; height: 34px; }
-.kartu .nama { font-size: 12px; font-weight: 700; line-height: 1.1; text-align: center; }
-.kartu .biaya { font-size: 11px; opacity: 0.85; }
+.kartu {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 4px 2px; cursor: pointer; background: transparent;
+  font-family: inherit; color: #2b1d12;
+  ${sembilanIris(UI.tombolBlue, 13, basis)};
+}
+.kartu:disabled { ${sembilanIris(UI.tombolMati, 13, basis)}; cursor: not-allowed; opacity: 0.85; }
+.kartu img { width: 40px; height: 40px; }
+.kartu .nama { font-size: 11px; font-weight: 700; line-height: 1.05; text-align: center; overflow-wrap: anywhere; }
+.kartu .biaya { font-size: 10px; color: #4a3520; white-space: nowrap; }
 
 /* --- Panel seleksi bawah --- */
 #seleksi {
@@ -142,6 +148,7 @@ img, canvas { image-rendering: pixelated; }
 #muat-isi { height: 100%; width: 0%; background: var(--emas); transition: width 0.12s linear; }
 
 #kursor { position: absolute; width: 32px; height: 32px; pointer-events: none; z-index: 30; display: none; }
+#kursor.tampil { display: block; }
 
 #toast {
   position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
