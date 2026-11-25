@@ -1,7 +1,7 @@
 import { KURSOR, type PeranHeroAset } from '@hftf/aset'
 import {
-  Minimap, PeremajaTerrain, batasiKamera, buatKamera, gambarEntitas, keLayarX, keLayarY,
-  muatSemuaAset, pusatkan,
+  LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, gambarEntitas,
+  keLayarX, keLayarY, muatSemuaAset, pusatkan,
 } from '@hftf/render'
 import { TransportLokal } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
@@ -30,6 +30,7 @@ class Permainan {
   private tombol = new Set<string>()
   private terrainRender: PeremajaTerrain | null = null
   private minimap: Minimap | null = null
+  private fog: LapisanFog | null = null
   private hud: Hud
   private lobi: Lobi
   private kursor: HTMLImageElement
@@ -121,6 +122,7 @@ class Permainan {
     this.transport = new TransportLokal<Perintah, never>('blue')
     this.terrainRender = new PeremajaTerrain(this.dunia.terrain)
     this.minimap = new Minimap(this.dunia)
+    this.fog = new LapisanFog(this.dunia.terrain.kolom, this.dunia.terrain.baris)
     this.input = buatInput()
     this.hud.setTim('blue')
     fokusKeCastle(this.dunia, 'blue', this.kam)
@@ -366,7 +368,11 @@ class Permainan {
       terpilihUnit: this.input.unitTerpilih,
       terpilihBangunan: this.input.bangunanTerpilih,
       timSaya: this.timSaya,
+      fog: true,
     })
+
+    // Fog digambar DI ATAS entitas supaya unit di tepi pandangan ikut meredup.
+    this.fog?.gambar(ctx, this.dunia, this.timSaya, this.kam)
 
     // Hantu bangunan: hijau kalau sah, merah kalau terhalang (PRD §3 poin 1).
     if (this.input.hantuBangun) {

@@ -10,6 +10,7 @@ import { langkahPawn } from './sistem/pekerja.js'
 import { buatBangunan, buatUnit } from './sistem/spawn.js'
 import { langkahAkhir } from './sistem/akhir.js'
 import { langkahCamp, tambahCamp } from './sistem/goblin.js'
+import { buatFog, langkahFog } from './sistem/fog.js'
 import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
@@ -59,6 +60,11 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     daging: [],
     proyektil: [],
     camp: [],
+    fog: {
+      blue: buatFog(terrain.kolom, terrain.baris),
+      red: buatFog(terrain.kolom, terrain.baris),
+      neutral: buatFog(terrain.kolom, terrain.baris),
+    },
     tim: {
       blue: keadaanTim(opsi.heroBlue ?? 'king'),
       red: keadaanTim(opsi.heroRed ?? 'champion'),
@@ -359,6 +365,7 @@ export function langkah(dunia: Dunia): void {
     if (d.sisaDetik <= 0) dunia.daging.splice(i, 1)
   }
 
+  langkahFog(dunia)
   langkahAkhir(dunia)
   dunia.tick++
 }

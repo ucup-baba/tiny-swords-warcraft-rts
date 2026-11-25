@@ -1,5 +1,5 @@
 import { DUNIA_H, DUNIA_W, TILE, TINGGI, type Tim } from '@hftf/shared'
-import type { Dunia } from '@hftf/sim'
+import { pernahLihat, terlihatDi, type Dunia } from '@hftf/sim'
 import type { Kamera } from './kamera.js'
 
 /**
@@ -53,16 +53,19 @@ export class Minimap {
 
     for (const b of this.dunia.bangunan) {
       if (b.fase === 'hancur') continue
+      if (b.tim !== timSaya && !pernahLihat(this.dunia, timSaya, b.x, b.y)) continue
       ctx.fillStyle = b.tim === 'blue' ? '#5aa9ff' : b.tim === 'red' ? '#ff6a5a' : '#c9a227'
       const s = b.jenis === 'castle' ? 5 : 3
       ctx.fillRect(px(b.x) - s / 2, py(b.y) - s / 2, s, s)
     }
     for (const u of this.dunia.unit) {
+      if (u.tim !== timSaya && !terlihatDi(this.dunia, timSaya, u.x, u.y)) continue
       ctx.fillStyle = u.tim === 'blue' ? '#9fd2ff' : u.tim === 'red' ? '#ffa89f' : '#e0c24a'
       const s = u.hero ? 4 : 2
       ctx.fillRect(px(u.x) - s / 2, py(u.y) - s / 2, s, s)
     }
     for (const t of this.dunia.tambang) {
+      if (!pernahLihat(this.dunia, timSaya, t.x, t.y)) continue
       ctx.fillStyle = '#ffd86b'
       ctx.fillRect(px(t.x) - 2, py(t.y) - 2, 4, 4)
     }
@@ -77,6 +80,20 @@ export class Minimap {
       ctx.beginPath()
       ctx.arc(px(c.x), py(c.y), c.jenis === 'besar' ? 7 : 5, 0, Math.PI * 2)
       ctx.stroke()
+    }
+
+    // Lapisan fog di minimap: belum pernah dilihat jadi hitam (PRD §12.1).
+    const t2 = this.dunia.terrain
+    const fog = this.dunia.fog[timSaya]
+    const sx = w / t2.kolom
+    const sy = h / t2.baris
+    for (let ty = 0; ty < t2.baris; ty++) {
+      for (let tx = 0; tx < t2.kolom; tx++) {
+        const i = ty * t2.kolom + tx
+        if (fog.kini[i] === 1) continue
+        ctx.fillStyle = fog.pernah[i] === 1 ? 'rgba(6,8,14,0.45)' : 'rgba(6,8,14,0.95)'
+        ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
+      }
     }
 
     // Kotak kamera

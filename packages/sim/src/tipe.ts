@@ -3,6 +3,7 @@ import type { JenisBangunan } from './definisi/bangunan.js'
 import type { JenisCamp } from './definisi/goblin.js'
 import type { PeranHero, PeranUnit } from './definisi/unit.js'
 import type { Jalur } from './jalur.js'
+import type { Fog } from './sistem/fog.js'
 import type { Rng } from './rng.js'
 import type { Terrain, TitikPenting } from './terrain.js'
 
@@ -236,6 +237,8 @@ export interface Dunia {
   proyektil: Proyektil[]
 
   camp: Camp[]
+  /** Fog of war per pemain (PRD §12). */
+  fog: Record<Tim, Fog>
 
   tim: Record<Tim, KeadaanTim>
 

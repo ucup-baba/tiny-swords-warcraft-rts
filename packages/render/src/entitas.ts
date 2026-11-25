@@ -3,7 +3,10 @@ import {
   HERO_BLUE, HERO_RED, SUMBER, UNIT_BLUE, UNIT_RED, frame, type Aset,
 } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
-import { AMBANG_API, BANGUNAN, peranGoblin, type Bangunan, type Dunia, type Unit } from '@hftf/sim'
+import {
+  AMBANG_API, BANGUNAN, peranGoblin, pernahLihat, terlihatDi,
+  type Bangunan, type Dunia, type Unit,
+} from '@hftf/sim'
 import { gambarDari } from './gambar.js'
 import type { Kamera } from './kamera.js'
 import { pandangan } from './kamera.js'
@@ -108,6 +111,8 @@ export interface OpsiGambar {
   terpilihUnit: ReadonlySet<number>
   terpilihBangunan: number | null
   timSaya: Tim
+  /** Fog aktif? Solo tetap memakainya; mematikannya hanya untuk debug. */
+  fog: boolean
 }
 
 /**
@@ -122,29 +127,36 @@ export function gambarEntitas(
 
   type Item = { y: number; gambar: () => void }
   const antrean: Item[] = []
-  const terlihat = (x: number, y: number): boolean => x > p.x1 && x < p.x2 && y > p.y1 && y < p.y2
+  const diLayar = (x: number, y: number): boolean => x > p.x1 && x < p.x2 && y > p.y1 && y < p.y2
+  /** Terlihat SEKARANG — unit musuh hanya boleh tampak di sini (PRD §12.1). */
+  const terlihat = (x: number, y: number): boolean =>
+    diLayar(x, y) && (!opsi.fog || terlihatDi(dunia, opsi.timSaya, x, y))
+  /** Pernah dilihat — terrain & bangunan diingat bentuk terakhirnya. */
+  const diingat = (x: number, y: number): boolean =>
+    diLayar(x, y) && (!opsi.fog || pernahLihat(dunia, opsi.timSaya, x, y))
 
   // Pohon, tambang, domba, daging
   for (const o of dunia.pohon) {
-    if (!terlihat(o.x, o.y)) continue
+    if (!diingat(o.x, o.y)) continue
     antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.pohon, Math.floor(t * 4 + o.id), o.x, o.y, 0.62, false, 0.78) })
   }
   for (const o of dunia.tambang) {
-    if (!terlihat(o.x, o.y)) continue
+    if (!diingat(o.x, o.y)) continue
     antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82) })
   }
   for (const o of dunia.domba) {
-    if (!terlihat(o.x, o.y)) continue
+    if (!diingat(o.x, o.y)) continue
     antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dombaDiam, Math.floor(t * 8 + o.id), o.x, o.y, 0.55, false, 0.74) })
   }
   for (const o of dunia.daging) {
-    if (!terlihat(o.x, o.y)) continue
+    if (!diingat(o.x, o.y)) continue
     antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.5, false, 0.74) })
   }
 
   // Bangunan
   for (const b of dunia.bangunan) {
-    if (!terlihat(b.x, b.y)) continue
+    if (b.tim !== opsi.timSaya && !diingat(b.x, b.y)) continue
+    if (b.tim === opsi.timSaya && !diLayar(b.x, b.y)) continue
     antrean.push({
       y: b.y,
       gambar: () => {
@@ -176,7 +188,8 @@ export function gambarEntitas(
 
   // Unit
   for (const u of dunia.unit) {
-    if (!terlihat(u.x, u.y)) continue
+    if (u.tim !== opsi.timSaya && !terlihat(u.x, u.y)) continue
+    if (u.tim === opsi.timSaya && !diLayar(u.x, u.y)) continue
     antrean.push({
       y: u.y,
       gambar: () => {
@@ -215,6 +228,7 @@ export function gambarEntitas(
 
   // Proyektil di atas semuanya
   for (const pr of dunia.proyektil) {
+    if (opsi.fog && !terlihatDi(dunia, opsi.timSaya, pr.x, pr.y)) continue
     const U = asetTim(pr.tim, UNIT_BLUE, UNIT_RED)
     const a = pr.jenis === 'panah' ? U.panah : U.mageOrb
     sprite(ctx, a, pr.jenis === 'panah' ? 0 : Math.floor(t * 12), pr.x, pr.y, 0.7, false, 0.5)
