@@ -96,6 +96,14 @@ function asetBangunan(b: Bangunan, tim: Tim): Aset | null {
   return B[b.jenis] ?? null
 }
 
+/** Bayangan lonjong di bawah entitas supaya tidak tampak melayang. */
+function bayangan(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number): void {
+  ctx.fillStyle = 'rgba(22,28,46,0.26)'
+  ctx.beginPath()
+  ctx.ellipse(x, y + 3, rx, rx * 0.4, 0, 0, Math.PI * 2)
+  ctx.fill()
+}
+
 function barHp(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, porsi: number, tim: Tim): void {
   const h = 6
   ctx.fillStyle = 'rgba(22,18,14,0.85)'
@@ -160,8 +168,9 @@ export function gambarEntitas(
     antrean.push({
       y: b.y,
       gambar: () => {
-        const a = asetBangunan(b, b.tim)
         const def = BANGUNAN[b.jenis]
+        if (b.fase !== 'hancur') bayangan(ctx, b.x, b.y, def.w * 0.38)
+        const a = asetBangunan(b, b.tim)
         if (a) sprite(ctx, a, 0, b.x, b.y, def.w / a.fw, false, 0.86)
 
         if (opsi.terpilihBangunan === b.id) {
@@ -208,6 +217,7 @@ export function gambarEntitas(
           ctx.fill()
         }
 
+        bayangan(ctx, u.x, u.y, u.hero ? 20 : 15)
         const { aset, indeks, skala } = asetUnit(u, u.tim)
         const balik = u.jalur ? (u.jalur.titik[u.jalur.ke]?.x ?? u.x) < u.x : false
         sprite(ctx, aset, indeks, u.x, u.y, skala, balik)

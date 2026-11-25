@@ -1,7 +1,7 @@
 import { KURSOR, type PeranHeroAset } from '@hftf/aset'
 import {
-  LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, gambarEntitas,
-  keLayarX, keLayarY, muatSemuaAset, pusatkan,
+  Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera,
+  gambarEntitas, keLayarX, keLayarY, muatSemuaAset, pusatkan,
 } from '@hftf/render'
 import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
@@ -38,6 +38,7 @@ class Permainan {
   private terrainRender: PeremajaTerrain | null = null
   private minimap: Minimap | null = null
   private fog: LapisanFog | null = null
+  private efek = new Efek()
   private hud: Hud
   private lobi: Lobi
   private kursor: HTMLImageElement
@@ -284,6 +285,27 @@ class Permainan {
     return this.dunia.unit.filter((u) => this.input.unitTerpilih.has(u.id))
   }
 
+  /** Kursor berganti sesuai konteks (PRD §5.10). */
+  private perbaruiKursor(): void {
+    if (!this.dunia || this.fase !== 'main') return
+    const { wx, wy } = this.input.mouse
+    let nama = 'kursor01'
+
+    if (this.input.hantuBangun) {
+      nama = bolehTaruh(this.dunia, this.input.hantuBangun as keyof typeof BANGUNAN, wx, wy)
+        ? 'kursor03' : 'kursor04'
+    } else if (this.input.modeSerang) {
+      nama = 'kursor02'
+    } else if (this.input.unitTerpilih.size > 0) {
+      const u = unitDiTitik(this.dunia, wx, wy)
+      const b = bangunanDiTitik(this.dunia, wx, wy)
+      const lawan = (u && u.tim !== this.timSaya) || (b && b.tim !== this.timSaya)
+      if (lawan) nama = 'kursor02'
+    }
+    const baru = urlAset(KURSOR[nama]!, BASIS)
+    if (this.kursor.getAttribute('src') !== baru) this.kursor.src = baru
+  }
+
   private ukurUlang(): void {
     const k = this.hud.kanvas
     const r = k.getBoundingClientRect()
@@ -304,13 +326,24 @@ class Permainan {
 
     k.addEventListener('contextmenu', (e) => e.preventDefault())
 
+    // Kursor meninggalkan kanvas: hentikan gulir tepi, sembunyikan kursor.
+    k.addEventListener('mouseleave', () => {
+      this.input.mousePernahMasuk = false
+      this.kursor.style.display = 'none'
+    })
+    k.addEventListener('mouseenter', () => {
+      if (this.fase === 'main') this.kursor.style.display = ''
+    })
+
     k.addEventListener('mousemove', (e) => {
       const r = k.getBoundingClientRect()
       this.input.mouse.sx = e.clientX - r.left
       this.input.mouse.sy = e.clientY - r.top
+      this.input.mousePernahMasuk = true
       perbaruiMouseDunia(this.input, this.kam)
       this.kursor.style.left = `${this.input.mouse.sx - 4}px`
       this.kursor.style.top = `${this.input.mouse.sy - 2}px`
+      this.perbaruiKursor()
       if (this.input.seret.aktif) {
         this.input.seret.x2 = this.input.mouse.wx
         this.input.seret.y2 = this.input.mouse.wy
@@ -469,7 +502,7 @@ class Permainan {
     this.waktuTerakhir = t
 
     if (this.fase === 'main' && this.dunia) {
-      gulirKamera(this.kam, this.tombol, this.input.mouse.sx, this.input.mouse.sy)
+      gulirKamera(this.kam, this.tombol, this.input)
       batasiKamera(this.kam)
 
       // Guest TIDAK menjalankan simulasi: ia menggambar snapshot dari host.
@@ -486,6 +519,7 @@ class Permainan {
             for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
           }
           langkahBanyak(this.dunia, 1)
+          this.efek.serap(this.dunia.kejadian)
           this.akumulator -= DT_TETAP
           langkah++
         }
@@ -502,6 +536,7 @@ class Permainan {
       if (this.dunia.hasil.jenis !== 'berlangsung') this.selesaikan()
     }
 
+    this.efek.langkah(dt)
     this.hud.langkahToast(dt)
     this.gambar()
     if (this.fase === 'main') this.perbaruiHudRingan()
@@ -520,7 +555,9 @@ class Permainan {
     }
 
     ctx.imageSmoothingEnabled = false
+    const getar = this.efek.geser(1 / 60)
     ctx.save()
+    ctx.translate(getar.x, getar.y)
     ctx.scale(this.kam.zoom, this.kam.zoom)
     ctx.translate(-this.kam.x, -this.kam.y)
 
@@ -531,6 +568,8 @@ class Permainan {
       timSaya: this.timSaya,
       fog: true,
     })
+
+    this.efek.gambar(ctx)
 
     // Fog digambar DI ATAS entitas supaya unit di tepi pandangan ikut meredup.
     this.fog?.gambar(ctx, this.dunia, this.timSaya, this.kam)

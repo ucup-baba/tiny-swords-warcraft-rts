@@ -1,4 +1,4 @@
-import { TERRAIN, frame, url } from '@hftf/aset'
+import { DEKO, TERRAIN, frame, url } from '@hftf/aset'
 import { TILE, TINGGI } from '@hftf/shared'
 import type { Terrain } from '@hftf/sim'
 import { BARIS_ELEV, GUGUS_FLAT, selAutotile } from './autotile.js'
@@ -14,6 +14,13 @@ import { pandangan } from './kamera.js'
  * datanya berubah.
  */
 const TILE_PER_CHUNK = 16
+
+/** Hash koordinat -> angka. Deterministik, jadi chunk selalu digambar sama. */
+function cakar(x: number, y: number): number {
+  let n = (x * 73856093) ^ (y * 19349663)
+  n = (n ^ (n >>> 13)) >>> 0
+  return (Math.imul(n, 1274126177) >>> 0) % 100000
+}
 const UKURAN_CHUNK = TILE_PER_CHUNK * TILE
 
 interface Chunk {
@@ -154,7 +161,27 @@ export class PeremajaTerrain {
       }
     }
 
-    void frame
+    // 3. Dekorasi: rumput, batu, semak. Ditaruh deterministik dari koordinat
+    //    tile supaya chunk yang digambar ulang selalu sama persis.
+    for (let dy = 0; dy < TILE_PER_CHUNK; dy++) {
+      for (let dx = 0; dx < TILE_PER_CHUNK; dx++) {
+        const tx = tx0 + dx
+        const ty = ty0 + dy
+        if (h(tx, ty) === TINGGI.air || ramp(tx, ty)) continue
+        const acak = cakar(tx, ty)
+        if (acak % 11 !== 0) continue
+        const nomor = String((acak >> 4) % 15 + 1).padStart(2, '0')
+        const deko = DEKO[`deco${nomor}`]
+        if (!deko) continue
+        const im = gambarDari(deko)
+        if (!im) continue
+        const f = frame(deko, 0)
+        ctx.drawImage(
+          im, f.sx, f.sy, f.sw, f.sh,
+          dx * TILE, dy * TILE + TILE - f.sh, f.sw, f.sh,
+        )
+      }
+    }
     void url
   }
 }

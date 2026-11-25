@@ -10,6 +10,13 @@ export interface KeadaanInput {
   modeSerang: boolean
   seret: { aktif: boolean; x1: number; y1: number; x2: number; y2: number }
   mouse: { sx: number; sy: number; wx: number; wy: number }
+  /**
+   * Mouse pernah benar-benar bergerak di atas kanvas?
+   *
+   * Tanpa penanda ini, posisi awal (0,0) jatuh di zona gulir-tepi dan kamera
+   * tergulir ke pojok kiri-atas sebelum pemain menyentuh apa pun.
+   */
+  mousePernahMasuk: boolean
   grup: Record<number, number[]>
 }
 
@@ -19,7 +26,8 @@ export const buatInput = (): KeadaanInput => ({
   hantuBangun: null,
   modeSerang: false,
   seret: { aktif: false, x1: 0, y1: 0, x2: 0, y2: 0 },
-  mouse: { sx: 0, sy: 0, wx: 0, wy: 0 },
+  mouse: { sx: -1, sy: -1, wx: 0, wy: 0 },
+  mousePernahMasuk: false,
   grup: { 1: [], 2: [], 3: [], 4: [] },
 })
 
@@ -97,7 +105,9 @@ export function seleksiKotak(dunia: Dunia, tim: Tim, k: KeadaanInput): number[] 
 }
 
 /** Gulir kamera dengan WASD / panah / tepi layar. */
-export function gulirKamera(kam: Kamera, tombol: ReadonlySet<string>, mouseSx: number, mouseSy: number): void {
+export function gulirKamera(
+  kam: Kamera, tombol: ReadonlySet<string>, k: KeadaanInput,
+): void {
   const laju = 900 * DT_TETAP * (tombol.has('ShiftLeft') ? 2 : 1)
   let dx = 0
   let dy = 0
@@ -106,11 +116,15 @@ export function gulirKamera(kam: Kamera, tombol: ReadonlySet<string>, mouseSx: n
   if (tombol.has('KeyW') || tombol.has('ArrowUp')) dy -= laju
   if (tombol.has('KeyS') || tombol.has('ArrowDown')) dy += laju
 
-  const TEPI = 24
-  if (mouseSx >= 0 && mouseSx < TEPI) dx -= laju
-  if (mouseSx > kam.lebar - TEPI && mouseSx <= kam.lebar) dx += laju
-  if (mouseSy >= 0 && mouseSy < TEPI) dy -= laju
-  if (mouseSy > kam.tinggi - TEPI && mouseSy <= kam.tinggi) dy += laju
+  // Gulir tepi hanya setelah mouse benar-benar pernah ada di atas kanvas.
+  if (k.mousePernahMasuk) {
+    const TEPI = 24
+    const { sx, sy } = k.mouse
+    if (sx >= 0 && sx < TEPI) dx -= laju
+    if (sx > kam.lebar - TEPI && sx <= kam.lebar) dx += laju
+    if (sy >= 0 && sy < TEPI) dy -= laju
+    if (sy > kam.tinggi - TEPI && sy <= kam.tinggi) dy += laju
+  }
 
   kam.x += dx / kam.zoom
   kam.y += dy / kam.zoom

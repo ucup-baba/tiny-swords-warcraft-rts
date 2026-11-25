@@ -9,10 +9,10 @@ RTS bergaya Warcraft klasik dengan aset [Tiny Swords](https://pixelfrog-assets.i
 ## Status
 
 Sedang dalam rewrite arsitektur dari `game.js` monolitik ke monorepo TypeScript.
-Milestone ada di PRD §18. **Selesai: M0, M1.**
+Milestone ada di PRD §18. **Selesai: M0 sampai M10.**
 
-Kode lama (`game.js`, `index.html`, `style.css`, `lan-server.mjs`) masih utuh dan
-masih bisa dijalankan sampai digantikan per milestone.
+Kode lama (`game.js`, `lan-server.mjs`) masih ada di repo sebagai rujukan, tapi
+tidak lagi dipakai: `index.html` sekarang memuat `bundel.js` dari monorepo.
 
 ## Perintah
 
@@ -22,7 +22,8 @@ npm run periksa          # typecheck + tes + cek headless (semua gerbang M0)
 npm test                 # vitest saja
 npm run typecheck        # tsc -b saja
 npm run periksa:headless # AC-8.4 saja
-node lan-server.mjs      # jalankan game LAMA di http://localhost:8080
+npm run bangun           # typecheck + bundel klien
+npm run mulai            # jalankan di http://localhost:8080
 ```
 
 ## Struktur
