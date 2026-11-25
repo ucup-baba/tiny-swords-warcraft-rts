@@ -25,6 +25,9 @@ export function buatUnit(dunia: Dunia, tim: Tim, peran: PeranUnit, x: number, y:
     bawaanJenis: null,
     bawaanJumlah: 0,
     tikPanen: 0,
+    jalur: null,
+    jalurKeX: x,
+    jalurKeY: y,
     hero: def.hero === true,
     level: 1,
     xp: 0,
@@ -54,6 +57,7 @@ export function buatBangunan(
     rallyX: x + (tim === 'blue' ? 95 : -95),
     rallyY: y + 60,
     revive: null,
+    jedaDomba: 0,
   }
   dunia.bangunan.push(b)
   if (fase === 'aktif') dunia.tim[tim].statistik.bangunanDibangun++

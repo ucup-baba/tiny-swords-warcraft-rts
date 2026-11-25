@@ -1,7 +1,9 @@
 import type { Tim } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
 import type { PeranHero, PeranUnit } from './definisi/unit.js'
+import type { Jalur } from './jalur.js'
 import type { Rng } from './rng.js'
+import type { Terrain, TitikPenting } from './terrain.js'
 
 // ---------------------------------------------------------------------------
 // Sumber daya & statistik
@@ -55,6 +57,8 @@ export interface Bangunan {
   rallyY: number
   /** Antrean revive hero (khusus altar, PRD §11.3). */
   revive: { peran: PeranHero; level: number; sisaDetik: number } | null
+  /** Hitung mundur memunculkan domba berikutnya (khusus house, PRD §3). */
+  jedaDomba: number
 }
 
 export type TugasUnit =
@@ -99,6 +103,15 @@ export interface Unit {
   bawaanJumlah: number
   /** Akumulator waktu untuk satu kali panen. */
   tikPanen: number
+
+  /**
+   * Jalur hasil A* yang sedang diikuti. Turunan dari terrain + posisi, jadi
+   * TIDAK masuk hash: A* deterministik, menghitungnya ulang memberi hasil sama.
+   */
+  jalur: Jalur | null
+  /** Tujuan saat jalur dihitung — dipakai menentukan kapan perlu hitung ulang. */
+  jalurKeX: number
+  jalurKeY: number
 
   /** Hero saja. */
   hero: boolean
@@ -192,6 +205,9 @@ export interface Dunia {
   rng: Rng
   idBerikut: number
   hasil: HasilMatch
+
+  terrain: Terrain
+  titik: TitikPenting
 
   bangunan: Bangunan[]
   unit: Unit[]

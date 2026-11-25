@@ -90,17 +90,18 @@ describe('siklus panen pawn', () => {
     expect(d.tim.blue.sumberDaya.gold).toBeGreaterThan(goldAwal)
   })
 
-  it('memanen domba memberi daging dan dombanya hilang', () => {
+  it('memanen domba memberi daging dan domba ITU hilang', () => {
     const d = dunia0()
     const pawn = d.unit.find((u) => u.tim === 'blue' && u.peran === 'pawn')!
     const domba = d.domba.find((s) => s.x < 3000)!
-    const jumlahDomba = d.domba.length
     const dagingAwal = d.tim.blue.sumberDaya.daging
 
     terapkanPerintah(d, 'blue', { jenis: 'kumpul', ids: [pawn.id], targetId: domba.id })
     langkahBanyak(d, 60 * 40)
 
-    expect(d.domba.length).toBe(jumlahDomba - 1)
+    // Jumlah total tidak dipakai sebagai patokan: House memunculkan domba baru
+    // selama 40 detik itu (PRD §3). Yang diperiksa adalah domba yang dipanen.
+    expect(d.domba.some((s) => s.id === domba.id)).toBe(false)
     expect(d.tim.blue.sumberDaya.daging).toBe(dagingAwal + PANEN.dagingDomba)
   })
 

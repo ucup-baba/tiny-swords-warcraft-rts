@@ -12,6 +12,8 @@ export * from './rng.js'
 export * from './tipe.js'
 export * from './perintah.js'
 export * from './dunia.js'
+export * from './terrain.js'
+export * from './jalur.js'
 export * from './hash.js'
 export * from './util.js'
 

@@ -1,4 +1,5 @@
 import { DT_TETAP } from '@hftf/shared'
+import { acak } from '../rng.js'
 import { BANGUNAN } from '../definisi/bangunan.js'
 import { REVIVE, UNIT } from '../definisi/unit.js'
 import type { Bangunan, Dunia } from '../tipe.js'
@@ -23,6 +24,49 @@ export function langkahBangunan(dunia: Dunia, b: Bangunan): void {
   langkahAntrean(dunia, b)
   langkahRevive(dunia, b)
   langkahTower(dunia, b)
+  langkahDomba(dunia, b)
+}
+
+/** Jeda antar kemunculan domba dari satu House, dalam detik. */
+const JEDA_DOMBA = 50
+/** Batas domba hidup di sekitar satu House. */
+const DOMBA_PER_HOUSE = 2
+const RADIUS_PADANG = 260
+
+/**
+ * House memunculkan domba ternak (PRD §3). Ini satu-satunya sumber daging yang
+ * terbarukan: domba awal habis dipanen, dan daging dari medan perang hanya ada
+ * kalau sedang berperang. Tanpa ini ekonomi daging mati dan tidak ada pasukan
+ * yang bisa dilatih sama sekali.
+ */
+function langkahDomba(dunia: Dunia, b: Bangunan): void {
+  if (b.jenis !== 'house') return
+
+  if (b.jedaDomba > 0) {
+    b.jedaDomba -= DT_TETAP
+    return
+  }
+
+  let dekat = 0
+  for (const d of dunia.domba) {
+    const dx = d.x - b.x
+    const dy = d.y - b.y
+    if (dx * dx + dy * dy <= RADIUS_PADANG * RADIUS_PADANG) dekat++
+  }
+  if (dekat >= DOMBA_PER_HOUSE) {
+    b.jedaDomba = JEDA_DOMBA / 2
+    return
+  }
+
+  const sudut = acak(dunia.rng) * Math.PI * 2
+  const r = 90 + acak(dunia.rng) * 120
+  dunia.domba.push({
+    id: dunia.idBerikut++,
+    x: b.x + Math.cos(sudut) * r,
+    y: b.y + Math.sin(sudut) * r,
+    daging: 45,
+  })
+  b.jedaDomba = JEDA_DOMBA
 }
 
 function langkahAntrean(dunia: Dunia, b: Bangunan): void {

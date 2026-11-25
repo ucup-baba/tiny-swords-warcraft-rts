@@ -3,7 +3,7 @@ import { BANGUNAN } from '../definisi/bangunan.js'
 import { REVIVE, UNIT, type KategoriUnit } from '../definisi/unit.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
 import { adalahUnit, bermusuhan, cariUnit, jarak, musuhTerdekat } from '../util.js'
-import { dorong, langkahMenuju } from './gerak.js'
+import { jangkauanEfektif, langkahMenuju } from './gerak.js'
 
 /** XP hero per unit musuh yang dibunuh. Goblin punya tabelnya sendiri (PRD §10.4). */
 const XP_BUNUH: Record<KategoriUnit, number> = {
@@ -210,9 +210,13 @@ function seranganKena(dunia: Dunia, u: Unit, target: Unit | Bangunan): void {
   else lukaiBangunan(dunia, target, u.dmg, u.tim)
 }
 
-/** Jangkauan efektif terhadap sebuah target, memperhitungkan ukuran bangunan. */
-function jangkauanKe(u: Unit, target: Unit | Bangunan): number {
-  return adalahUnit(target) ? u.jarak : u.jarak + BANGUNAN[target.jenis].radius
+/**
+ * Jangkauan efektif terhadap sebuah target: memperhitungkan ukuran bangunan
+ * DAN bonus tanah tinggi (PRD §9.2).
+ */
+function jangkauanKe(dunia: Dunia, u: Unit, target: Unit | Bangunan): number {
+  const dasar = jangkauanEfektif(dunia, u, target.x, target.y)
+  return adalahUnit(target) ? dasar : dasar + BANGUNAN[target.jenis].radius
 }
 
 export function langkahUnitTempur(dunia: Dunia, u: Unit): void {
@@ -244,7 +248,7 @@ export function langkahUnitTempur(dunia: Dunia, u: Unit): void {
   }
 
   if (target) {
-    const jangkauan = jangkauanKe(u, target)
+    const jangkauan = jangkauanKe(dunia, u, target)
     if (jarak(u.x, u.y, target.x, target.y) <= jangkauan) {
       if (u.jedaTimer <= 0) {
         seranganKena(dunia, u, target)
@@ -254,13 +258,13 @@ export function langkahUnitTempur(dunia: Dunia, u: Unit): void {
     }
     // Unit yang menahan posisi tidak mengejar.
     if (u.tugas !== 'tahan') {
-      langkahMenuju(u, target.x, target.y)
+      langkahMenuju(dunia, u, target.x, target.y)
       return
     }
   }
 
   if (u.tugas === 'pindah' || u.tugas === 'serangPindah') {
-    if (langkahMenuju(u, u.tx, u.ty)) u.tugas = 'diam'
+    if (langkahMenuju(dunia, u, u.tx, u.ty)) u.tugas = 'diam'
   }
 }
 
@@ -288,12 +292,12 @@ function langkahMonk(dunia: Dunia, u: Unit): void {
         u.jedaTimer = u.jeda
       }
     } else if (u.tugas !== 'tahan') {
-      langkahMenuju(u, pasien.x, pasien.y)
+      langkahMenuju(dunia, u, pasien.x, pasien.y)
     }
     return
   }
 
   if (u.tugas === 'pindah' || u.tugas === 'serangPindah') {
-    if (langkahMenuju(u, u.tx, u.ty)) u.tugas = 'diam'
+    if (langkahMenuju(dunia, u, u.tx, u.ty)) u.tugas = 'diam'
   }
 }

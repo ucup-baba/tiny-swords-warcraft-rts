@@ -1,4 +1,4 @@
-import { DT_TETAP, PETA_BARIS, PETA_KOLOM, TILE, type Tim } from '@hftf/shared'
+import { DT_TETAP, PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type Tim } from '@hftf/shared'
 import { BANGUNAN } from './definisi/bangunan.js'
 import type { PeranHero } from './definisi/unit.js'
 import type { Perintah } from './perintah.js'
@@ -12,6 +12,8 @@ import { langkahAkhir } from './sistem/akhir.js'
 import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
+import { buatTerrain, keTengahPiksel, keTile, tinggiDi, type Terrain } from './terrain.js'
+import { batalkanJalur } from './sistem/gerak.js'
 
 export interface OpsiDunia {
   seed: number
@@ -39,11 +41,15 @@ function keadaanTim(hero: PeranHero): KeadaanTim {
 }
 
 export function buatDunia(opsi: OpsiDunia): Dunia {
+  const rng = buatRng(opsi.seed)
+  const { terrain, titik } = buatTerrain(rng)
   const dunia: Dunia = {
     tick: 0,
-    rng: buatRng(opsi.seed),
+    rng,
     idBerikut: 1,
     hasil: { jenis: 'berlangsung' },
+    terrain,
+    titik,
     bangunan: [],
     unit: [],
     pohon: [],
@@ -63,65 +69,119 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
 }
 
 /**
- * Peta simetri rotasi 180 derajat (PRD §9.3). Terrain, elevasi, dan camp goblin
- * menyusul di M3 dan M6 — di M1 semuanya masih dataran datar.
+ * Mengisi peta di atas terrain yang sudah dibentuk (PRD §9.3).
+ * Simetri rotasi 180 derajat — bukan cermin.
  */
 function isiPeta(dunia: Dunia): void {
-  const T = (n: number): number => n * TILE
-  // Blue di barat-daya, Red hasil rotasi 180 derajat.
+  const t = dunia.terrain
   const putar = (tx: number, ty: number): [number, number] => [PETA_KOLOM - tx, PETA_BARIS - ty]
 
-  const basis: { tim: Tim; tx: number; ty: number }[] = [
-    { tim: 'blue', tx: 20, ty: 76 },
-    { tim: 'red', tx: putar(20, 76)[0], ty: putar(20, 76)[1] },
-  ]
+  /** Tile dataran terdekat dari posisi yang diinginkan; teluk acak bisa menggeser rencana. */
+  const dataranDekat = (tx: number, ty: number): [number, number] => {
+    for (let r = 0; r <= 16; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (r > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+          if (tinggiDi(t, tx + dx, ty + dy) === TINGGI.dataran) return [tx + dx, ty + dy]
+        }
+      }
+    }
+    return [tx, ty]
+  }
 
-  for (const { tim, tx, ty } of basis) {
+  const basisBlue = dataranDekat(20, 76)
+  const basisRed = dataranDekat(...putar(20, 76))
+
+  for (const [tim, [btx, bty]] of [['blue', basisBlue], ['red', basisRed]] as const) {
     const arah = tim === 'blue' ? 1 : -1
+    const P = (tx: number, ty: number): [number, number] => [keTengahPiksel(tx), keTengahPiksel(ty)]
 
-    buatBangunan(dunia, tim, 'castle', T(tx), T(ty), 'aktif')
-    buatBangunan(dunia, tim, 'house', T(tx - 3 * arah), T(ty - 3 * arah), 'aktif')
+    const [cx, cy] = P(btx, bty)
+    buatBangunan(dunia, tim, 'castle', cx, cy, 'aktif')
 
-    // 5 pawn: 2 langsung bekerja, 3 menganggur (PRD §9.3).
+    const [hx, hy] = P(...dataranDekat(btx - 4 * arah, bty - 4 * arah))
+    buatBangunan(dunia, tim, 'house', hx, hy, 'aktif')
+
+    // 5 pawn (PRD §9.3).
     for (let i = 0; i < 5; i++) {
-      buatUnit(dunia, tim, 'pawn', T(tx + (i - 2) * 0.8 * arah), T(ty + 1.4 * arah))
+      const [px, py] = P(...dataranDekat(btx + (i - 2) * arah, bty + 2 * arah))
+      buatUnit(dunia, tim, 'pawn', px, py)
     }
 
-    // Tambang aman tanpa penjaga, <= 8 tile dari castle (PRD §9.3).
-    dunia.tambang.push({
-      id: dunia.idBerikut++, jenis: 'mine',
-      x: T(tx - 6 * arah), y: T(ty + 2 * arah), gold: 3500,
-    })
+    // Tambang aman tanpa penjaga, dekat castle (PRD §9.3).
+    const [mx, my] = P(...dataranDekat(btx - 6 * arah, bty + 3 * arah))
+    dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'mine', x: mx, y: my, gold: 3500 })
+
     // Hutan di dalam basis.
-    for (let i = 0; i < 6; i++) {
-      dunia.pohon.push({
-        id: dunia.idBerikut++,
-        x: T(tx + (4 + (i % 3) * 1.4) * arah),
-        y: T(ty - (2 + Math.floor(i / 3) * 1.4) * arah),
-        kayu: 90,
-      })
+    for (let i = 0; i < 8; i++) {
+      const [tx2, ty2] = dataranDekat(btx + (4 + (i % 4) * 2) * arah, bty - (3 + Math.floor(i / 4) * 2) * arah)
+      const [wx, wy] = P(tx2, ty2)
+      dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 90 })
     }
+
     // Domba di padang dekat basis.
     for (let i = 0; i < 4; i++) {
-      dunia.domba.push({
-        id: dunia.idBerikut++,
-        x: T(tx + (i - 1.5) * 1.6 * arah),
-        y: T(ty + 4.5 * arah),
-        daging: 45,
-      })
+      const [sx, sy] = P(...dataranDekat(btx + (i - 2) * 2 * arah, bty + 6 * arah))
+      dunia.domba.push({ id: dunia.idBerikut++, x: sx, y: sy, daging: 45 })
     }
 
     // Hero hidup sejak detik pertama, gratis, tanpa supply (PRD §11.1).
     const peran = dunia.tim[tim].heroPilihan
-    const hero = buatUnit(dunia, tim, peran, T(tx + 2 * arah), T(ty + 2 * arah))
+    const [ux, uy] = P(...dataranDekat(btx + 2 * arah, bty + 3 * arah))
+    const hero = buatUnit(dunia, tim, peran, ux, uy)
     dunia.tim[tim].heroHidup = hero.id
+
+    // Tambang ekspansi, jauh dari basis. Camp goblin penjaganya menyusul di M6.
+    const [ex, ey] = P(...dataranDekat(btx + 22 * arah, bty - 14 * arah))
+    dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'stone', x: ex, y: ey, gold: 1400 })
   }
 
-  // Tambang tengah yang diperebutkan (penjaga goblin menyusul di M6).
+  // Tambang pusat di atas plateau — hanya bisa dicapai lewat ramp.
+  const pusat = dunia.titik.plateauPusat
   dunia.tambang.push({
     id: dunia.idBerikut++, jenis: 'mine',
-    x: T(PETA_KOLOM / 2), y: T(PETA_BARIS / 2), gold: 4500,
+    x: keTengahPiksel(pusat.tx), y: keTengahPiksel(pusat.ty), gold: 4500,
   })
+
+  // Hutan netral di sekitar plateau samping.
+  for (const p of dunia.titik.plateauSamping) {
+    for (let i = 0; i < 6; i++) {
+      const tx = p.tx + 9 + (i % 3) * 2
+      const ty = p.ty + 9 + Math.floor(i / 3) * 2
+      if (tinggiDi(t, tx, ty) !== TINGGI.dataran) continue
+      dunia.pohon.push({ id: dunia.idBerikut++, x: keTengahPiksel(tx), y: keTengahPiksel(ty), kayu: 90 })
+    }
+  }
+}
+
+/**
+ * Bangunan hanya boleh berdiri di tapak yang SERAGAM ketinggiannya — tidak
+ * boleh menjembatani dua level (PRD §9.4 / AC-9.6).
+ */
+export function bolehTaruhBangunan(dunia: Dunia, jenis: Parameters<typeof buatBangunan>[2], x: number, y: number): boolean {
+  const def = BANGUNAN[jenis]
+  const t = dunia.terrain
+  const x1 = keTile(x - def.w / 2)
+  const x2 = keTile(x + def.w / 2)
+  const y1 = keTile(y - def.h / 4)
+  const y2 = keTile(y + def.h / 4)
+
+  const dasar = tinggiDi(t, keTile(x), keTile(y))
+  if (dasar === TINGGI.air) return false
+
+  for (let ty = y1; ty <= y2; ty++) {
+    for (let tx = x1; tx <= x2; tx++) {
+      if (tinggiDi(t, tx, ty) !== dasar) return false
+    }
+  }
+
+  // Tidak boleh menimpa bangunan lain.
+  for (const b of dunia.bangunan) {
+    if (b.fase === 'hancur') continue
+    const lain = BANGUNAN[b.jenis]
+    if (Math.abs(b.x - x) < (lain.w + def.w) / 2 && Math.abs(b.y - y) < (lain.h + def.h) / 3) return false
+  }
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +210,7 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
         u.tx = p.x
         u.ty = p.y
         u.targetId = null
+        batalkanJalur(u)
       }
       return
     }
@@ -158,6 +219,7 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
         if (!u) continue
         u.tugas = 'serang'
         u.targetId = p.targetId
+        batalkanJalur(u)
       }
       return
     }
@@ -168,6 +230,7 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
         u.targetId = null
         u.tx = u.x
         u.ty = u.y
+        batalkanJalur(u)
       }
       return
     }
@@ -205,6 +268,7 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
     case 'bangun': {
       const pawn = unitMilik(dunia, tim, p.ids).find((u) => u?.peran === 'pawn')
       if (!pawn) return
+      if (!bolehTaruhBangunan(dunia, p.bangunan, p.x, p.y)) return
       const def = BANGUNAN[p.bangunan]
       if (!bayar(dunia, tim, def.gold, def.kayu, 0)) return
       const b = buatBangunan(dunia, tim, p.bangunan, p.x, p.y, 'konstruksi')

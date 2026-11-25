@@ -50,7 +50,7 @@ function antarPulang(dunia: Dunia, u: Unit): void {
   u.tx = castle.x
   u.ty = castle.y
   if (jarak(u.x, u.y, castle.x, castle.y) > JANGKAUAN_ANTAR) {
-    langkahMenuju(u, castle.x, castle.y)
+    langkahMenuju(dunia, u, castle.x, castle.y)
     return
   }
 
@@ -84,7 +84,7 @@ function panenPohon(dunia: Dunia, u: Unit): void {
     return
   }
   if (jarak(u.x, u.y, pohon.x, pohon.y) > JANGKAUAN_PANEN) {
-    langkahMenuju(u, pohon.x, pohon.y)
+    langkahMenuju(dunia, u, pohon.x, pohon.y)
     return
   }
   u.tikPanen += DT_TETAP
@@ -110,7 +110,7 @@ function panenTambang(dunia: Dunia, u: Unit): void {
     return
   }
   if (jarak(u.x, u.y, tambang.x, tambang.y) > JANGKAUAN_PANEN) {
-    langkahMenuju(u, tambang.x, tambang.y)
+    langkahMenuju(dunia, u, tambang.x, tambang.y)
     return
   }
   u.tikPanen += DT_TETAP
@@ -136,7 +136,7 @@ function panenDomba(dunia: Dunia, u: Unit): void {
     return
   }
   if (jarak(u.x, u.y, domba.x, domba.y) > JANGKAUAN_PANEN) {
-    langkahMenuju(u, domba.x, domba.y)
+    langkahMenuju(dunia, u, domba.x, domba.y)
     return
   }
   u.tikPanen += DT_TETAP
@@ -159,7 +159,7 @@ function pungutDaging(dunia: Dunia, u: Unit): void {
     return
   }
   if (jarak(u.x, u.y, daging.x, daging.y) > JANGKAUAN_PANEN) {
-    langkahMenuju(u, daging.x, daging.y)
+    langkahMenuju(dunia, u, daging.x, daging.y)
     return
   }
   u.bawaanJenis = 'daging'
@@ -179,7 +179,7 @@ function bangunBangunan(dunia: Dunia, u: Unit): void {
   }
   const jangkauan = BANGUNAN[b.jenis].radius + 40
   if (jarak(u.x, u.y, b.x, b.y) > jangkauan) {
-    langkahMenuju(u, b.x, b.y)
+    langkahMenuju(dunia, u, b.x, b.y)
     return
   }
   b.sisaBangun -= DT_TETAP * LAJU_BANGUN
@@ -197,7 +197,7 @@ function perbaikiBangunan(dunia: Dunia, u: Unit): void {
   }
   const jangkauan = BANGUNAN[b.jenis].radius + 40
   if (jarak(u.x, u.y, b.x, b.y) > jangkauan) {
-    langkahMenuju(u, b.x, b.y)
+    langkahMenuju(dunia, u, b.x, b.y)
     return
   }
   const naik = HP_PERBAIKI_PER_DETIK * DT_TETAP

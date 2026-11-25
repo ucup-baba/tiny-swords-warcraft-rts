@@ -6,7 +6,9 @@ import type { Dunia } from '../src/index.js'
 
 // M1 selesai bila satu match penuh bisa disimulasikan di test, tanpa browser.
 
-const MAKS_TICK = 60 * 60 * 25 // 25 menit waktu permainan
+// Peta 96x96 jauh lebih luas dari sebelumnya; pasukan butuh ~40 detik sekadar
+// menyeberang. Batasnya dilonggarkan supaya menguji "selesai", bukan "cepat".
+const MAKS_TICK = 60 * 60 * 40 // 40 menit waktu permainan
 
 function mainkanSampaiSelesai(seed: number): { d: Dunia; tick: number } {
   const d = buatDunia({ seed, heroBlue: 'king', heroRed: 'champion' })
