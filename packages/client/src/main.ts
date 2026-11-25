@@ -266,7 +266,7 @@ class Permainan {
     this.timSaya = 'blue'
     const seed = Math.floor(Math.random() * 1_000_000)
     this.dunia = buatDunia({ seed, heroBlue: hero, heroRed: 'champion' })
-    this.ai = buatAi('red', kesulitan)
+    this.ai = buatAi('red', kesulitan, seed)
     this.transport = new TransportLokal<Perintah, never>('blue')
     this.terrainRender = new PeremajaTerrain(this.dunia.terrain)
     this.minimap = new Minimap(this.dunia)

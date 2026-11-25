@@ -118,9 +118,19 @@ export function tambahXp(dunia: Dunia, hero: Unit, xp: number): void {
   }
 }
 
+/**
+ * Porsi kerusakan yang benar-benar diterima bangunan dari unit biasa.
+ *
+ * Tanpa ini pasukan 15 orang merobohkan Castle 1.500 HP dalam ~4 detik, dan
+ * satu serbuan yang berhasil langsung mengakhiri match. Nilai ini bukan dari
+ * tabel PRD §3 (HP-nya tetap seperti di sana); ini aturan pelemahan terpisah
+ * supaya menyerbu basis butuh waktu dan bisa dilawan.
+ */
+export const KETAHANAN_BANGUNAN = 0.45
+
 export function lukaiBangunan(dunia: Dunia, b: Bangunan, dmg: number, penyerang: Tim | null): void {
   if (b.fase === 'hancur') return
-  b.hp -= dmg
+  b.hp -= dmg * KETAHANAN_BANGUNAN
   if (b.hp > 0) return
 
   b.hp = 0
@@ -206,6 +216,15 @@ export function langkahProyektil(dunia: Dunia): void {
       const t = cariUnit(dunia, p.targetId)
       if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null, p.tim)
     }
+
+    // Bangunan di titik jatuh juga terkena. Tanpa ini archer dan mage sama
+    // sekali TIDAK bisa melukai bangunan: proyektil ke bangunan dikirim dengan
+    // targetId null, dan kedua cabang di atas melewatkannya.
+    const bangunanKena = dunia.bangunan.find(
+      (b) => b.fase !== 'hancur' && bermusuhan(b.tim, p.tim) &&
+        jarak(p.x, p.y, b.x, b.y) <= BANGUNAN[b.jenis].radius)
+    if (bangunanKena) lukaiBangunan(dunia, bangunanKena, p.dmg, p.tim)
+
     dunia.proyektil.splice(i, 1)
   }
 }

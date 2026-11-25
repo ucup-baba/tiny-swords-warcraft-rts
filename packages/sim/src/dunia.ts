@@ -120,11 +120,21 @@ function isiPeta(dunia: Dunia): void {
     const [mx, my] = P(...dataranDekat(btx - 6 * arah, bty + 3 * arah))
     dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'mine', x: mx, y: my, gold: 3500 })
 
-    // Hutan di dalam basis.
-    for (let i = 0; i < 8; i++) {
-      const [tx2, ty2] = dataranDekat(btx + (4 + (i % 4) * 2) * arah, bty - (3 + Math.floor(i / 4) * 2) * arah)
-      const [wx, wy] = P(tx2, ty2)
-      dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 90 })
+    // Hutan: 3 rumpun per pemain (PRD §9.3). Satu di dalam basis, dua lagi
+    // harus diperebutkan. Versi pertama hanya menaruh 8 pohon per basis dan
+    // 25 pohon di SELURUH peta — totalnya 2.250 kayu, kurang dari biaya tiga
+    // Castle, jadi ekonomi kayu mati sebelum match separuh jalan.
+    const rumpun: [number, number][] = [
+      [btx + 6 * arah, bty - 4 * arah],
+      [btx + 16 * arah, bty - 12 * arah],
+      [btx - 10 * arah, bty - 14 * arah],
+    ]
+    for (const [rx, ry] of rumpun) {
+      for (let i = 0; i < 9; i++) {
+        const [tx2, ty2] = dataranDekat(rx + (i % 3) * 2, ry + Math.floor(i / 3) * 2)
+        const [wx, wy] = P(tx2, ty2)
+        dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
+      }
     }
 
     // Domba di padang dekat basis.
@@ -162,13 +172,15 @@ function isiPeta(dunia: Dunia): void {
     tambahCamp(dunia, 'kecil', keTengahPiksel(p.tx), keTengahPiksel(p.ty))
   }
 
-  // Hutan netral di sekitar plateau samping.
+  // Hutan netral: dua rumpun besar di dekat tiap plateau samping, diperebutkan.
   for (const p of dunia.titik.plateauSamping) {
-    for (let i = 0; i < 6; i++) {
-      const tx = p.tx + 9 + (i % 3) * 2
-      const ty = p.ty + 9 + Math.floor(i / 3) * 2
-      if (tinggiDi(t, tx, ty) !== TINGGI.dataran) continue
-      dunia.pohon.push({ id: dunia.idBerikut++, x: keTengahPiksel(tx), y: keTengahPiksel(ty), kayu: 90 })
+    for (const [ox, oy] of [[10, 10], [-12, 9]] as const) {
+      for (let i = 0; i < 9; i++) {
+        const tx = p.tx + ox + (i % 3) * 2
+        const ty = p.ty + oy + Math.floor(i / 3) * 2
+        if (tinggiDi(t, tx, ty) !== TINGGI.dataran) continue
+        dunia.pohon.push({ id: dunia.idBerikut++, x: keTengahPiksel(tx), y: keTengahPiksel(ty), kayu: 120 })
+      }
     }
   }
 }

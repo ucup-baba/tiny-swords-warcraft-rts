@@ -824,3 +824,95 @@ screen shake halus · animasi domba `HappySheep_Bouncing` · kursor 4 state.
 | Altarnya jelek | **M5** (aset) + pipeline **§16.3** |
 | Font jelek, ndak cocok sama UI | **M4** |
 | Arsitektur bersih (Next/Rust → TS) | **M0** + **M1** |
+
+---
+
+## 19. Keseimbangan Pertandingan **[BARU — Revisi 2.1]**
+
+Bagian ini ditambahkan setelah pengukuran, bukan dari perkiraan. Alatnya
+`scripts/uji-seimbang.mjs`: menjalankan puluhan match AI vs AI headless dan
+melaporkan sebaran durasi, tingkat kemenangan, serta kurva ekonomi & pasukan.
+
+### 19.1 Keadaan sebelum penyetelan
+
+| Ukuran | Nilai |
+| :--- | :--- |
+| Durasi median | **2,3 menit** |
+| Match di bawah 4 menit | **23 dari 24** |
+| Tingkat kemenangan | blue 8, red 15 |
+| Pasukan puncak | ±7 unit |
+| Gold menganggur di menit 2,5 | **±1.700** |
+
+Diagnosisnya: **supply, bukan ekonomi**, yang jadi leher botol. Castle (+10) dan
+House (+8) memberi 18 populasi, 11 di antaranya dimakan Pawn, jadi pasukan
+mentok di 7 sementara gold menumpuk tanpa bisa dibelanjakan.
+
+### 19.2 Empat cacat yang ditemukan
+
+1. **Peta kekurangan kayu.** Seluruh peta hanya punya 25 pohon / 2.250 kayu —
+   kurang dari biaya tiga Castle. Ekonomi kayu mati sebelum match separuh jalan.
+   Sekarang 3 rumpun per pemain + 4 rumpun netral, ±2× lipat lebih banyak kayu.
+2. **Pekerja tidak pernah dialihkan.** Logika kelangkaan hanya menyentuh Pawn
+   yang menganggur, padahal siklus panen selalu kembali ke sumber yang sama.
+   Pawn yang di menit pertama dikirim ke tambang tidak pernah pindah seumur
+   match: gold 2.800 sementara kayu 20.
+3. **Unit jarak jauh tidak bisa melukai bangunan sama sekali.** Proyektil ke
+   bangunan dikirim tanpa `targetId`, dan penanganan tumbukan melewatkannya.
+   Hanya serangan jarak dekat dan menara yang berfungsi melawan bangunan.
+4. **Kedua AI berbagi satu RNG.** Perilaku mereka terkopel, dan hasil match
+   bergantung pada urutan pemanggilan — merah menang 10–5 kalau dipanggil
+   lebih dulu, padahal petanya simetris sempurna. Tiap AI kini punya RNG
+   sendiri yang diturunkan dari seed match.
+
+### 19.3 Aturan baru
+
+**Ketahanan bangunan.** Bangunan hanya menerima **45%** kerusakan dari unit.
+HP di tabel §3 **tidak berubah**; ini aturan pelemahan terpisah. Tanpa ini
+pasukan 15 orang merobohkan Castle 1.500 HP dalam ±4 detik, sehingga satu
+serbuan yang berhasil langsung mengakhiri pertandingan.
+
+**Perilaku AI.** AI kini: menjaga bantalan supply agar House dibangun sebelum
+populasi mentok · menempatkan Pawn ke sumber daya paling langka dan
+**mengalihkan** yang sudah bekerja · membangun menara **di dalam** basis ·
+membangun **Castle kedua** (karena kalah berarti semua Castle hancur, §13.1) ·
+**memperbaiki** bangunan rusak · meninggalkan garnisun 28–35% · memanggil semua
+pasukan pulang saat basis diserbu · mundur bila pasukan penyerang tinggal
+seperempat · dan **meningkatkan agresi** seiring match berlarut agar dua AI
+yang sama kuat tidak saling menunggu sampai batas waktu.
+
+### 19.4 Hasil terukur
+
+90 match AI vs AI, tiga set seed independen, batas 30 menit:
+
+| Ukuran | Sebelum | **Sesudah** |
+| :--- | :---: | :---: |
+| Durasi median | 2,3 mnt | **4,6 – 5,6 mnt** |
+| Durasi minimum | 2,1 mnt | **3,0 mnt** |
+| Persentil 75 | 2,5 mnt | **8,0 – 14,4 mnt** |
+| Match < 2 menit | ada | **nol** |
+| Tingkat kemenangan | 35% / 65% | **47,5% / 52,5%** |
+| Pembunuhan per match | 40,6 | **±89** |
+| Camp dibersihkan per match | 2,92 | **±4,9** |
+
+### 19.5 Batas yang diakui
+
+Durasi median ±5 menit masih lebih pendek dari RTS komersial. Sisa jaraknya
+**bukan soal penyetelan angka** melainkan sistem yang memang belum ada:
+tidak ada tingkat teknologi, tidak ada upgrade, dan tidak ada saling-counter
+antar jenis unit. Ketiganya membuat pertandingan sungguhan punya beberapa fase;
+di sini hanya ada satu.
+
+Sekitar 11% match masih mentok di batas waktu — dua AI yang sama kuat dan
+sama-sama bertahan. Dalam permainan sungguhan pemainlah yang memutus kebuntuan.
+
+### AC-19 — Acceptance Criteria
+
+| ID | Kriteria | Cara tes |
+| :--- | :--- | :--- |
+| AC-19.1 | Tidak ada match yang selesai di bawah 2 menit | `N=30 node scripts/uji-seimbang.mjs` → baris "cepat" menunjukkan `<2 menit: 0` |
+| AC-19.2 | Tingkat kemenangan kedua pihak dalam 40–60% | Jalankan 3 set seed (`SEED=0`, `77777`, `424242`), jumlahkan |
+| AC-19.3 | Unit jarak jauh merusak bangunan | Pilih Archer, klik kanan bangunan musuh → HP bangunan turun |
+| AC-19.4 | Bangunan tahan terhadap unit | Serang Castle penuh dengan 10 unit → butuh jauh lebih lama dari 5 detik |
+| AC-19.5 | AI membangun menara & Castle kedua | Main solo 8 menit tanpa menyerang → AI punya menara di basis dan Castle kedua |
+| AC-19.6 | AI memanggil pasukan pulang saat diserbu | Kirim beberapa unit ke basis AI → pasukannya yang sedang menyerang berbalik |
+| AC-19.7 | Kayu tidak habis di tengah match | Main solo 10 menit → masih ada pohon tersisa di peta |
