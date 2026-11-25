@@ -385,11 +385,24 @@ Sekarang hanya: semua Castle satu pihak hancur.
 
 ### 13.1 Kondisi kalah (mana pun yang lebih dulu terjadi)
 
-1. **Semua Castle hancur** — kondisi utama (sesuai §3).
-2. **Mati ekonomi:** pemain tidak punya Castle **dan** tidak punya Pawn **dan** Gold < biaya Castle
-   → tidak mungkin bangkit. Kalah otomatis setelah grace `20 detik`.
+> **Koreksi Revisi 2.0.1 (ditemukan saat M1).** Rumusan pertama bagian ini cacat: poin 1
+> ("semua Castle hancur = kalah") langsung memicu kekalahan, sehingga poin 2 yang
+> mensyaratkan "tidak punya Castle **dan** tidak punya Pawn **dan** Gold kurang" **tidak
+> pernah mungkin tercapai** — grace 20 detiknya kode mati. Ketahuan hanya karena tes
+> mencoba memicunya. Kedua poin digabung di bawah supaya dua-duanya hidup.
+
+1. **Semua Castle hancur DAN tidak ada Pawn tersisa** → kalah **seketika**.
+   Tanpa Pawn tidak ada yang bisa membangun Castle baru, jadi tidak ada jalan kembali.
+2. **Semua Castle hancur, masih punya Pawn, tapi Gold < biaya Castle (`250`)**
+   → diberi **grace `20 detik`** untuk mengumpulkan Gold dan membangun Castle baru.
+   Kalau Gold kembali cukup sebelum grace habis, hitungan **di-reset** dan match lanjut.
+   Kalau tidak, kalah.
 3. **Surrender** — pemain menyerah sendiri (§13.3).
 4. **Disconnect melebihi batas** — lihat §15.3.
+
+Efeknya pada permainan: menghancurkan Castle lawan tidak lagi otomatis menang. Lawan yang
+masih punya Pawn dan Gold boleh membangun ulang — jadi comeback mungkin, dan pemain yang
+menyerang harus benar-benar membersihkan, bukan sekadar menyentuh Castle.
 
 ### 13.2 Draw
 
@@ -669,7 +682,10 @@ benar-benar dilakukan, bukan deskripsi. `[H]` = dites di Host, `[G]` = di Guest,
 | ID | Kriteria | Cara tes |
 | :--- | :--- | :--- |
 | AC-13.1 | Hancurkan semua Castle = menang | `[S]` hancurkan Castle AI → layar kemenangan |
-| AC-13.2 | Mati ekonomi = kalah | Hancurkan Castle sendiri, habiskan semua Pawn, Gold di bawah biaya Castle → kalah otomatis setelah `20 detik` |
+| AC-13.2a | Castle habis tanpa Pawn = kalah seketika | Hancurkan Castle sendiri dan habiskan semua Pawn → kalah pada langkah itu juga |
+| AC-13.2b | Castle habis + Pawn + Gold cukup = masih hidup | Hancurkan Castle sendiri, sisakan Pawn, pastikan Gold ≥ 250 → match **lanjut**, bisa bangun Castle baru |
+| AC-13.2c | Castle habis + Pawn + Gold kurang = kalah setelah grace | Sama, tapi Gold < 250 → bertahan ~18 detik lalu kalah pada detik ke-20 |
+| AC-13.2d | Grace di-reset kalau Gold pulih | Saat hitungan grace jalan, tambahkan Gold ≥ 250 → hitungan kembali nol |
 | AC-13.3 | Surrender butuh konfirmasi | Klik Surrender → dialog muncul; "Tidak" membatalkan, match lanjut |
 | AC-13.4 | Surrender LAN mengakhiri keduanya | `[H]` surrender → `[G]` juga melihat layar hasil |
 | AC-13.5 | Draw saling bunuh | Atur agar dua Castle terakhir hancur hampir bersamaan → layar **Draw** |

@@ -13,25 +13,38 @@ for (const global of ['document', 'window', 'localStorage']) {
 
 const sim = await import('../packages/sim/dist/index.js').catch((e) => gagal(`dist tidak bisa diimpor: ${e.message}`))
 
-for (const nama of ['buatDunia', 'terapkanPerintah', 'langkahBanyak', 'hashDunia']) {
+for (const nama of ['buatDunia', 'terapkanPerintah', 'langkahBanyak', 'hashDunia', 'buatAi', 'langkahAi']) {
   if (typeof sim[nama] !== 'function') gagal(`ekspor '${nama}' hilang dari dist`)
 }
 
-const d = sim.buatDunia(2026)
-sim.terapkanPerintah(d, { jenis: 'spawn', tim: 'blue', x: 400, y: 400 })
-sim.terapkanPerintah(d, { jenis: 'spawn', tim: 'red', x: 900, y: 900 })
-sim.terapkanPerintah(d, { jenis: 'pindah', ids: [1], x: 900, y: 900 })
-sim.langkahBanyak(d, 600)
+/** Satu match AI vs AI sampai selesai, langsung dari kode yang sudah dibangun. */
+function mainkan(seed, maksTick) {
+  const d = sim.buatDunia({ seed, heroBlue: 'king', heroRed: 'champion' })
+  const aiBlue = sim.buatAi('blue', 'normal')
+  const aiRed = sim.buatAi('red', 'normal')
+  let tick = 0
+  while (d.hasil.jenis === 'berlangsung' && tick < maksTick) {
+    for (const p of sim.langkahAi(d, aiBlue)) sim.terapkanPerintah(d, 'blue', p)
+    for (const p of sim.langkahAi(d, aiRed)) sim.terapkanPerintah(d, 'red', p)
+    sim.langkahBanyak(d, 1)
+    tick++
+  }
+  return { d, tick }
+}
 
-if (d.tick !== 600) gagal(`tick seharusnya 600, dapat ${d.tick}`)
-if (d.entitas.length !== 2) gagal(`entitas seharusnya 2, dapat ${d.entitas.length}`)
+const MAKS = 60 * 60 * 25
+const a = mainkan(2026, MAKS)
 
-// Determinisme juga harus berlaku pada kode yang sudah dibangun, bukan hanya sumber.
-const ulang = sim.buatDunia(2026)
-sim.terapkanPerintah(ulang, { jenis: 'spawn', tim: 'blue', x: 400, y: 400 })
-sim.terapkanPerintah(ulang, { jenis: 'spawn', tim: 'red', x: 900, y: 900 })
-sim.terapkanPerintah(ulang, { jenis: 'pindah', ids: [1], x: 900, y: 900 })
-sim.langkahBanyak(ulang, 600)
-if (sim.hashDunia(d) !== sim.hashDunia(ulang)) gagal('dist tidak deterministik')
+if (a.d.hasil.jenis === 'berlangsung') gagal(`match tidak selesai dalam ${MAKS} tick`)
+if (a.d.tim.blue.statistik.goldTerkumpul + a.d.tim.red.statistik.goldTerkumpul === 0) {
+  gagal('tidak ada gold yang terkumpul — ekonomi tidak jalan di dist')
+}
 
-console.log(`✔ AC-8.4 — sim headless dari dist, ${d.tick} tick, hash ${sim.hashDunia(d)}`)
+// Determinisme harus berlaku pada kode yang SUDAH DIBANGUN, bukan hanya sumber.
+const b = mainkan(2026, MAKS)
+if (sim.hashDunia(a.d) !== sim.hashDunia(b.d)) gagal('dist tidak deterministik')
+if (a.tick !== b.tick) gagal(`panjang match tidak stabil: ${a.tick} vs ${b.tick}`)
+
+const menit = (a.tick / 60 / 60).toFixed(1)
+const hasil = a.d.hasil.jenis === 'menang' ? `menang ${a.d.hasil.tim}` : a.d.hasil.jenis
+console.log(`✔ AC-8.4 — match penuh dari dist: ${hasil} dalam ${menit} menit permainan, hash ${sim.hashDunia(a.d)}`)

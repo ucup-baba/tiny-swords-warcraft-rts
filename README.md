@@ -9,7 +9,7 @@ RTS bergaya Warcraft klasik dengan aset [Tiny Swords](https://pixelfrog-assets.i
 ## Status
 
 Sedang dalam rewrite arsitektur dari `game.js` monolitik ke monorepo TypeScript.
-Milestone ada di PRD §18. **Selesai: M0.**
+Milestone ada di PRD §18. **Selesai: M0, M1.**
 
 Kode lama (`game.js`, `index.html`, `style.css`, `lan-server.mjs`) masih utuh dan
 masih bisa dijalankan sampai digantikan per milestone.
@@ -30,7 +30,7 @@ node lan-server.mjs      # jalankan game LAMA di http://localhost:8080
 | Paket | Isi | Boleh mengimpor |
 | :--- | :--- | :--- |
 | `@hftf/shared` | Konstanta, tipe, protokol LAN | — |
-| `@hftf/sim` | **Inti simulasi deterministik.** Nol DOM | `shared` |
+| `@hftf/sim` | **Inti simulasi deterministik.** Ekonomi, bangunan, tempur, hero, AI. Nol DOM | `shared` |
 | `@hftf/aset` | Manifes aset + slicing sprite | `shared` |
 | `@hftf/net` | Transport: Local \| Host \| Guest | `shared` |
 | `@hftf/render` | Renderer canvas2d | `shared`, `sim`, `aset` |
