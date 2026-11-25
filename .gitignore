@@ -5,3 +5,5 @@ dist/
 __MACOSX/
 .vitest/
 *.tsbuildinfo
+bundel.js
+bundel.js.map
