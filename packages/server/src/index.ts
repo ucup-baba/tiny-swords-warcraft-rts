@@ -5,3 +5,5 @@
 
 export * from './alamat-lan.js'
 export * from './statis.js'
+export * from './protokol.js'
+export * from './papan.js'

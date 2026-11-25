@@ -76,7 +76,16 @@ function tandai(dunia: Dunia, fog: Fog, x: number, y: number, radiusPx: number):
 
 export function langkahFog(dunia: Dunia): void {
   if (dunia.tick % TICK_PER_FOG !== 0) return
+  hitungFog(dunia)
+}
 
+/**
+ * Menghitung ulang fog SEKARANG, tanpa memandang jadwal.
+ *
+ * Guest tidak menjalankan simulasi sama sekali — ia hanya menerima snapshot.
+ * Kalau fog hanya dihitung di dalam langkah(), layar guest tetap hitam total.
+ */
+export function hitungFog(dunia: Dunia): void {
   for (const tim of ['blue', 'red'] as const) {
     const fog = dunia.fog[tim]
     fog.kini.fill(0)

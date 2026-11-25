@@ -4,3 +4,4 @@
 // Boleh mengimpor: @hftf/shared
 
 export * from './transport.js'
+export * from './lan.js'

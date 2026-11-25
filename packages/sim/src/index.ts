@@ -15,6 +15,7 @@ export * from './dunia.js'
 export * from './terrain.js'
 export * from './jalur.js'
 export * from './hash.js'
+export * from './snapshot.js'
 export * from './util.js'
 
 export * from './definisi/bangunan.js'

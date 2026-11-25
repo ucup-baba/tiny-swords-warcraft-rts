@@ -1,6 +1,7 @@
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { alamatKlien, alamatLan } from './alamat-lan.js'
+import { pasangPapan } from './papan-ws.js'
 import { berkasAman, kirimBerkas } from './statis.js'
 
 const PORT = Number(process.env['PORT'] ?? 8080)
@@ -40,6 +41,8 @@ const server = createServer((req, res) => {
   res.writeHead(404, { ...cors, 'Content-Type': 'text/plain; charset=utf-8' })
   res.end('Not Found')
 })
+
+pasangPapan(server)
 
 server.listen(PORT, '0.0.0.0', () => {
   const lan = alamatKlien(alamatLan(), PORT) ?? `http://localhost:${PORT}`

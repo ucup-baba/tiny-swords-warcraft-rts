@@ -3,11 +3,12 @@ import {
   LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, gambarEntitas,
   keLayarX, keLayarY, muatSemuaAset, pusatkan,
 } from '@hftf/render'
-import { TransportLokal } from '@hftf/net'
+import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
 import {
-  BANGUNAN, buatAi, buatDunia, langkahAi, langkahBanyak, terapkanPerintah,
-  type Bangunan, type Dunia, type KeadaanAi, type Perintah, type Unit,
+  BANGUNAN, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
+  hitungFog, terapkanPerintah, terapkanSnapshot,
+  type Bangunan, type Dunia, type KeadaanAi, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
 import { Hud, Lobi, bangunGaya, urlAset } from '@hftf/ui'
 import {
@@ -24,6 +25,10 @@ class Permainan {
   private dunia: Dunia | null = null
   private ai: KeadaanAi | null = null
   private transport: TransportLokal<Perintah, never> | null = null
+  private lan: KlienLan | null = null
+  private peran: 'solo' | 'host' | 'tamu' = 'solo'
+  private akumulatorSiar = 0
+  private overlayPutus: HTMLElement | null = null
   private timSaya: Tim = 'blue'
   private kam = buatKamera()
   private input = buatInput()
@@ -65,10 +70,20 @@ class Permainan {
 
     this.lobi = new Lobi(BASIS, {
       mulaiSolo: (hero, kesulitan) => this.mulaiSolo(hero, kesulitan),
-      buatRoom: () => this.hud.tampilkanToast('LAN menyusul di milestone berikutnya'),
-      gabungRoom: () => this.hud.tampilkanToast('LAN menyusul di milestone berikutnya'),
-      mulaiLan: () => undefined,
-      keluarRoom: () => undefined,
+      buatRoom: (nama, hero) => {
+        this.pastikanLan(nama)
+        this.lan?.buatRoom(hero)
+      },
+      gabungRoom: (kode, nama, hero) => {
+        if (!kode) return this.hud.tampilkanToast('Masukkan kode room dulu')
+        this.pastikanLan(nama)
+        this.lan?.gabung(kode, hero)
+      },
+      mulaiLan: () => this.lan?.mulai(),
+      keluarRoom: () => {
+        this.lan?.keluar()
+        this.lobi.setStatusRoom('Keluar dari room.', false, false)
+      },
     })
 
     this.kursor = document.createElement('img')
@@ -79,6 +94,8 @@ class Permainan {
     this.hud.akar.querySelector('#panggung')!.append(this.lobi.akar, this.kursor)
 
     this.ctx = this.hud.kanvas.getContext('2d')
+    // Kait debug: memeriksa state dari console tanpa membongkar bundel.
+    ;(window as unknown as Record<string, unknown>)['__hftf'] = this
     this.pasangInput()
     window.addEventListener('resize', () => this.ukurUlang())
     this.ukurUlang()
@@ -109,12 +126,122 @@ class Permainan {
     }
     this.fase = 'lobi'
     this.lobi.tampil(true)
-    this.lobi.setAlamat(window.location.origin)
-    this.lobi.setStatusRoom('Mode LAN menyusul; Solo vs AI sudah bisa dimainkan.', false, false)
+    this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
+
+    // Menyambung ke papan SEKARANG, bukan menunggu tombol diklik: room milik
+    // pemain lain harus muncul sendiri di daftar (AC-15.1).
+    this.pastikanLan(this.lobi.nama)
+
+    // Alamat LAN asli dari server, bukan tebakan dari location.
+    try {
+      const r = await fetch(`${BASIS}alamat`)
+      const j = (await r.json()) as { url?: string }
+      this.lobi.setAlamat(j.url ?? window.location.origin)
+    } catch {
+      this.lobi.setAlamat(window.location.origin)
+    }
     requestAnimationFrame((t) => this.bingkai(t))
   }
 
+  /** Membuka koneksi papan sekali saja, lalu dipakai ulang. */
+  private pastikanLan(nama: string): void {
+    if (this.lan) return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    this.lan = new KlienLan(`${proto}://${location.host}/ws`, {
+      daftar: (room: RingkasRoom[]) => this.lobi.setDaftarRoom(room),
+      room: (kode, peran, _tim, ringkas) => {
+        const siap = ringkas.jumlah === 2
+        this.lobi.setStatusRoom(
+          `Room ${kode} — Host: ${ringkas.hostNama}` +
+          (ringkas.tamuNama ? ` • Tamu: ${ringkas.tamuNama}` : ' • menunggu pemain 2…'),
+          siap && peran === 'host', true)
+      },
+      mulai: (seed, tim, heroBlue, heroRed) => {
+        // Papan hanya pernah mengirim blue/red; neutral tidak mungkin.
+        if (tim !== 'blue' && tim !== 'red') return
+        this.mulaiLan(seed, tim, heroBlue, heroRed)
+      },
+      cmd: (tim, cmd) => {
+        // Host menerapkan perintah guest lewat jalur yang sama dengan miliknya.
+        if (this.peran === 'host' && this.dunia) terapkanPerintah(this.dunia, tim, cmd as Perintah)
+      },
+      snapshot: (state) => {
+        if (this.peran !== 'tamu' || !this.dunia) return
+        const lama = new Map(this.dunia.unit.map((u) => [u.id, u]))
+        terapkanSnapshot(this.dunia, state as Snapshot, lama)
+        // Guest menghitung fog-nya sendiri dari unit miliknya, yang selalu
+        // lengkap di snapshot. Tanpa ini layarnya hitam total.
+        hitungFog(this.dunia)
+      },
+      lawanPutus: (detik) => this.tampilkanPutus(detik),
+      lawanKembali: () => this.sembunyikanPutus(),
+      lawanMenyerah: () => {
+        this.sembunyikanPutus()
+        if (this.dunia) this.dunia.hasil = { jenis: 'menang', tim: this.timSaya }
+      },
+      galat: (pesan) => this.hud.tampilkanToast(pesan),
+      terputus: () => {
+        this.hud.tampilkanToast('Koneksi LAN terputus — mencoba menyambung lagi…')
+        window.setTimeout(() => {
+          this.lan = null
+          this.pastikanLan(nama)
+          window.setTimeout(() => this.lan?.sambungUlang(), 400)
+        }, 1200)
+      },
+    })
+    this.lan.sambung(nama)
+  }
+
+  private tampilkanPutus(detik: number): void {
+    this.sembunyikanPutus()
+    const el = document.createElement('div')
+    el.className = 'hamparan'
+    el.innerHTML = `<div class="kotak"><h1>Lawan terputus</h1>` +
+      `<p>Menunggu lawan tersambung lagi… <strong id="hitung">${detik}</strong> detik</p>` +
+      `<p>Simulasi dihentikan sementara di kedua sisi.</p></div>`
+    this.hud.akar.querySelector('#panggung')!.append(el)
+    this.overlayPutus = el
+    let sisa = detik
+    const timer = window.setInterval(() => {
+      sisa--
+      const h = el.querySelector('#hitung')
+      if (h) h.textContent = String(Math.max(0, sisa))
+      if (sisa <= 0 || !this.overlayPutus) window.clearInterval(timer)
+    }, 1000)
+  }
+
+  private sembunyikanPutus(): void {
+    this.overlayPutus?.remove()
+    this.overlayPutus = null
+  }
+
+  private mulaiLan(seed: number, tim: 'blue' | 'red', heroBlue: string, heroRed: string): void {
+    this.timSaya = tim
+    this.peran = tim === 'blue' ? 'host' : 'tamu'
+    this.dunia = buatDunia({
+      seed,
+      heroBlue: heroBlue as PeranHeroAset,
+      heroRed: heroRed as PeranHeroAset,
+    })
+    this.ai = null
+    this.transport = null
+    this.terrainRender = new PeremajaTerrain(this.dunia.terrain)
+    this.minimap = new Minimap(this.dunia)
+    this.fog = new LapisanFog(this.dunia.terrain.kolom, this.dunia.terrain.baris)
+    this.input = buatInput()
+    this.hud.setTim(tim)
+    fokusKeCastle(this.dunia, tim, this.kam)
+    // Fog dihitung SEKARANG. Guest tidak menjalankan simulasi, jadi tanpa ini
+    // layarnya hitam total sampai snapshot pertama tiba.
+    hitungFog(this.dunia)
+    this.lobi.tampil(false)
+    this.kursor.style.display = ''
+    this.fase = 'main'
+    this.perbaruiHud()
+  }
+
   private mulaiSolo(hero: PeranHeroAset, kesulitan: 'normal' | 'sulit'): void {
+    this.peran = 'solo'
     this.timSaya = 'blue'
     const seed = Math.floor(Math.random() * 1_000_000)
     this.dunia = buatDunia({ seed, heroBlue: hero, heroRed: 'champion' })
@@ -132,8 +259,16 @@ class Permainan {
     this.perbaruiHud()
   }
 
+  /**
+   * Semua perintah pemain lewat sini. Guest MENGIRIM ke host dan tidak
+   * menerapkannya sendiri — host yang authoritative (PRD §7).
+   */
   private kirim(p: Perintah): void {
     if (!this.dunia || this.fase !== 'main') return
+    if (this.peran === 'tamu') {
+      this.lan?.kirimCmd(p)
+      return
+    }
     terapkanPerintah(this.dunia, this.timSaya, p)
   }
 
@@ -327,16 +462,31 @@ class Permainan {
       gulirKamera(this.kam, this.tombol, this.input.mouse.sx, this.input.mouse.sy)
       batasiKamera(this.kam)
 
-      // Langkah tetap: simulasi TIDAK boleh bergantung pada fps.
-      this.akumulator += dt
-      let langkah = 0
-      while (this.akumulator >= DT_TETAP && langkah < 8) {
-        if (this.ai && this.dunia.hasil.jenis === 'berlangsung') {
-          for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
+      // Guest TIDAK menjalankan simulasi: ia menggambar snapshot dari host.
+      // Simulasi juga berhenti selama lawan terputus (PRD §15.2).
+      const bolehJalan = this.peran !== 'tamu' && this.overlayPutus === null
+
+      if (bolehJalan) {
+        // Langkah tetap: simulasi TIDAK boleh bergantung pada fps.
+        this.akumulator += dt
+        let langkah = 0
+        while (this.akumulator >= DT_TETAP && langkah < 8) {
+          if (this.ai && this.dunia.hasil.jenis === 'berlangsung') {
+            for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
+          }
+          langkahBanyak(this.dunia, 1)
+          this.akumulator -= DT_TETAP
+          langkah++
         }
-        langkahBanyak(this.dunia, 1)
-        this.akumulator -= DT_TETAP
-        langkah++
+
+        // Host menyiarkan snapshot ~15 Hz, sudah disaring fog guest.
+        if (this.peran === 'host') {
+          this.akumulatorSiar += dt
+          if (this.akumulatorSiar >= 1 / 15) {
+            this.akumulatorSiar = 0
+            this.lan?.kirimSnapshot(buatSnapshot(this.dunia, 'red'))
+          }
+        }
       }
       if (this.dunia.hasil.jenis !== 'berlangsung') this.selesaikan()
     }
@@ -408,7 +558,8 @@ class Permainan {
 
   private perbaruiHudRingan(): void {
     if (!this.dunia) return
-    this.hud.perbaruiPita(this.dunia, this.timSaya, 'SOLO vs AI')
+    this.hud.perbaruiPita(this.dunia, this.timSaya,
+      this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)')
     this.hud.perbaruiSumberDaya(this.dunia, this.timSaya)
     this.hud.perbaruiSeleksi(this.dunia, this.unitTerpilih(), this.bangunanTerpilih())
   }
