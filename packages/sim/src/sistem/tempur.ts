@@ -1,8 +1,10 @@
 import { DT_TETAP, type Tim } from '@hftf/shared'
 import { BANGUNAN } from '../definisi/bangunan.js'
+import { GOBLIN } from '../definisi/goblin.js'
 import { REVIVE, UNIT, type KategoriUnit } from '../definisi/unit.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
 import { adalahUnit, bermusuhan, cariUnit, jarak, musuhTerdekat } from '../util.js'
+import { peranGoblin } from './goblin.js'
 import { jangkauanEfektif, langkahMenuju } from './gerak.js'
 
 /** XP hero per unit musuh yang dibunuh. Goblin punya tabelnya sendiri (PRD §10.4). */
@@ -34,13 +36,27 @@ export function dmgHero(peran: Unit['peran'], level: number): number {
 // Kerusakan
 // ---------------------------------------------------------------------------
 
-export function lukaiUnit(dunia: Dunia, target: Unit, dmg: number, penyerang: Unit | null): void {
+export function lukaiUnit(
+  dunia: Dunia, target: Unit, dmg: number, penyerang: Unit | null, timSumber?: Tim,
+): void {
   target.hp -= dmg
   if (target.hp > 0) return
 
+  const pembunuh: Tim | null = penyerang?.tim ?? timSumber ?? null
   const k = dunia.tim[target.tim]
   k.statistik.gugur++
-  if (penyerang) dunia.tim[penyerang.tim].statistik.bunuh++
+  if (pembunuh && pembunuh !== target.tim) dunia.tim[pembunuh].statistik.bunuh++
+
+  // Goblin menjatuhkan gold LANGSUNG ke pembunuhnya (PRD §10.4) - tidak perlu
+  // diangkut Pawn, berbeda dari tambang.
+  if (target.tim === 'neutral' && pembunuh && pembunuh !== 'neutral') {
+    const peran = peranGoblin(target)
+    const def = GOBLIN[peran]
+    dunia.tim[pembunuh].sumberDaya.gold += def.gold
+    dunia.tim[pembunuh].statistik.goldTerkumpul += def.gold
+    const camp = dunia.camp.find((c) => c.id === target.campId)
+    if (camp) camp.pembunuhTerakhir = pembunuh
+  }
 
   // Hero tidak dihapus — masuk state gugur dan menunggu Altar (PRD §11.2).
   if (target.hero) {
@@ -68,7 +84,11 @@ export function lukaiUnit(dunia: Dunia, target: Unit, dmg: number, penyerang: Un
     jenis: 'unitMati', id: target.id, tim: target.tim, peran: target.peran, x: target.x, y: target.y,
   })
 
-  beriXpSekitar(dunia, target, XP_BUNUH[UNIT[target.peran].kategori])
+  // XP goblin punya tabelnya sendiri (PRD §10.4).
+  const xp = target.tim === 'neutral'
+    ? GOBLIN[peranGoblin(target)].xp
+    : XP_BUNUH[UNIT[target.peran].kategori]
+  beriXpSekitar(dunia, target, xp)
 
   const i = dunia.unit.indexOf(target)
   if (i >= 0) dunia.unit.splice(i, 1)
@@ -180,11 +200,11 @@ export function langkahProyektil(dunia: Dunia): void {
       for (let j = dunia.unit.length - 1; j >= 0; j--) {
         const u = dunia.unit[j]
         if (!u || !bermusuhan(u.tim, p.tim)) continue
-        if (jarak(p.x, p.y, u.x, u.y) <= RADIUS_SPLASH) lukaiUnit(dunia, u, p.dmg, null)
+        if (jarak(p.x, p.y, u.x, u.y) <= RADIUS_SPLASH) lukaiUnit(dunia, u, p.dmg, null, p.tim)
       }
     } else if (p.targetId !== null) {
       const t = cariUnit(dunia, p.targetId)
-      if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null)
+      if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null, p.tim)
     }
     dunia.proyektil.splice(i, 1)
   }

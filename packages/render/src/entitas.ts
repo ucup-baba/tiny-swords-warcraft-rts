@@ -1,9 +1,9 @@
 import {
-  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BARIS, EFEK, HERO_BLUE, HERO_RED,
-  SUMBER, UNIT_BLUE, UNIT_RED, frame, type Aset,
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BARIS, EFEK, GOBLIN as ASET_GOBLIN,
+  HERO_BLUE, HERO_RED, SUMBER, UNIT_BLUE, UNIT_RED, frame, type Aset,
 } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
-import { AMBANG_API, BANGUNAN, type Bangunan, type Dunia, type Unit } from '@hftf/sim'
+import { AMBANG_API, BANGUNAN, peranGoblin, type Bangunan, type Dunia, type Unit } from '@hftf/sim'
 import { gambarDari } from './gambar.js'
 import type { Kamera } from './kamera.js'
 import { pandangan } from './kamera.js'
@@ -40,6 +40,13 @@ function asetUnit(u: Unit, tim: Tim): { aset: Aset; indeks: number; skala: numbe
   const H = asetTim(tim, HERO_BLUE, HERO_RED)
   const bergerak = u.tugas === 'pindah' || u.tugas === 'serangPindah' || u.jalur !== null
   const t = performance.now() / 1000
+
+  // Goblin netral punya sheet sendiri; peran unitnya hanya pembawa stat.
+  if (u.campId !== null) {
+    const a = ASET_GOBLIN[peranGoblin(u)]
+    const kol = Math.floor(t * a.fps) % a.kolom
+    return { aset: a, indeks: kol, skala: 0.6 }
+  }
 
   if (u.hero) {
     const set = H[u.peran as keyof typeof H]
@@ -181,7 +188,7 @@ export function gambarEntitas(
           ctx.ellipse(u.x, u.y + 4, 22, 10, 0, 0, Math.PI * 2)
           ctx.stroke()
         }
-        if (u.hero) {
+        if (u.hero && u.campId === null) {
           ctx.fillStyle = 'rgba(255,214,107,0.25)'
           ctx.beginPath()
           ctx.ellipse(u.x, u.y + 4, 26, 12, 0, 0, Math.PI * 2)
@@ -193,7 +200,7 @@ export function gambarEntitas(
         sprite(ctx, aset, indeks, u.x, u.y, skala, balik)
 
         if (u.hp < u.hpMaks || terpilih) barHp(ctx, u.x, u.y - 62, 40, u.hp / u.hpMaks, u.tim)
-        if (u.hero) {
+        if (u.hero && u.campId === null) {
           ctx.fillStyle = '#ffd86b'
           ctx.font = "bold 12px 'Pixelify Sans', system-ui"
           ctx.textAlign = 'center'

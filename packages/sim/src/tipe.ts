@@ -1,5 +1,6 @@
 import type { Tim } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
+import type { JenisCamp } from './definisi/goblin.js'
 import type { PeranHero, PeranUnit } from './definisi/unit.js'
 import type { Jalur } from './jalur.js'
 import type { Rng } from './rng.js'
@@ -113,6 +114,9 @@ export interface Unit {
   jalurKeX: number
   jalurKeY: number
 
+  /** Camp goblin tempat unit ini terikat; null untuk unit pemain (PRD §10.3). */
+  campId: number | null
+
   /** Hero saja. */
   hero: boolean
   level: number
@@ -168,6 +172,20 @@ export interface Proyektil {
 }
 
 /** Hero yang gugur tapi belum dibangkitkan (PRD §11.2). */
+/** Satu camp goblin penjaga harta (PRD §10). */
+export interface Camp {
+  id: number
+  jenis: JenisCamp
+  x: number
+  y: number
+  /** Sedang mengejar? Satu goblin kena aggro berarti SELURUH camp ikut. */
+  aggro: boolean
+  /** Hitung mundur respawn; 0 berarti camp sedang utuh atau siap terisi. */
+  respawn: number
+  /** Tim yang menjatuhkan goblin terakhir — yang berhak atas kredit camp. */
+  pembunuhTerakhir: Tim | null
+}
+
 export interface HeroGugur {
   peran: PeranHero
   level: number
@@ -217,6 +235,8 @@ export interface Dunia {
   daging: DagingJatuh[]
   proyektil: Proyektil[]
 
+  camp: Camp[]
+
   tim: Record<Tim, KeadaanTim>
 
   /** Kejadian yang perlu dilihat lapisan render/ui. Dikosongkan tiap langkah. */
@@ -237,4 +257,6 @@ export type Kejadian =
   | { jenis: 'heroGugur'; tim: Tim; x: number; y: number }
   | { jenis: 'heroBangkit'; id: number; tim: Tim; level: number }
   | { jenis: 'sumberDayaMasuk'; tim: Tim; jenis2: JenisBawaan; jumlah: number; x: number; y: number }
+  | { jenis: 'campDibersihkan'; campId: number; x: number; y: number }
+  | { jenis: 'campRespawn'; campId: number; x: number; y: number }
   | { jenis: 'matchSelesai'; hasil: HasilMatch }

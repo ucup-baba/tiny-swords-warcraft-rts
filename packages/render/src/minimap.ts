@@ -67,6 +67,18 @@ export class Minimap {
       ctx.fillRect(px(t.x) - 2, py(t.y) - 2, 4, 4)
     }
 
+    // Camp goblin: lingkaran peringatan, berkedip menjelang respawn (PRD §10.3).
+    for (const c of this.dunia.camp) {
+      const hidup = this.dunia.unit.some((u) => u.campId === c.id)
+      const segeraKembali = !hidup && c.respawn > 0 && c.respawn < 10
+      if (!hidup && !segeraKembali) continue
+      ctx.strokeStyle = segeraKembali ? '#ffe08a' : '#c9a227'
+      ctx.lineWidth = segeraKembali ? 2 : 1
+      ctx.beginPath()
+      ctx.arc(px(c.x), py(c.y), c.jenis === 'besar' ? 7 : 5, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+
     // Kotak kamera
     ctx.strokeStyle = timSaya === 'blue' ? '#cfe9ff' : '#ffd7cf'
     ctx.lineWidth = 1.5

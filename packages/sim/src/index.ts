@@ -19,6 +19,7 @@ export * from './util.js'
 
 export * from './definisi/bangunan.js'
 export * from './definisi/unit.js'
+export * from './definisi/goblin.js'
 
 export * from './sistem/ekonomi.js'
 export * from './sistem/gerak.js'
@@ -28,4 +29,5 @@ export * from './sistem/pekerja.js'
 export * from './sistem/bangunan.js'
 export * from './sistem/spawn.js'
 export * from './sistem/akhir.js'
+export * from './sistem/goblin.js'
 export * from './sistem/ai.js'

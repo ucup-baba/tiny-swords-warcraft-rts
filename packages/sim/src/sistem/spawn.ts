@@ -28,6 +28,7 @@ export function buatUnit(dunia: Dunia, tim: Tim, peran: PeranUnit, x: number, y:
     jalur: null,
     jalurKeX: x,
     jalurKeY: y,
+    campId: null,
     hero: def.hero === true,
     level: 1,
     xp: 0,

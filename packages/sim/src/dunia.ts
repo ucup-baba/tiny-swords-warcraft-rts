@@ -9,6 +9,7 @@ import { pakaiSkill } from './sistem/hero.js'
 import { langkahPawn } from './sistem/pekerja.js'
 import { buatBangunan, buatUnit } from './sistem/spawn.js'
 import { langkahAkhir } from './sistem/akhir.js'
+import { langkahCamp, tambahCamp } from './sistem/goblin.js'
 import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
@@ -57,6 +58,7 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     domba: [],
     daging: [],
     proyektil: [],
+    camp: [],
     tim: {
       blue: keadaanTim(opsi.heroBlue ?? 'king'),
       red: keadaanTim(opsi.heroRed ?? 'champion'),
@@ -142,6 +144,17 @@ function isiPeta(dunia: Dunia): void {
     id: dunia.idBerikut++, jenis: 'mine',
     x: keTengahPiksel(pusat.tx), y: keTengahPiksel(pusat.ty), gold: 4500,
   })
+
+  // Camp goblin penjaga harta (PRD §10.5): satu camp kecil per tambang
+  // ekspansi, dan satu camp besar menjaga tambang pusat di atas plateau.
+  for (const tb of dunia.tambang) {
+    if (tb.jenis !== 'stone') continue
+    tambahCamp(dunia, 'kecil', tb.x + 70, tb.y + 50)
+  }
+  tambahCamp(dunia, 'besar', keTengahPiksel(pusat.tx) + 90, keTengahPiksel(pusat.ty) + 70)
+  for (const p of dunia.titik.plateauSamping) {
+    tambahCamp(dunia, 'kecil', keTengahPiksel(p.tx), keTengahPiksel(p.ty))
+  }
 
   // Hutan netral di sekitar plateau samping.
   for (const p of dunia.titik.plateauSamping) {
@@ -325,10 +338,13 @@ export function langkah(dunia: Dunia): void {
 
   for (const b of dunia.bangunan) langkahBangunan(dunia, b)
 
+  // Goblin dijalankan oleh sistem camp, bukan AI unit biasa (PRD §10.3).
+  langkahCamp(dunia)
+
   // Iterasi mundur: unit bisa dihapus di tengah langkah.
   for (let i = dunia.unit.length - 1; i >= 0; i--) {
     const u = dunia.unit[i]
-    if (!u) continue
+    if (!u || u.campId !== null) continue
     if (u.skillJeda > 0) u.skillJeda -= DT_TETAP
     if (u.peran === 'pawn') langkahPawn(dunia, u)
     else langkahUnitTempur(dunia, u)
