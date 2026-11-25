@@ -10,7 +10,7 @@ import {
   hitungFog, terapkanPerintah, terapkanSnapshot,
   type Bangunan, type Dunia, type KeadaanAi, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
-import { Hud, Lobi, bangunGaya, urlAset } from '@hftf/ui'
+import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
   perintahKlikKanan, seleksiKotak, unitDiTitik, bolehTaruh,
@@ -29,6 +29,8 @@ class Permainan {
   private peran: 'solo' | 'host' | 'tamu' = 'solo'
   private akumulatorSiar = 0
   private overlayPutus: HTMLElement | null = null
+  private menuJeda: HTMLElement | null = null
+  private suaraNyala = true
   private timSaya: Tim = 'blue'
   private kam = buatKamera()
   private input = buatInput()
@@ -414,7 +416,15 @@ class Permainan {
       const ids = [...this.input.unitTerpilih]
 
       if (e.code === 'KeyA' && !e.repeat && ids.length > 0) { this.input.modeSerang = true; return }
-      if (e.code === 'Escape') { this.input.hantuBangun = null; this.input.modeSerang = false; return }
+      if (e.code === 'Escape') {
+        if (this.input.hantuBangun || this.input.modeSerang) {
+          this.input.hantuBangun = null
+          this.input.modeSerang = false
+          return
+        }
+        this.bukaMenuJeda()
+        return
+      }
       if (e.code === 'KeyQ' && ids.length > 0) { this.kirim({ jenis: 'skill', ids }); return }
       if (e.code === 'KeyS' && e.ctrlKey) return
       if (e.code === 'KeyH' && ids.length > 0) { this.kirim({ jenis: 'tahan', ids }); return }
@@ -464,7 +474,8 @@ class Permainan {
 
       // Guest TIDAK menjalankan simulasi: ia menggambar snapshot dari host.
       // Simulasi juga berhenti selama lawan terputus (PRD §15.2).
-      const bolehJalan = this.peran !== 'tamu' && this.overlayPutus === null
+      const jedaSolo = this.peran === 'solo' && this.menuJeda !== null
+      const bolehJalan = this.peran !== 'tamu' && this.overlayPutus === null && !jedaSolo
 
       if (bolehJalan) {
         // Langkah tetap: simulasi TIDAK boleh bergantung pada fps.
@@ -570,31 +581,128 @@ class Permainan {
     this.hud.perbaruiKisi(this.dunia, this.timSaya, this.bangunanTerpilih())
   }
 
+  /**
+   * Menu jeda (PRD §14). Di solo simulasi berhenti; di LAN TIDAK — pause
+   * otoritatif di LAN butuh protokol kesepakatan dua arah dan penanganan
+   * pause-spam, yang di luar ruang lingkup Revisi 2.0.
+   */
+  private bukaMenuJeda(): void {
+    if (this.fase !== 'main' || this.menuJeda) return
+    const lan = this.peran !== 'solo'
+    const menu = buatMenuJeda({
+      lan,
+      suaraNyala: this.suaraNyala,
+      aksi: {
+        lanjutkan: () => this.tutupMenuJeda(),
+        suara: () => {
+          this.suaraNyala = !this.suaraNyala
+          this.tutupMenuJeda()
+          this.hud.tampilkanToast(this.suaraNyala ? 'Suara dinyalakan' : 'Suara dimatikan')
+        },
+        menyerah: () => this.konfirmasiMenyerah(),
+        keluar: () => this.konfirmasiKeluar(),
+      },
+    })
+    this.hud.akar.querySelector('#panggung')!.append(menu)
+    this.menuJeda = menu
+  }
+
+  private tutupMenuJeda(): void {
+    this.menuJeda?.remove()
+    this.menuJeda = null
+  }
+
+  private konfirmasiMenyerah(): void {
+    const d = buatKonfirmasi({
+      judul: 'Yakin menyerah?',
+      pesan: 'Pertandingan berakhir dan lawan menang. Tidak bisa dibatalkan.',
+      ya: 'Ya, menyerah',
+      onYa: () => {
+        d.remove()
+        this.tutupMenuJeda()
+        this.kirim({ jenis: 'menyerah' })
+        // Solo: perintah diterapkan lokal. Guest: diteruskan ke host.
+      },
+      onTidak: () => d.remove(),
+    })
+    this.hud.akar.querySelector('#panggung')!.append(d)
+  }
+
+  private konfirmasiKeluar(): void {
+    const d = buatKonfirmasi({
+      judul: 'Keluar ke Lobby?',
+      pesan: 'Pertandingan ini ditinggalkan.',
+      ya: 'Ya, keluar',
+      onYa: () => {
+        d.remove()
+        this.tutupMenuJeda()
+        this.kembaliKeLobby()
+      },
+      onTidak: () => d.remove(),
+    })
+    this.hud.akar.querySelector('#panggung')!.append(d)
+  }
+
+  private kembaliKeLobby(): void {
+    this.lan?.keluar()
+    this.dunia = null
+    this.ai = null
+    this.peran = 'solo'
+    this.fase = 'lobi'
+    this.kursor.style.display = 'none'
+    this.sembunyikanPutus()
+    this.tutupMenuJeda()
+    this.lobi.tampil(true)
+    this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
+  }
+
   private selesaikan(): void {
     if (this.fase === 'selesai' || !this.dunia) return
     this.fase = 'selesai'
+    this.tutupMenuJeda()
+    this.sembunyikanPutus()
+
     const h = this.dunia.hasil
     const menang = h.jenis === 'menang' && h.tim === this.timSaya
     const judul = h.jenis === 'draw' ? 'SERI' : menang ? 'KEMENANGAN KERAJAAN!' : 'KEKALAHAN'
-    const s = this.dunia.tim[this.timSaya].statistik
+    const hero = this.dunia.tim[this.timSaya]
+    const s = hero.statistik
+    const menit = Math.floor(this.dunia.tick / 3600)
+    const detikSisa = Math.floor((this.dunia.tick / 60) % 60)
 
     const kotak = document.createElement('div')
     kotak.className = 'hamparan'
     kotak.innerHTML =
       `<div class="kotak"><h1>${judul}</h1>` +
-      `<p>Durasi: ${Math.floor(this.dunia.tick / 3600)}m ${Math.floor((this.dunia.tick / 60) % 60)}s</p>` +
+      `<p>Durasi: ${menit}m ${detikSisa}s</p>` +
       `<p>Musuh dikalahkan: ${s.bunuh} • Pasukan gugur: ${s.gugur}</p>` +
       `<p>Bangunan dibangun: ${s.bangunanDibangun} • hilang: ${s.bangunanHilang}</p>` +
-      `<p>Gold terkumpul: ${Math.round(s.goldTerkumpul)} • Kayu: ${Math.round(s.kayuTerkumpul)} • Daging: ${Math.round(s.dagingTerkumpul)}</p>` +
-      `<div class="baris"><button class="tombol-besar" id="kembali">Kembali ke Lobby</button></div></div>`
+      `<p>Camp goblin dibersihkan: ${s.campDibersihkan}</p>` +
+      `<p>Level hero tertinggi: ${this.levelHeroTertinggi()}</p>` +
+      `<p>Gold: ${Math.round(s.goldTerkumpul)} • Kayu: ${Math.round(s.kayuTerkumpul)} • Daging: ${Math.round(s.dagingTerkumpul)}</p>` +
+      `<p>Sisa: ${Math.round(hero.sumberDaya.gold)}g • ${Math.round(hero.sumberDaya.kayu)}k • ${Math.round(hero.sumberDaya.daging)}d</p>` +
+      `<div class="baris">` +
+      `<button class="tombol-besar" id="kembali">Kembali ke Lobby</button>` +
+      (this.peran === 'solo' ? `<button class="tombol-besar" id="ulang">Main Lagi</button>` : '') +
+      `</div></div>`
     this.hud.akar.querySelector('#panggung')!.append(kotak)
+
     kotak.querySelector('#kembali')!.addEventListener('click', () => {
       kotak.remove()
-      this.dunia = null
-      this.fase = 'lobi'
-      this.kursor.style.display = 'none'
-      this.lobi.tampil(true)
+      this.kembaliKeLobby()
     })
+    kotak.querySelector('#ulang')?.addEventListener('click', () => {
+      kotak.remove()
+      this.mulaiSolo(this.lobi.hero, 'normal')
+    })
+  }
+
+  /** Level hero tertinggi yang pernah dicapai, termasuk hero yang gugur. */
+  private levelHeroTertinggi(): number {
+    if (!this.dunia) return 1
+    const k = this.dunia.tim[this.timSaya]
+    const hidup = this.dunia.unit.find((u) => u.tim === this.timSaya && u.hero)
+    return Math.max(hidup?.level ?? 1, k.heroGugur?.level ?? 1)
   }
 }
 
