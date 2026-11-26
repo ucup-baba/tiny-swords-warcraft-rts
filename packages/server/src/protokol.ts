@@ -19,6 +19,8 @@ export interface RingkasRoom {
   hostNama: string
   tamuNama: string | null
   jumlah: number
+  jumlahManusia?: number
+  slotTerbuka?: number
   maksPemain: number
   mulai: boolean
   peta: JenisPeta
@@ -60,6 +62,7 @@ export type DariPapan =
   | { t: 'lawan-putus'; detik: number; tim?: TimPemain }
   | { t: 'lawan-kembali' }
   | { t: 'lawan-menyerah' }
+  | { t: 'room-keluar'; pesan: string }
   | { t: 'galat'; pesan: string }
 
 const teks = (v: unknown, maks: number): v is string =>

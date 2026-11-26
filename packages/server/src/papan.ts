@@ -160,9 +160,19 @@ export class PapanInti {
     if (!mentah) return true
 
     switch (mentah.t) {
-      case 'halo':
+      case 'halo': {
         p.nama = mentah.nama
+        if (p.kode) {
+          const r = this.room.get(p.kode)
+          if (r && !r.mulai) {
+            const s = r.slot.find((x) => x.perangkatId === p.id)
+            if (s) s.nama = p.nama
+            this.siarkanRoom(r)
+            this.umumkan(p.kelompok)
+          }
+        }
         return true
+      }
       case 'denyut':
         return true
       case 'buat-room':
@@ -242,6 +252,7 @@ export class PapanInti {
     const devTamu = tamu?.perangkatId ? this.perangkat.get(tamu.perangkatId) : null
     const jumlahManusia = r.slot.filter((s) => s.jenis === 'manusia' && s.perangkatId !== null).length
     const jumlahAi = r.slot.filter((s) => s.jenis === 'ai').length
+    const slotTerbuka = r.slot.filter((s) => s.indeks > 0 && s.jenis === 'manusia' && s.perangkatId === null).length
 
     const slot: SlotRoom[] = r.slot.map((s) => ({
       indeks: s.indeks,
@@ -259,6 +270,8 @@ export class PapanInti {
       hostNama: host?.nama ?? 'Host',
       tamuNama: devTamu?.nama ?? null,
       jumlah: Math.max(1, jumlahManusia + jumlahAi),
+      jumlahManusia,
+      slotTerbuka,
       maksPemain: INFO_PETA[r.peta].maksPemain,
       mulai: r.mulai,
       peta: r.peta,
@@ -379,7 +392,7 @@ export class PapanInti {
           const dev = this.perangkat.get(lebih.perangkatId)
           if (dev) {
             dev.kode = null
-            dev.kirim({ t: 'galat', pesan: 'Host mengecilkan kapasitas peta' })
+            dev.kirim({ t: 'room-keluar', pesan: 'Host mengecilkan kapasitas peta' })
           }
         }
       }
@@ -452,12 +465,30 @@ export class PapanInti {
       p.kirim({ t: 'galat', pesan: `Room "${kode}" tidak ditemukan di jaringan ini` })
       return
     }
-    const slotKosong = room.mulai
-      ? null
-      : room.slot.find((s) => s.indeks > 0 && s.jenis === 'manusia' && s.perangkatId === null)
-    if (!slotKosong || room.mulai) {
-      p.kirim({ t: 'galat', pesan: `Room "${kode}" sudah penuh atau sedang bermain` })
+    // Idempoten: bila perangkat sudah berada di dalam room ini (mis. double-tap HP), cukup sinkron ulang.
+    const sudahAda = room.slot.find((s) => s.perangkatId === p.id)
+    if (sudahAda) {
+      sudahAda.nama = p.nama
+      sudahAda.hero = hero as HeroId
+      p.kode = kode
+      p.hero = hero
+      this.siarkanRoom(room)
       return
+    }
+    if (room.mulai) {
+      p.kirim({ t: 'galat', pesan: `Room "${kode}" sedang bermain` })
+      return
+    }
+    const slotKosong = room.slot.find((s) => s.indeks > 0 && s.jenis === 'manusia' && s.perangkatId === null)
+    if (!slotKosong) {
+      p.kirim({ t: 'galat', pesan: `Room "${kode}" sudah penuh (tidak ada slot Wi-Fi terbuka)` })
+      return
+    }
+    // Jika sebelumnya berada di room lain, keluar dari room lama dulu secara bersih.
+    if (p.kode && p.kode !== kode) {
+      const lama = this.room.get(p.kode)
+      if (lama) this.bubarkan(lama, p.id)
+      p.kode = null
     }
     slotKosong.perangkatId = p.id
     slotKosong.nama = p.nama
@@ -548,7 +579,7 @@ export class PapanInti {
           const tamu = this.perangkat.get(s.perangkatId)
           if (tamu) {
             tamu.kode = null
-            tamu.kirim({ t: 'galat', pesan: 'Host menutup room' })
+            tamu.kirim({ t: 'room-keluar', pesan: 'Host menutup room' })
           }
         }
       }

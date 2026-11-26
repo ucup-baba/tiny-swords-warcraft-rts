@@ -8,6 +8,8 @@ import { UNIT, buatRng, buatTerrain, type Terrain, type TitikPenting } from '@hf
 import type { ModeSentuh } from './menu.js'
 import { urlAset } from './sembilan.js'
 
+export type LayarLobi = 'pilih' | 'ai' | 'wifi' | 'room'
+
 export interface SlotRoomLobi {
   indeks: number
   tim: TimPemain
@@ -24,6 +26,8 @@ export interface RoomLan {
   hostNama: string
   tamuNama: string | null
   jumlah: number
+  jumlahManusia?: number
+  slotTerbuka?: number
   maksPemain?: number
   peta?: JenisPeta
   goldAwal?: number
@@ -37,11 +41,16 @@ export interface AksiLobi {
   buatRoomKonfig?(nama: string, konfig: KonfigMatch): void
   aturRoom?(konfig: KonfigMatch): void
   ubahSlotTamu?(opsi: { hero?: HeroId; aliansi?: number; tim?: TimPemain }): void
+  ubahNama?(nama: string): void
   gabungRoom(kode: string, nama: string, hero: PeranHeroAset): void
   mulaiLan(): void
   keluarRoom(): void
   ubahModeSentuh?(mode: ModeSentuh): void
   layarPenuh?(): void
+}
+
+interface SlotLobi extends KonfigSlot {
+  terisi: boolean
 }
 
 const DAFTAR_HERO: readonly { id: HeroId; label: string }[] = [
@@ -50,6 +59,8 @@ const DAFTAR_HERO: readonly { id: HeroId; label: string }[] = [
   { id: 'knight', label: 'Valen (Kuda)' },
   { id: 'champion', label: 'Torin (Perisai)' },
 ]
+
+const HERO_URUT: readonly HeroId[] = ['king', 'champion', 'knight', 'berserker', 'champion', 'knight']
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K, kelas?: string, isi?: string,
@@ -60,59 +71,136 @@ const el = <K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
+function buatSlotAiLobi(peta: JenisPeta, nama: string, hero: HeroId): SlotLobi[] {
+  return buatSlotDefault(peta, nama, hero).map((s) => ({
+    ...s,
+    terisi: s.jenis !== 'kosong',
+  }))
+}
+
+function buatSlotLanTerbuka(peta: JenisPeta, namaHost: string, heroHost: HeroId): SlotLobi[] {
+  const info = INFO_PETA[peta]
+  return info.warnaDefault.map((tim, i) => ({
+    indeks: i,
+    tim,
+    jenis: 'manusia',
+    aliansi: i + 1,
+    hero: i === 0 ? heroHost : HERO_URUT[i % HERO_URUT.length]!,
+    kesulitanAi: 'medium',
+    nama: i === 0 ? namaHost : 'Terbuka (LAN)',
+    terisi: i === 0,
+  }))
+}
+
+function hitungSlotTerbukaRoom(r: RoomLan): number {
+  if (typeof r.slotTerbuka === 'number') return r.slotTerbuka
+  if (r.slot && r.slot.length > 0) {
+    return r.slot.filter((s) => s.indeks > 0 && s.jenis === 'manusia' && !s.terisi).length
+  }
+  return Math.max(0, (r.maksPemain ?? 2) - r.jumlah)
+}
+
 export class Lobi {
   readonly akar: HTMLElement
-  private daftarRoom: HTMLElement
-  private statusRoom: HTMLElement
+
+  // Header bersama
+  private tombolKembali: HTMLButtonElement
+  private judulUtama: HTMLElement
+  private subJudul: HTMLElement
+  private inputNama: HTMLInputElement
+  private wadahModeSentuh: HTMLElement
+
+  // 3 wadah layar: Pilih Mode | Hub Wi-Fi | Setup Pertempuran (AI / Ruang Room)
+  private layarPilihEl: HTMLElement
+  private layarWifiEl: HTMLElement
+  private layarSetupEl: HTMLElement
+
+  // Elemen layar Pilih Mode
+  private btnPilihAi: HTMLButtonElement
+  private btnPilihWifi: HTMLButtonElement
+  private lencanaWifi: HTMLElement
+  private statusWifiMenu: HTMLElement
+
+  // Elemen layar Hub Wi-Fi (Buat Room vs Gabung Room)
+  private alamatEl: HTMLElement
+  private badgeKoneksiEl: HTMLElement
+  private wifiPetaListEl: HTMLElement
+  private wifiPratinjauKanvas: HTMLCanvasElement
+  private wifiPratinjauInfo: HTMLElement
+  private wifiGoldPresetEl: HTMLElement
+  private wifiGoldInput: HTMLInputElement
+  private tombolBuat: HTMLButtonElement
+  private inputKode: HTMLInputElement
+  private tombolGabung: HTMLButtonElement
+  private badgeJumlahRoom: HTMLElement
+  private daftarRoomEl: HTMLElement
+  private wifiGalatEl: HTMLElement
+
+  // Elemen layar Setup (AI Skirmish & Ruang Tunggu Room Wi-Fi)
+  private roomBannerEl: HTMLElement
+  private roomKodeBesarEl: HTMLElement
+  private roomInfoPeranEl: HTMLElement
+  private tombolKeluarBanner: HTMLButtonElement
+  private judulTabelSlot: HTMLElement
   private slotTabel: HTMLElement
   private presetAliansiEl: HTMLElement
   private petaListEl: HTMLElement
-  private goldPresetEl: HTMLElement
-  private goldInput: HTMLInputElement
-  private tombolBuat: HTMLButtonElement
-  private tombolGabung: HTMLButtonElement
-  private tombolMulaiLan: HTMLButtonElement
-  private tombolKeluar: HTMLButtonElement
-  private tombolMulaiSolo: HTMLButtonElement
-  private inputNama: HTMLInputElement
-  private inputKode: HTMLInputElement
-  private alamat: HTMLElement
-  private wadahModeSentuh: HTMLElement
   private pratinjauKanvas: HTMLCanvasElement
   private pratinjauKet: HTMLElement
+  private goldPresetEl: HTMLElement
+  private goldInput: HTMLInputElement
+  private tombolMulaiSolo: HTMLButtonElement
+  private tombolMulaiLan: HTMLButtonElement
+  private boxTungguTamu: HTMLElement
+  private statusSetupEl: HTMLElement
 
+  // State internal
+  private layar: LayarLobi = 'pilih'
   private petaDipilih: JenisPeta = 'klasik2'
   private goldAwal = GOLD_AWAL_BAKU
-  private slot: KonfigSlot[] = buatSlotDefault('klasik2')
+  private slot: SlotLobi[] = buatSlotAiLobi('klasik2', 'Komandan', 'king')
   private diDalamRoom = false
+  private kodeRoomAktif = ''
   private peranLan: 'host' | 'tamu' | null = null
   private timLanSaya: TimPemain | null = null
   private modeStatis = false
+  private lanTersambung = false
+  private sedangGabung = false
+  private alamatLanTeks = '—'
+  private roomTersedia: RoomLan[] = []
   private cachePeta = new Map<JenisPeta, { terrain: Terrain; titik: TitikPenting }>()
 
   constructor(private basis: string, private aksi: AksiLobi) {
     this.akar = el('div', 'hamparan')
     const kotak = el('div', 'kotak kotak-lobi')
 
-    // --- Header bar: judul + nama pemain + kontrol HP + layar penuh ---
+    // === HEADER BERSAMA ===
     const kepala = el('div', 'lobi-kepala')
-    const kiriHead = el('div')
-    kiriHead.append(
-      el('h1', undefined, 'Tiny Swords: Warcraft RTS'),
-      el('p', undefined, 'Lobi Pertempuran (2–6 Pemain / AI) · Pilih Peta, Tim, Kesulitan AI, dan Gold Awal'),
-    )
+    const kiriHead = el('div', 'lobi-judul-baris')
+    this.tombolKembali = el('button', 'btn-kembali', '← Kembali')
+    this.tombolKembali.type = 'button'
+    this.tombolKembali.style.display = 'none'
+    this.tombolKembali.addEventListener('click', () => this.kembali())
+
+    const teksHead = el('div')
+    this.judulUtama = el('h1', undefined, 'Tiny Swords: Warcraft RTS')
+    this.subJudul = el('p', undefined, 'Pilih mode permainan: Main vs AI (Skirmish) atau Multiplayer Wi-Fi / LAN (2–6 Pemain)')
+    teksHead.append(this.judulUtama, this.subJudul)
+    kiriHead.append(this.tombolKembali, teksHead)
+
     const alat = el('div', 'lobi-alat')
     this.inputNama = el('input', 'lobi-input')
     this.inputNama.value = 'Komandan'
     this.inputNama.maxLength = 16
     this.inputNama.style.width = '126px'
     this.inputNama.addEventListener('input', () => {
+      const nama = this.nama
       if (!this.diDalamRoom && this.slot[0]) {
-        this.slot[0].nama = this.inputNama.value.trim() || 'Komandan'
+        this.slot[0].nama = nama
       }
+      this.aksi.ubahNama?.(nama)
     })
-    const lblNama = el('label', undefined, 'Nama:')
-    alat.append(lblNama, this.inputNama)
+    alat.append(el('label', undefined, 'Nama:'), this.inputNama)
 
     this.wadahModeSentuh = el('div', 'lobi-preset-baris')
     for (const [m, label] of [['tapPintar', 'Tap HP'], ['joystick', 'Joystick']] as const) {
@@ -136,16 +224,193 @@ export class Lobi {
     kepala.append(kiriHead, alat)
     kotak.append(kepala)
 
-    // --- Grid 2 kolom gaya Warcraft III ---
+    // === LAYAR 1: PILIH MODE (MAIN vs AI / MAIN WI-FI LAN) ===
+    this.layarPilihEl = el('div')
+    const gridMode = el('div', 'mode-pilihan-grid')
+
+    // Kartu 1: Main vs AI
+    const kartuAi = el('div', 'mode-kartu')
+    const atasAi = el('div', 'mode-kartu-atas')
+    atasAi.append(el('span', 'mode-ikon', '⚔️'), el('span', 'mode-lencana', 'OFFLINE · 2–6 PEMAIN'))
+    const daftarAi = el('ul', 'mode-daftar')
+    daftarAi.append(
+      el('li', undefined, '3 Peta: Lembah Klasik (2P), Pulau Salib (4P), Kepulauan Bintang (6P)'),
+      el('li', undefined, '4 Tingkat AI: Gampang, Medium, Susah, Extreme'),
+      el('li', undefined, 'Preset Aliansi FFA / 2v2 / 3v3 / 2v2v2 & Custom Gold Awal'),
+    )
+    const statusAiMenu = el('div', 'mode-status-bar', '● Siap dimainkan kapan saja — cocok untuk solo & latihan strategi')
+    this.btnPilihAi = el('button', 'tombol-besar cta-mulai', '⚔ MAIN vs AI (SKIRMISH)')
+    this.btnPilihAi.type = 'button'
+    this.btnPilihAi.dataset['pilihMode'] = 'ai'
+    this.btnPilihAi.addEventListener('click', () => this.bukaLayar('ai'))
+    const isiAi = el('div')
+    isiAi.append(atasAi, el('h2', undefined, 'Main vs AI (Skirmish)'), daftarAi)
+    const bawahAi = el('div', 'lobi-kolom')
+    bawahAi.append(statusAiMenu, this.btnPilihAi)
+    kartuAi.append(isiAi, bawahAi)
+
+    // Kartu 2: Main Wi-Fi / LAN
+    const kartuWifi = el('div', 'mode-kartu')
+    const atasWifi = el('div', 'mode-kartu-atas')
+    this.lencanaWifi = el('span', 'mode-lencana wifi', 'MULTIPLAYER · 2–6 HP/PC')
+    atasWifi.append(el('span', 'mode-ikon', '📶'), this.lencanaWifi)
+    const daftarWifi = el('ul', 'mode-daftar')
+    daftarWifi.append(
+      el('li', undefined, 'Buat Room (Host): semua slot otomatis terbuka untuk teman Wi-Fi'),
+      el('li', undefined, 'Gabung Room (Tamu): masukkan Kode 5 huruf atau tap daftar Room aktif'),
+      el('li', undefined, 'Bisa campur Pemain + AI, ganti Warna, Aliansi, & Hero bersama'),
+    )
+    this.statusWifiMenu = el('div', 'mode-status-bar', '○ Menghubungkan ke server Wi-Fi LAN…')
+    this.btnPilihWifi = el('button', 'tombol-besar cta-mulai merah', '📶 MAIN WI-FI / LAN')
+    this.btnPilihWifi.type = 'button'
+    this.btnPilihWifi.dataset['pilihMode'] = 'wifi'
+    this.btnPilihWifi.addEventListener('click', () => {
+      if (this.modeStatis) return
+      this.bukaLayar('wifi')
+    })
+    const isiWifi = el('div')
+    isiWifi.append(atasWifi, el('h2', undefined, 'Main Wi-Fi / LAN'), daftarWifi)
+    const bawahWifi = el('div', 'lobi-kolom')
+    bawahWifi.append(this.statusWifiMenu, this.btnPilihWifi)
+    kartuWifi.append(isiWifi, bawahWifi)
+
+    gridMode.append(kartuAi, kartuWifi)
+    this.layarPilihEl.append(gridMode)
+    kotak.append(this.layarPilihEl)
+
+    // === LAYAR 2: HUB WI-FI / LAN (BUAT ROOM vs GABUNG ROOM) ===
+    this.layarWifiEl = el('div')
+    const infoWifiBar = el('div', 'wifi-info-bar')
+    this.alamatEl = el('span', undefined, 'Alamat LAN: —')
+    this.badgeKoneksiEl = el('span', 'cip', '○ Menyambung ke server Wi-Fi…')
+    infoWifiBar.append(this.alamatEl, this.badgeKoneksiEl)
+    this.layarWifiEl.append(infoWifiBar)
+
+    const wifiGrid = el('div', 'wifi-grid')
+
+    // Panel Kiri Wi-Fi: Buat Room (Host)
+    const panelBuat = el('div', 'wifi-panel')
+    panelBuat.append(
+      el('h2', undefined, '👑 1. Buat Room Baru (Host)'),
+      el('p', undefined, 'Pilih peta & gold awal. Semua slot lain otomatis Terbuka untuk teman Wi-Fi (AI bisa ditambah di dalam room).'),
+    )
+    this.wifiPetaListEl = el('div', 'peta-pilihan')
+    for (const id of JENIS_PETA) {
+      const info = INFO_PETA[id]
+      const btn = el('button', 'peta-btn')
+      btn.type = 'button'
+      btn.dataset['wifiPeta'] = id
+      btn.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
+      btn.addEventListener('click', () => this.ubahPeta(id))
+      this.wifiPetaListEl.append(btn)
+    }
+    panelBuat.append(this.wifiPetaListEl)
+
+    const wifiPrevBox = el('div', 'wifi-pratinjau')
+    this.wifiPratinjauKanvas = el('canvas')
+    this.wifiPratinjauKanvas.width = 196
+    this.wifiPratinjauKanvas.height = 98
+    this.wifiPratinjauInfo = el('div', 'wifi-pratinjau-info', INFO_PETA[this.petaDipilih].ringkas)
+    wifiPrevBox.append(this.wifiPratinjauKanvas, this.wifiPratinjauInfo)
+    panelBuat.append(wifiPrevBox)
+
+    const wifiGoldBaris = el('div', 'gold-baris')
+    wifiGoldBaris.append(el('span', 'slot-nama', 'Gold Awal:'))
+    this.wifiGoldPresetEl = el('div', 'lobi-preset-baris')
+    for (const nilai of PRESET_GOLD) {
+      const b = el('button', 'btn-kecil', `${nilai}`)
+      b.type = 'button'
+      b.dataset['wifiGold'] = String(nilai)
+      b.addEventListener('click', () => this.setGoldAwal(nilai))
+      this.wifiGoldPresetEl.append(b)
+    }
+    this.wifiGoldInput = el('input', 'gold-input')
+    this.wifiGoldInput.type = 'number'
+    this.wifiGoldInput.min = String(GOLD_AWAL_MIN)
+    this.wifiGoldInput.max = String(GOLD_AWAL_MAKS)
+    this.wifiGoldInput.step = '50'
+    this.wifiGoldInput.value = String(this.goldAwal)
+    this.wifiGoldInput.addEventListener('change', () => this.setGoldAwal(Number(this.wifiGoldInput.value)))
+    wifiGoldBaris.append(this.wifiGoldPresetEl, this.wifiGoldInput)
+    panelBuat.append(wifiGoldBaris)
+
+    this.tombolBuat = el('button', 'tombol-besar cta-mulai', '👑 BUAT ROOM WI-FI (HOST)')
+    this.tombolBuat.type = 'button'
+    this.tombolBuat.addEventListener('click', () => {
+      if (this.modeStatis) return
+      this.wifiGalatEl.textContent = ''
+      const slotTerbuka = buatSlotLanTerbuka(this.petaDipilih, this.nama, this.hero)
+      const konfig: KonfigMatch = {
+        peta: this.petaDipilih,
+        goldAwal: this.goldAwal,
+        slot: slotTerbuka.map(({ terisi: _t, ...s }) => s),
+      }
+      this.aksi.ubahNama?.(this.nama)
+      if (this.aksi.buatRoomKonfig) this.aksi.buatRoomKonfig(this.nama, konfig)
+      else this.aksi.buatRoom(this.nama, this.hero)
+    })
+    panelBuat.append(this.tombolBuat)
+
+    // Panel Kanan Wi-Fi: Gabung Room (Kode atau Tap Daftar Room di Bawah)
+    const panelGabung = el('div', 'wifi-panel')
+    panelGabung.append(
+      el('h2', undefined, '🚪 2. Gabung Room Teman (Tamu)'),
+      el('p', undefined, 'Masukkan Kode Room 5 huruf dari teman, atau langsung tap room yang muncul di bawah.'),
+    )
+
+    const barisKode = el('div', 'wifi-kode-baris')
+    this.inputKode = el('input', 'wifi-kode-input')
+    this.inputKode.placeholder = 'KODE ROOM'
+    this.inputKode.maxLength = 5
+    this.inputKode.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.gabungKeRoom(this.inputKode.value)
+    })
+    this.tombolGabung = el('button', 'tombol-besar merah', 'Gabung Kode')
+    this.tombolGabung.type = 'button'
+    this.tombolGabung.addEventListener('click', () => this.gabungKeRoom(this.inputKode.value))
+    barisKode.append(this.inputKode, this.tombolGabung)
+    panelGabung.append(barisKode)
+
+    const headDaftar = el('div', 'lobi-subjudul')
+    headDaftar.style.marginTop = '4px'
+    headDaftar.style.marginBottom = '2px'
+    this.badgeJumlahRoom = el('span', 'cip', '0 Room Aktif')
+    headDaftar.append(el('h2', undefined, 'Daftar Room Wi-Fi Aktif'), this.badgeJumlahRoom)
+    panelGabung.append(headDaftar)
+
+    this.daftarRoomEl = el('div', 'wifi-room-list')
+    this.wifiGalatEl = el('div', 'lobi-galat', '')
+    panelGabung.append(this.daftarRoomEl, this.wifiGalatEl)
+
+    wifiGrid.append(panelBuat, panelGabung)
+    this.layarWifiEl.append(wifiGrid)
+    kotak.append(this.layarWifiEl)
+
+    // === LAYAR 3: SETUP PERTEMPURAN WARCRAFT III (SKIRMISH AI & RUANG TUNGGU ROOM WI-FI) ===
+    this.layarSetupEl = el('div')
+
+    // Banner Room Wi-Fi (hanya tampil saat layar === 'room')
+    this.roomBannerEl = el('div', 'room-banner')
+    const bannerKiri = el('div', 'room-banner-kiri')
+    this.roomKodeBesarEl = el('span', 'room-kode-besar', 'KODE: -----')
+    this.roomInfoPeranEl = el('span', undefined, '')
+    bannerKiri.append(this.roomKodeBesarEl, this.roomInfoPeranEl)
+    this.tombolKeluarBanner = el('button', 'tombol-besar merah', 'Keluar Room')
+    this.tombolKeluarBanner.type = 'button'
+    this.tombolKeluarBanner.addEventListener('click', () => this.keluarRoomOlehPengguna())
+    this.roomBannerEl.append(bannerKiri, this.tombolKeluarBanner)
+    this.layarSetupEl.append(this.roomBannerEl)
+
+    // Grid 2 kolom gaya Warcraft III
     const grid = el('div', 'lobi-grid')
 
-    // Kolom kiri: Tabel 2-6 Slot Pemain + Kontrol LAN
+    // Kolom Kiri: Tabel 2–6 Slot Pemain
     const kolKiri = el('div', 'lobi-kolom')
     const boxSlot = el('div', 'lobi-subkotak')
     const subHead = el('div', 'lobi-subjudul')
-    subHead.append(el('h2', undefined, 'Daftar Pemain & AI (Maks 6 Pemain)'))
+    this.judulTabelSlot = el('h2', undefined, 'Daftar Pemain & AI (Maks 6 Pemain)')
     this.presetAliansiEl = el('div', 'lobi-preset-baris')
-    subHead.append(this.presetAliansiEl)
+    subHead.append(this.judulTabelSlot, this.presetAliansiEl)
     boxSlot.append(subHead)
 
     const thead = el('div', 'slot-header')
@@ -161,58 +426,10 @@ export class Lobi {
     boxSlot.append(this.slotTabel)
     kolKiri.append(boxSlot)
 
-    // Panel LAN Multiplayer
-    const boxLan = el('div', 'lobi-subkotak')
-    const headLan = el('div', 'lobi-subjudul')
-    headLan.append(el('h2', undefined, 'LAN Wi-Fi Multiplayer (2–6 Pemain)'))
-    boxLan.append(headLan)
-    this.alamat = el('p', undefined, 'Alamat LAN: —')
-    boxLan.append(this.alamat)
+    this.statusSetupEl = el('div', 'lobi-galat', '')
+    kolKiri.append(this.statusSetupEl)
 
-    const barisLan = el('div', 'baris')
-    this.tombolBuat = el('button', 'tombol-besar', 'Buat Room (Host)')
-    this.tombolBuat.type = 'button'
-    this.tombolBuat.addEventListener('click', () => {
-      if (this.modeStatis) return
-      const konfig = this.getKonfig()
-      if (this.aksi.buatRoomKonfig) this.aksi.buatRoomKonfig(this.nama, konfig)
-      else this.aksi.buatRoom(this.nama, this.hero)
-    })
-
-    this.inputKode = el('input', 'lobi-input')
-    this.inputKode.placeholder = 'KODE'
-    this.inputKode.maxLength = 5
-    this.inputKode.style.cssText = 'width:92px;text-transform:uppercase;text-align:center'
-
-    this.tombolGabung = el('button', 'tombol-besar merah', 'Gabung')
-    this.tombolGabung.type = 'button'
-    this.tombolGabung.addEventListener('click', () => {
-      this.aksi.gabungRoom(this.inputKode.value.trim().toUpperCase(), this.nama, this.hero)
-    })
-
-    this.tombolMulaiLan = el('button', 'tombol-besar', 'MULAI PERANG LAN!')
-    this.tombolMulaiLan.type = 'button'
-    this.tombolMulaiLan.disabled = true
-    this.tombolMulaiLan.addEventListener('click', () => this.aksi.mulaiLan())
-
-    this.tombolKeluar = el('button', 'tombol-besar merah', 'Keluar Room')
-    this.tombolKeluar.type = 'button'
-    this.tombolKeluar.style.display = 'none'
-    this.tombolKeluar.addEventListener('click', () => {
-      this.resetStatusRoom()
-      this.aksi.keluarRoom()
-    })
-
-    barisLan.append(this.tombolBuat, this.inputKode, this.tombolGabung, this.tombolMulaiLan, this.tombolKeluar)
-    boxLan.append(barisLan)
-
-    this.statusRoom = el('p', undefined, '')
-    this.statusRoom.style.marginTop = '5px'
-    this.daftarRoom = el('div', 'baris')
-    boxLan.append(this.statusRoom, this.daftarRoom)
-    kolKiri.append(boxLan)
-
-    // Kolom kanan: Pilih Peta + Pratinjau + Gold Awal + Tombol Mulai
+    // Kolom Kanan: Pilih Peta + Pratinjau + Gold Awal + Tombol Mulai
     const kolKanan = el('div', 'lobi-kolom')
     const boxPeta = el('div', 'lobi-subkotak')
     const headPeta = el('div', 'lobi-subjudul')
@@ -225,9 +442,7 @@ export class Lobi {
       const btn = el('button', 'peta-btn')
       btn.type = 'button'
       btn.dataset['peta'] = id
-      const kiriP = el('span', undefined, info.nama)
-      const kananP = el('span', 'peta-sub', `Maks ${info.maksPemain}P`)
-      btn.append(kiriP, kananP)
+      btn.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
       btn.addEventListener('click', () => this.ubahPeta(id))
       this.petaListEl.append(btn)
     }
@@ -246,7 +461,6 @@ export class Lobi {
     boxPeta.append(bingkaiPreview)
     kolKanan.append(boxPeta)
 
-    // Custom Starting Gold
     const boxGold = el('div', 'lobi-subkotak')
     const headGold = el('div', 'lobi-subjudul')
     headGold.append(el('h2', undefined, 'Gold Awal (Custom)'), el('span', 'peta-sub', 'Kayu 220 · Daging 140'))
@@ -267,25 +481,87 @@ export class Lobi {
     this.goldInput.max = String(GOLD_AWAL_MAKS)
     this.goldInput.step = '50'
     this.goldInput.value = String(this.goldAwal)
-    this.goldInput.addEventListener('change', () => {
-      this.setGoldAwal(Number(this.goldInput.value))
-    })
+    this.goldInput.addEventListener('change', () => this.setGoldAwal(Number(this.goldInput.value)))
     barisGold.append(this.goldPresetEl, this.goldInput)
     boxGold.append(barisGold)
     kolKanan.append(boxGold)
 
-    // Tombol Mulai Solo / Skirmish utama
+    // Tombol CTA Solo / Skirmish
     this.tombolMulaiSolo = el('button', 'tombol-besar cta-mulai', '⚔ MULAI SOLO / SKIRMISH')
     this.tombolMulaiSolo.type = 'button'
     this.tombolMulaiSolo.addEventListener('click', () => this.mulaiSkirmish())
-    kolKanan.append(this.tombolMulaiSolo)
+
+    // Tombol CTA Host LAN
+    this.tombolMulaiLan = el('button', 'tombol-besar cta-mulai', '⚔ MULAI PERANG WI-FI!')
+    this.tombolMulaiLan.type = 'button'
+    this.tombolMulaiLan.disabled = true
+    this.tombolMulaiLan.addEventListener('click', () => this.aksi.mulaiLan())
+
+    // Kotak info untuk Tamu LAN
+    this.boxTungguTamu = el(
+      'div',
+      'room-tunggu-box',
+      '⏳ Menunggu Host memulai pertandingan… Anda bebas pilih Warna, Aliansi, & Hero pada slot Anda di sebelah kiri.',
+    )
+
+    kolKanan.append(this.tombolMulaiSolo, this.tombolMulaiLan, this.boxTungguTamu)
 
     grid.append(kolKiri, kolKanan)
-    kotak.append(grid)
+    this.layarSetupEl.append(grid)
+    kotak.append(this.layarSetupEl)
     this.akar.append(kotak)
 
     this.setModeSentuh('tapPintar')
+    this.renderDaftarRoom()
     this.segarkanSemuaUi()
+  }
+
+  get layarAktif(): LayarLobi {
+    return this.layar
+  }
+
+  bukaLayar(tujuan: LayarLobi): void {
+    if (tujuan === 'wifi' && this.modeStatis) return
+    this.layar = tujuan
+    this.wifiGalatEl.textContent = ''
+    this.statusSetupEl.textContent = ''
+
+    if (tujuan === 'ai' && !this.diDalamRoom) {
+      // Pastikan slot Skirmish memakai AI (bukan bekas 'Terbuka (LAN)')
+      if (this.slot.some((s, i) => i > 0 && s.jenis === 'manusia')) {
+        this.slot = buatSlotAiLobi(this.petaDipilih, this.nama, this.hero)
+      }
+    }
+    this.segarkanSemuaUi()
+  }
+
+  private kembali(): void {
+    if (this.layar === 'room') {
+      this.keluarRoomOlehPengguna()
+      return
+    }
+    this.bukaLayar('pilih')
+  }
+
+  private keluarRoomOlehPengguna(): void {
+    this.resetStatusRoom()
+    this.aksi.keluarRoom()
+    this.bukaLayar(this.modeStatis ? 'pilih' : 'wifi')
+  }
+
+  private gabungKeRoom(kodeMentah: string): void {
+    if (this.modeStatis || this.sedangGabung) return
+    const kode = kodeMentah.trim().toUpperCase()
+    if (!kode) {
+      this.wifiGalatEl.textContent = 'Masukkan kode room 5 huruf dulu, atau tap salah satu room di bawah.'
+      return
+    }
+    this.wifiGalatEl.textContent = `Menghubungkan ke room ${kode}…`
+    this.sedangGabung = true
+    this.renderDaftarRoom()
+    this.tombolGabung.disabled = true
+    this.aksi.ubahNama?.(this.nama)
+    this.aksi.gabungRoom(kode, this.nama, this.hero)
   }
 
   private terbilangHostBebas(): boolean {
@@ -295,8 +571,10 @@ export class Lobi {
   private ubahPeta(peta: JenisPeta): void {
     if (!this.terbilangHostBebas()) return
     const maks = INFO_PETA[peta].maksPemain
-    const bawaan = buatSlotDefault(peta, this.nama, this.hero)
-    const baru: KonfigSlot[] = []
+    const bawaan = this.diDalamRoom
+      ? buatSlotLanTerbuka(peta, this.nama, this.hero)
+      : buatSlotAiLobi(peta, this.nama, this.hero)
+    const baru: SlotLobi[] = []
     const terpakai = new Set<TimPemain>()
 
     for (let i = 0; i < maks; i++) {
@@ -317,7 +595,6 @@ export class Lobi {
   private setGoldAwal(nilai: number): void {
     if (!this.terbilangHostBebas()) return
     this.goldAwal = jepitGoldAwal(nilai)
-    this.goldInput.value = String(this.goldAwal)
     this.segarkanGoldUi()
     this.kirimAturRoom()
   }
@@ -365,13 +642,14 @@ export class Lobi {
     const konfig = this.getKonfig()
     const aktif = konfig.slot.filter((s) => s.jenis !== 'kosong')
     if (aktif.length < 2) {
-      this.statusRoom.textContent = 'Minimal pilih 2 kerajaan aktif (Anda + minimal 1 AI).'
+      this.statusSetupEl.textContent = 'Minimal pilih 2 kerajaan aktif (Anda + minimal 1 AI).'
       return
     }
     if (new Set(aktif.map((s) => s.aliansi)).size < 2) {
-      this.statusRoom.textContent = 'Minimal harus ada 2 Tim/Aliansi yang berbeda agar bisa bertempur.'
+      this.statusSetupEl.textContent = 'Minimal harus ada 2 Tim/Aliansi yang berbeda agar bisa bertempur.'
       return
     }
+    this.statusSetupEl.textContent = ''
     if (this.aksi.mulaiMatch) {
       this.aksi.mulaiMatch(konfig)
       return
@@ -381,7 +659,76 @@ export class Lobi {
     this.aksi.mulaiSolo(this.hero, legacyKes)
   }
 
+  private segarkanHeader(): void {
+    this.tombolKembali.style.display = this.layar === 'pilih' ? 'none' : ''
+    this.tombolKembali.textContent = this.layar === 'room' ? '← Keluar Room' : '← Kembali'
+
+    if (this.layar === 'pilih') {
+      this.judulUtama.textContent = 'Tiny Swords: Warcraft RTS'
+      this.subJudul.textContent = 'Pilih mode permainan: Main vs AI (Skirmish) atau Multiplayer Wi-Fi / LAN (2–6 Pemain)'
+    } else if (this.layar === 'ai') {
+      this.judulUtama.textContent = '⚔ Main vs AI (Skirmish)'
+      this.subJudul.textContent = 'Atur Peta (2–6P), Tingkat AI (Gampang–Extreme), Aliansi, Hero, & Custom Gold Awal'
+    } else if (this.layar === 'wifi') {
+      this.judulUtama.textContent = '📶 Main Wi-Fi / LAN (2–6 Pemain)'
+      this.subJudul.textContent = 'Pilih Buat Room (Host) atau Gabung Room teman lewat Kode / Daftar Room di bawah'
+    } else {
+      this.judulUtama.textContent = `📶 Ruang Tunggu Room ${this.kodeRoomAktif}`
+      this.subJudul.textContent = this.peranLan === 'host'
+        ? 'Anda adalah Host — teman di Wi-Fi bisa langsung masuk, atau tambahkan AI pada slot terbuka'
+        : 'Anda adalah Tamu — pilih Warna, Aliansi, & Hero Anda sambil menunggu Host memulai'
+    }
+  }
+
+  private segarkanStatusWifi(): void {
+    if (this.modeStatis) {
+      this.lencanaWifi.className = 'mode-lencana nonaktif'
+      this.lencanaWifi.textContent = 'KHUSUS SERVER LOKAL'
+      this.statusWifiMenu.textContent =
+        'Mode Web Statis (GitHub Pages) — Skirmish 2–6 Pemain vs AI aktif penuh! LAN Wi-Fi aktif lewat server lokal (npm run dev).'
+      this.btnPilihWifi.disabled = true
+      this.tombolBuat.disabled = true
+      this.tombolGabung.disabled = true
+      this.inputKode.disabled = true
+      return
+    }
+    this.lencanaWifi.className = 'mode-lencana wifi'
+    this.lencanaWifi.textContent = 'MULTIPLAYER · 2–6 HP/PC'
+    this.btnPilihWifi.disabled = false
+    this.tombolBuat.disabled = false
+    this.tombolGabung.disabled = this.sedangGabung
+    this.inputKode.disabled = false
+
+    const jmlBuka = this.roomTersedia.filter((r) => hitungSlotTerbukaRoom(r) > 0).length
+    if (this.lanTersambung) {
+      this.badgeKoneksiEl.textContent = '● Terhubung ke Server Wi-Fi'
+      this.statusWifiMenu.textContent = jmlBuka > 0
+        ? `● Server Wi-Fi Siap · ${jmlBuka} room terbuka menunggu pemain (${this.alamatLanTeks})`
+        : `● Server Wi-Fi Siap · Klik untuk Buat Room atau Gabung (${this.alamatLanTeks})`
+    } else {
+      this.badgeKoneksiEl.textContent = '○ Menghubungkan ke Server Wi-Fi…'
+      this.statusWifiMenu.textContent = '○ Menghubungkan ke server Wi-Fi LAN…'
+    }
+  }
+
   private segarkanSemuaUi(): void {
+    this.segarkanHeader()
+    this.segarkanStatusWifi()
+
+    this.layarPilihEl.style.display = this.layar === 'pilih' ? '' : 'none'
+    this.layarWifiEl.style.display = this.layar === 'wifi' ? '' : 'none'
+    this.layarSetupEl.style.display = this.layar === 'ai' || this.layar === 'room' ? '' : 'none'
+
+    const modeRoom = this.layar === 'room' && this.diDalamRoom
+    this.roomBannerEl.style.display = modeRoom ? '' : 'none'
+    this.judulTabelSlot.textContent = modeRoom
+      ? 'Daftar Pemain Room Wi-Fi (Maks 6 Pemain)'
+      : 'Daftar Pemain & AI (Maks 6 Pemain)'
+
+    this.tombolMulaiSolo.style.display = this.layar === 'ai' ? '' : 'none'
+    this.tombolMulaiLan.style.display = modeRoom && this.peranLan === 'host' ? '' : 'none'
+    this.boxTungguTamu.style.display = modeRoom && this.peranLan === 'tamu' ? '' : 'none'
+
     const hostBebas = this.terbilangHostBebas()
     this.goldInput.disabled = !hostBebas
     for (const b of Array.from(this.petaListEl.children) as HTMLButtonElement[]) {
@@ -389,20 +736,32 @@ export class Lobi {
       b.classList.toggle('aktif', id === this.petaDipilih)
       b.disabled = !hostBebas
     }
+    for (const b of Array.from(this.wifiPetaListEl.children) as HTMLButtonElement[]) {
+      const id = b.dataset['wifiPeta'] as JenisPeta
+      b.classList.toggle('aktif', id === this.petaDipilih)
+    }
+
     this.pratinjauKet.textContent = INFO_PETA[this.petaDipilih].ringkas
+    this.wifiPratinjauInfo.textContent = `${INFO_PETA[this.petaDipilih].nama} · ${INFO_PETA[this.petaDipilih].ringkas}`
+
     this.segarkanGoldUi()
     this.renderPresetAliansi()
     this.renderTabelSlot()
-    this.gambarPratinjauPeta()
+    this.gambarPratinjauKe(this.pratinjauKanvas, this.slot)
+    this.gambarPratinjauKe(this.wifiPratinjauKanvas, buatSlotLanTerbuka(this.petaDipilih, this.nama, this.hero))
     this.tombolMulaiSolo.disabled = this.diDalamRoom
   }
 
   private segarkanGoldUi(): void {
     this.goldInput.value = String(this.goldAwal)
+    this.wifiGoldInput.value = String(this.goldAwal)
     const hostBebas = this.terbilangHostBebas()
     for (const b of Array.from(this.goldPresetEl.children) as HTMLButtonElement[]) {
       b.classList.toggle('aktif', Number(b.dataset['gold']) === this.goldAwal)
       b.disabled = !hostBebas
+    }
+    for (const b of Array.from(this.wifiGoldPresetEl.children) as HTMLButtonElement[]) {
+      b.classList.toggle('aktif', Number(b.dataset['wifiGold']) === this.goldAwal)
     }
   }
 
@@ -448,15 +807,25 @@ export class Lobi {
       row.append(btnWarna)
 
       // Kolom Pemain / Kesulitan AI
-      if (i === 0 || (this.diDalamRoom && (s.jenis === 'manusia' && s.nama !== 'Terbuka (LAN)'))) {
-        const ikon = i === 0 && this.diDalamRoom ? '👑 ' : s.jenis === 'manusia' ? '👤 ' : ''
-        const namaTampil = i === 0 ? (this.nama || 'Komandan') : s.nama
-        row.append(el('span', 'slot-nama', `${ikon}${namaTampil}`))
+      const diisiManusia = i === 0 || (this.diDalamRoom && s.jenis === 'manusia' && s.terisi)
+      if (diisiManusia) {
+        const ikon = i === 0 && this.diDalamRoom ? '👑 ' : '👤 '
+        const namaAsli = !this.diDalamRoom && i === 0 ? this.nama : s.nama
+        const akhiran = this.diDalamRoom && milikSaya ? ' (Anda)' : ''
+        row.append(el('span', 'slot-nama', `${ikon}${namaAsli}${akhiran}`))
+      } else if (!hostBebas) {
+        // Tampilan Tamu untuk slot non-manusia-terisi (read-only jelas)
+        const teksSlot = s.jenis === 'manusia'
+          ? '⏳ Terbuka (Menunggu Pemain Wi-Fi)'
+          : s.jenis === 'ai'
+            ? `🤖 ${LABEL_KESULITAN[s.kesulitanAi]}`
+            : 'Kosong (Tutup)'
+        row.append(el('span', 'slot-nama', teksSlot))
       } else {
         const selTipe = el('select', 'lobi-select')
         selTipe.dataset['roleSelect'] = String(i)
         const opsi: { val: string; teks: string }[] = []
-        if (this.diDalamRoom) opsi.push({ val: 'manusia', teks: 'Terbuka (Pemain LAN)' })
+        if (this.diDalamRoom) opsi.push({ val: 'manusia', teks: 'Terbuka (Pemain Wi-Fi)' })
         for (const k of KESULITAN_AI) opsi.push({ val: `ai:${k}`, teks: LABEL_KESULITAN[k] })
         opsi.push({ val: 'kosong', teks: 'Kosong (Tutup)' })
 
@@ -466,22 +835,24 @@ export class Lobi {
           selTipe.append(opt)
         }
         selTipe.value = s.jenis === 'ai' ? `ai:${s.kesulitanAi}` : s.jenis
-        selTipe.disabled = !hostBebas
         selTipe.addEventListener('change', () => {
           const v = selTipe.value
           if (v === 'kosong') {
             s.jenis = 'kosong'
             s.nama = 'Kosong'
+            s.terisi = false
           } else if (v === 'manusia') {
             s.jenis = 'manusia'
             s.nama = 'Terbuka (LAN)'
+            s.terisi = false
           } else if (v.startsWith('ai:')) {
             s.jenis = 'ai'
             s.kesulitanAi = v.slice(3) as KesulitanAi
             s.nama = `AI ${WARNA_TIM[s.tim].nama}`
+            s.terisi = true
           }
           this.renderTabelSlot()
-          this.gambarPratinjauPeta()
+          this.gambarPratinjauKe(this.pratinjauKanvas, this.slot)
           this.kirimAturRoom()
         })
         row.append(selTipe)
@@ -541,8 +912,49 @@ export class Lobi {
     void UNIT
   }
 
-  private gambarPratinjauPeta(): void {
-    const ctx = this.pratinjauKanvas.getContext('2d')
+  private renderDaftarRoom(): void {
+    this.daftarRoomEl.textContent = ''
+    this.badgeJumlahRoom.textContent = `${this.roomTersedia.length} Room Aktif`
+
+    if (this.roomTersedia.length === 0) {
+      this.daftarRoomEl.append(
+        el('div', 'room-tunggu-box', 'Belum ada room Wi-Fi aktif di jaringan ini.\nMinta teman klik "Buat Room Wi-Fi", atau buat room sendiri di panel kiri.'),
+      )
+      return
+    }
+
+    for (const r of this.roomTersedia) {
+      const maks = r.maksPemain ?? 2
+      const terbuka = hitungSlotTerbukaRoom(r)
+      const penuh = terbuka <= 0
+      const namaPeta = r.peta ? INFO_PETA[r.peta].nama : 'Lembah Klasik (2P)'
+      const gold = r.goldAwal ?? GOLD_AWAL_BAKU
+
+      const kartu = el('button', 'wifi-room-kartu')
+      kartu.type = 'button'
+      kartu.dataset['roomKode'] = r.kode
+      kartu.disabled = penuh || this.sedangGabung || this.modeStatis
+
+      const atas = el('div', 'wifi-room-atas')
+      const kiriAtas = el('div', 'baris')
+      kiriAtas.style.marginTop = '0'
+      kiriAtas.append(el('span', 'wifi-room-kode', r.kode), el('span', 'wifi-room-host', `👑 ${r.hostNama}`))
+      const badge = el('span', penuh ? 'wifi-badge-penuh' : 'wifi-badge-buka', penuh ? 'PENUH' : `TERBUKA (${terbuka} slot)`)
+      atas.append(kiriAtas, badge)
+
+      const bawah = el('div', 'wifi-room-bawah')
+      bawah.append(
+        el('span', undefined, `${namaPeta} · Gold ${gold}`),
+        el('span', undefined, `${r.jumlah}/${maks} aktif`),
+      )
+      kartu.append(atas, bawah)
+      kartu.addEventListener('click', () => this.gabungKeRoom(r.kode))
+      this.daftarRoomEl.append(kartu)
+    }
+  }
+
+  private gambarPratinjauKe(kanvas: HTMLCanvasElement, daftarSlot: readonly SlotLobi[]): void {
+    const ctx = kanvas.getContext('2d')
     if (!ctx) return
 
     let data = this.cachePeta.get(this.petaDipilih)
@@ -552,8 +964,8 @@ export class Lobi {
     }
 
     const { terrain: t, titik } = data
-    const w = this.pratinjauKanvas.width
-    const h = this.pratinjauKanvas.height
+    const w = kanvas.width
+    const h = kanvas.height
     const sx = w / t.kolom
     const sy = h / t.baris
 
@@ -571,28 +983,27 @@ export class Lobi {
       }
     }
 
-    // Emas di tengah
     ctx.fillStyle = '#ffd86b'
     ctx.beginPath()
-    ctx.arc(titik.plateauPusat.tx * sx, titik.plateauPusat.ty * sy, 4, 0, Math.PI * 2)
+    ctx.arc(titik.plateauPusat.tx * sx, titik.plateauPusat.ty * sy, Math.max(3, w * 0.013), 0, Math.PI * 2)
     ctx.fill()
 
-    // Penanda start tiap slot pemain
-    for (let i = 0; i < titik.basis.length && i < this.slot.length; i++) {
-      const s = this.slot[i]!
+    const r = w < 220 ? 5 : 6.5
+    for (let i = 0; i < titik.basis.length && i < daftarSlot.length; i++) {
+      const s = daftarSlot[i]!
       if (s.jenis === 'kosong') continue
       const b = titik.basis[i]!
       const px = b.tx * sx
       const py = b.ty * sy
       ctx.fillStyle = WARNA_TIM[s.tim].utama
       ctx.beginPath()
-      ctx.arc(px, py, 6.5, 0, Math.PI * 2)
+      ctx.arc(px, py, r, 0, Math.PI * 2)
       ctx.fill()
       ctx.strokeStyle = '#1b120b'
-      ctx.lineWidth = 1.6
+      ctx.lineWidth = 1.4
       ctx.stroke()
       ctx.fillStyle = '#ffffff'
-      ctx.font = "700 9px 'Pixelify Sans', sans-serif"
+      ctx.font = `700 ${w < 220 ? 8 : 9}px 'Pixelify Sans', sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(i + 1), px, py + 0.5)
@@ -601,14 +1012,25 @@ export class Lobi {
 
   private resetStatusRoom(): void {
     this.diDalamRoom = false
+    this.kodeRoomAktif = ''
     this.peranLan = null
     this.timLanSaya = null
-    this.slot = buatSlotDefault(this.petaDipilih, this.nama, this.hero)
+    this.sedangGabung = false
+    this.slot = buatSlotAiLobi(this.petaDipilih, this.nama, this.hero)
     this.segarkanSemuaUi()
   }
 
   setAlamat(url: string): void {
-    this.alamat.textContent = `Alamat LAN: ${url}`
+    this.alamatLanTeks = url
+    this.alamatEl.textContent = `Alamat LAN: ${url} (Buka alamat ini di HP teman pada Wi-Fi yang sama)`
+    this.segarkanStatusWifi()
+  }
+
+  setStatusKoneksi(tersambung: boolean): void {
+    this.lanTersambung = tersambung
+    if (!tersambung) this.sedangGabung = false
+    this.segarkanStatusWifi()
+    this.renderDaftarRoom()
   }
 
   setModeSentuh(mode: ModeSentuh): void {
@@ -618,39 +1040,33 @@ export class Lobi {
     }
   }
 
-  /** Mode web statis (GitHub Pages): Solo/Skirmish 2–6P vs AI aktif penuh, LAN nonaktif rapi tanpa error WS. */
+  /** Mode web statis (GitHub Pages): Solo/Skirmish 2–6P vs AI aktif penuh, Wi-Fi LAN nonaktif rapi tanpa error WS. */
   setModeStatis(catatan?: string): void {
     this.modeStatis = true
-    this.alamat.textContent =
+    this.alamatLanTeks = 'Mode Statis'
+    this.alamatEl.textContent =
       catatan ?? 'Mode Web Statis (GitHub Pages) — Skirmish 2–6 Pemain vs AI aktif! LAN aktif saat dijalankan lewat server lokal (npm run dev).'
-    this.tombolBuat.disabled = true
-    this.tombolGabung.disabled = true
-    this.inputKode.disabled = true
-    this.tombolMulaiLan.disabled = true
-    this.daftarRoom.textContent = ''
-    this.daftarRoom.append(el('span', 'cip', 'LAN Wi-Fi aktif saat dijalankan dari server lokal (npm run dev).'))
+    if (this.layar === 'wifi' || this.layar === 'room') this.layar = 'pilih'
+    this.segarkanSemuaUi()
+    this.renderDaftarRoom()
   }
 
   setDaftarRoom(daftar: readonly RoomLan[]): void {
-    this.daftarRoom.textContent = ''
-    if (daftar.length === 0) {
-      this.daftarRoom.append(el('span', 'cip', 'Belum ada room LAN aktif. Klik "Buat Room (Host)".'))
-      return
-    }
-    for (const r of daftar) {
-      const maks = r.maksPemain ?? 2
-      const namaPeta = r.peta ? INFO_PETA[r.peta].nama.split(' ')[0] : ''
-      const b = el('button', 'btn-kecil', `[${r.kode}] ${r.hostNama} (${r.jumlah}/${maks}${namaPeta ? ` · ${namaPeta}` : ''})`)
-      b.type = 'button'
-      b.addEventListener('click', () => this.aksi.gabungRoom(r.kode, this.nama, this.hero))
-      this.daftarRoom.append(b)
-    }
+    this.roomTersedia = [...daftar]
+    this.renderDaftarRoom()
+    this.segarkanStatusWifi()
   }
 
   terimaRoomLan(kode: string, peran: 'host' | 'tamu', timSaya: TimPemain, ringkas: RoomLan): void {
     this.diDalamRoom = true
+    this.kodeRoomAktif = kode
     this.peranLan = peran
     this.timLanSaya = timSaya
+    this.sedangGabung = false
+    this.layar = 'room'
+    this.wifiGalatEl.textContent = ''
+    this.statusSetupEl.textContent = ''
+
     if (ringkas.peta) this.petaDipilih = ringkas.peta
     if (ringkas.goldAwal !== undefined) this.goldAwal = ringkas.goldAwal
     if (ringkas.slot && ringkas.slot.length > 0) {
@@ -662,30 +1078,59 @@ export class Lobi {
         hero: s.hero,
         kesulitanAi: s.kesulitanAi,
         nama: s.nama,
+        terisi: s.terisi,
       }))
     }
+
     const terisi = ringkas.slot?.filter((s) => s.terisi) ?? []
     const aliansi = new Set(terisi.map((s) => s.aliansi))
+    const terbuka = hitungSlotTerbukaRoom(ringkas)
     const siap = terisi.length >= 2 && aliansi.size >= 2
-    const ket = `Room ${kode} (${peran === 'host' ? 'Host' : 'Tamu'} · ${WARNA_TIM[timSaya].nama}) — ${ringkas.jumlah}/${ringkas.maksPemain ?? 2} aktif`
-    this.setStatusRoom(ket, siap && peran === 'host', true)
+
+    this.roomKodeBesarEl.textContent = `KODE: ${kode}`
+    const peranTeks = peran === 'host' ? '👑 HOST' : '👤 TAMU'
+    this.roomInfoPeranEl.textContent =
+      `${peranTeks} · Warna ${WARNA_TIM[timSaya].nama} · ${ringkas.jumlah}/${ringkas.maksPemain ?? 2} siap · ${terbuka} slot Wi-Fi terbuka`
+
+    this.tombolMulaiLan.disabled = !(siap && peran === 'host')
+    if (peran === 'host' && !siap) {
+      this.statusSetupEl.textContent = terisi.length < 2
+        ? 'Menunggu minimal 1 teman bergabung lewat Wi-Fi, atau tambahkan AI pada slot terbuka.'
+        : 'Minimal harus ada 2 Tim/Aliansi berbeda agar pertandingan bisa dimulai.'
+    }
+
     this.segarkanSemuaUi()
   }
 
+  keluarDariRoom(pesan?: string): void {
+    this.resetStatusRoom()
+    this.bukaLayar(this.modeStatis ? 'pilih' : 'wifi')
+    if (pesan) this.wifiGalatEl.textContent = pesan
+  }
+
+  tampilkanGalatLan(pesan: string): void {
+    this.sedangGabung = false
+    this.tombolGabung.disabled = this.modeStatis
+    this.renderDaftarRoom()
+    if (this.layar === 'wifi') this.wifiGalatEl.textContent = pesan
+    else if (this.layar === 'room') this.statusSetupEl.textContent = pesan
+  }
+
   setStatusRoom(teks: string, bisaMulai: boolean, diDalamRoom: boolean): void {
-    this.statusRoom.textContent = teks
     this.tombolMulaiLan.disabled = !bisaMulai
-    this.tombolKeluar.style.display = diDalamRoom ? '' : 'none'
     if (!diDalamRoom && this.diDalamRoom) {
       this.resetStatusRoom()
+      this.bukaLayar(this.modeStatis ? 'pilih' : 'wifi')
     }
+    if (this.layar === 'wifi') this.wifiGalatEl.textContent = teks
+    else if (this.layar === 'room') this.statusSetupEl.textContent = teks
   }
 
   getKonfig(): KonfigMatch {
     return {
       peta: this.petaDipilih,
       goldAwal: this.goldAwal,
-      slot: this.slot.map((s) => ({ ...s })),
+      slot: this.slot.map(({ terisi: _t, ...s }) => ({ ...s })),
     }
   }
 

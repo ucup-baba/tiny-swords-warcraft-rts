@@ -308,4 +308,34 @@ describe('Multipemain LAN 2–6 Pemain, Peta, Custom Gold, & Slot AI', () => {
     expect(m!.goldAwal).toBe(750)
     expect(m!.slot.filter((s) => s.jenis === 'ai')).toHaveLength(3)
   })
+
+  it('gabung-room idempoten (double-tap HP tidak memicu "room sudah penuh"), hitung slotTerbuka akurat, sinkron nama live, & kirim room-keluar saat host menutup room', () => {
+    const p = papanBaru()
+    const host = sambung(p, 'h')
+    const tamu = sambung(p, 't')
+    kirim(p, host.id, { t: 'halo', nama: 'HP1' })
+    kirim(p, tamu.id, { t: 'halo', nama: 'HP2' })
+    kirim(p, host.id, { t: 'buat-room', hero: 'king', peta: 'klasik2' })
+
+    const kode = terakhir(host, 'room')!.kode
+    expect(terakhir(host, 'room')!.ringkas.slotTerbuka).toBe(1)
+
+    // Tamu tap 2 kali berturut-turut pada room 2P -> tidak boleh menghasilkan galat "penuh"
+    tamu.kotak.length = 0
+    kirim(p, tamu.id, { t: 'gabung-room', kode, hero: 'knight' })
+    kirim(p, tamu.id, { t: 'gabung-room', kode, hero: 'knight' })
+    expect(terakhir(tamu, 'galat')).toBeUndefined()
+    expect(terakhir(tamu, 'room')!.peran).toBe('tamu')
+    expect(terakhir(tamu, 'room')!.ringkas.slotTerbuka).toBe(0)
+
+    // Tamu mengganti nama saat sudah di dalam room -> langsung tersinkron ke Host
+    kirim(p, tamu.id, { t: 'halo', nama: 'RakaHP2' })
+    expect(terakhir(host, 'room')!.ringkas.slot[1]!.nama).toBe('RakaHP2')
+
+    // Host menutup room -> tamu menerima room-keluar & daftar room terbaru
+    tamu.kotak.length = 0
+    kirim(p, host.id, { t: 'keluar-room' })
+    expect(terakhir(tamu, 'room-keluar')).toBeDefined()
+    expect(terakhir(tamu, 'daftar')!.room).toHaveLength(0)
+  })
 })

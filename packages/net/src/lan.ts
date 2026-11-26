@@ -18,6 +18,8 @@ export interface RingkasRoom {
   hostNama: string
   tamuNama: string | null
   jumlah: number
+  jumlahManusia?: number
+  slotTerbuka?: number
   maksPemain: number
   mulai: boolean
   peta: JenisPeta
@@ -40,6 +42,7 @@ export interface PendengarLan {
   lawanPutus?(detik: number): void
   lawanKembali?(): void
   lawanMenyerah?(): void
+  roomKeluar?(pesan: string): void
   galat?(pesan: string): void
   tersambung?(): void
   terputus?(): void
@@ -128,6 +131,10 @@ export class KlienLan {
         case 'lawan-menyerah':
           this.pendengar.lawanMenyerah?.()
           break
+        case 'room-keluar':
+          this.kodeRoom = ''
+          this.pendengar.roomKeluar?.(String(m['pesan'] ?? 'Keluar dari room'))
+          break
         case 'galat':
           this.pendengar.galat?.(String(m['pesan']))
           break
@@ -149,6 +156,11 @@ export class KlienLan {
     // Snapshot & denyut basi kalau ditunda; sisanya diantrekan.
     const jenis = (p as { t?: string }).t
     if (jenis !== 'snapshot' && jenis !== 'denyut') this.antrean.push(p)
+  }
+
+  kirimNama(nama: string): void {
+    const bersih = nama.trim().slice(0, 18) || 'Pemain'
+    this.kirimMentah({ t: 'halo', nama: bersih })
   }
 
   buatRoom(hero: string, opsi?: Partial<KonfigMatch>): void {

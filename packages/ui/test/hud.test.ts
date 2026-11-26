@@ -118,15 +118,21 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     expect(hud.layarPutar.classList.contains('tampil')).toBe(true)
   })
 
-  it('Lobi.setModeStatis menonaktifkan tombol LAN untuk GitHub Pages tanpa merusak Solo vs AI', () => {
+  it('Lobi.setModeStatis menonaktifkan mode Wi-Fi LAN untuk GitHub Pages tanpa merusak Main vs AI', () => {
     const lobi = new Lobi('', {
       mulaiSolo: vi.fn(), buatRoom: vi.fn(), gabungRoom: vi.fn(), mulaiLan: vi.fn(), keluarRoom: vi.fn(),
     })
     lobi.setModeStatis()
     expect(lobi.akar.textContent).toContain('GitHub Pages')
-    const btnBuat = [...lobi.akar.querySelectorAll('button')].find((b) => b.textContent?.includes('Buat Room')) as HTMLButtonElement
+    const btnWifi = lobi.akar.querySelector<HTMLButtonElement>('[data-pilih-mode="wifi"]')!
+    const btnAi = lobi.akar.querySelector<HTMLButtonElement>('[data-pilih-mode="ai"]')!
+    expect(btnWifi.disabled).toBe(true)
+    expect(btnAi.disabled).toBe(false)
+
+    // Masuk ke Main vs AI tetap normal
+    btnAi.click()
+    expect(lobi.layarAktif).toBe('ai')
     const btnSolo = [...lobi.akar.querySelectorAll('button')].find((b) => b.textContent?.includes('MULAI SOLO')) as HTMLButtonElement
-    expect(btnBuat.disabled).toBe(true)
     expect(btnSolo.disabled).toBe(false)
   })
 
@@ -191,8 +197,8 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
   })
 })
 
-describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold', () => {
-  it('berpindah peta mengubah jumlah slot & mendukung 4 tingkat kesulitan AI + custom gold awal', () => {
+describe('Lobi Warcraft III — Pemisahan Main vs AI / Wi-Fi LAN, Peta 2/4/6P, 4 Tier AI, & Custom Gold', () => {
+  it('berpindah peta mengubah jumlah slot & mendukung 4 tingkat kesulitan AI + custom gold awal di mode Main vs AI', () => {
     const mulaiMatch = vi.fn()
     const lobi = new Lobi('', {
       mulaiSolo: vi.fn(),
@@ -202,6 +208,11 @@ describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold',
       mulaiLan: vi.fn(),
       keluarRoom: vi.fn(),
     })
+
+    // Awalnya di layar pilih mode (pemisahan Main vs AI vs Wi-Fi LAN)
+    expect(lobi.layarAktif).toBe('pilih')
+    lobi.akar.querySelector<HTMLButtonElement>('[data-pilih-mode="ai"]')!.click()
+    expect(lobi.layarAktif).toBe('ai')
 
     // Awalnya peta klasik2 (2 slot)
     expect(lobi.akar.querySelectorAll('.slot-baris')).toHaveLength(2)
@@ -225,7 +236,9 @@ describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold',
     selAi.dispatchEvent(new Event('change'))
 
     // Atur custom gold awal via input angka
-    const goldInput = lobi.akar.querySelector<HTMLInputElement>('.gold-input')!
+    const goldInput = lobi.akar.querySelector<HTMLInputElement>('#lobi-pratinjau-peta')
+      ? lobi.akar.querySelectorAll<HTMLInputElement>('.gold-input')[1]!
+      : lobi.akar.querySelector<HTMLInputElement>('.gold-input')!
     goldInput.value = '1750'
     goldInput.dispatchEvent(new Event('change'))
 
@@ -234,7 +247,9 @@ describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold',
     btn3v3.click()
 
     // Mulai pertandingan -> mengirim KonfigMatch lengkap
-    lobi.akar.querySelector<HTMLButtonElement>('.cta-mulai')!.click()
+    const btnMulaiAi = [...lobi.akar.querySelectorAll<HTMLButtonElement>('.cta-mulai')]
+      .find((b) => b.textContent?.includes('MULAI SOLO'))!
+    btnMulaiAi.click()
     expect(mulaiMatch).toHaveBeenCalledTimes(1)
     const arg = mulaiMatch.mock.calls[0]![0]
     expect(arg.peta).toBe('bintang6')
@@ -243,5 +258,78 @@ describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold',
     expect(arg.slot[1].kesulitanAi).toBe('extreme')
     expect(arg.slot[0].aliansi).toBe(1)
     expect(arg.slot[3].aliansi).toBe(2)
+  })
+
+  it('mode Wi-Fi LAN: Buat Room membuka semua slot teman, daftar room menandai Terbuka vs Penuh, anti double-tap, dan tampilkan nama Host asli ke Tamu', () => {
+    const buatRoomKonfig = vi.fn()
+    const gabungRoom = vi.fn()
+    const lobi = new Lobi('', {
+      mulaiSolo: vi.fn(),
+      buatRoom: vi.fn(),
+      buatRoomKonfig,
+      gabungRoom,
+      mulaiLan: vi.fn(),
+      keluarRoom: vi.fn(),
+    })
+
+    // Masuk ke Hub Wi-Fi LAN
+    lobi.akar.querySelector<HTMLButtonElement>('[data-pilih-mode="wifi"]')!.click()
+    expect(lobi.layarAktif).toBe('wifi')
+
+    // Pilih peta Pulau Salib (4P) lalu Buat Room -> semua 3 slot lain harus terbuka ('manusia'), BUKAN AI
+    lobi.akar.querySelector<HTMLButtonElement>('[data-wifi-peta="salib4"]')!.click()
+    const btnBuat = [...lobi.akar.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => b.textContent?.includes('BUAT ROOM WI-FI'))!
+    btnBuat.click()
+    expect(buatRoomKonfig).toHaveBeenCalledTimes(1)
+    const konfig = buatRoomKonfig.mock.calls[0]![1]
+    expect(konfig.peta).toBe('salib4')
+    expect(konfig.slot.map((s: { jenis: string }) => s.jenis)).toEqual(['manusia', 'manusia', 'manusia', 'manusia'])
+
+    // Daftar room: 1 terbuka (3 slot), 1 penuh (0 slot)
+    lobi.setDaftarRoom([
+      { kode: 'BUKA1', hostNama: 'Budi', tamuNama: null, jumlah: 1, slotTerbuka: 3, maksPemain: 4, peta: 'salib4', goldAwal: 500 },
+      { kode: 'PENU2', hostNama: 'Siti', tamuNama: 'Andi', jumlah: 2, slotTerbuka: 0, maksPemain: 2, peta: 'klasik2', goldAwal: 320 },
+    ])
+    const kartuBuka = lobi.akar.querySelector<HTMLButtonElement>('[data-room-kode="BUKA1"]')!
+    const kartuPenuh = lobi.akar.querySelector<HTMLButtonElement>('[data-room-kode="PENU2"]')!
+    expect(kartuBuka.disabled).toBe(false)
+    expect(kartuBuka.textContent).toContain('TERBUKA (3 slot)')
+    expect(kartuPenuh.disabled).toBe(true)
+    expect(kartuPenuh.textContent).toContain('PENUH')
+
+    // Tap cepat 2x pada room terbuka hanya mengirim 1 permintaan gabung (anti double-tap)
+    kartuBuka.click()
+    kartuBuka.click()
+    expect(gabungRoom).toHaveBeenCalledTimes(1)
+    expect(gabungRoom).toHaveBeenCalledWith('BUKA1', 'Komandan', 'king')
+
+    // Terima konfirmasi masuk room sebagai Tamu -> otomatis ke layar 'room' & nama Host tetap 'Budi'
+    lobi.terimaRoomLan('BUKA1', 'tamu', 'red', {
+      kode: 'BUKA1',
+      hostNama: 'Budi',
+      tamuNama: 'Komandan',
+      jumlah: 2,
+      slotTerbuka: 2,
+      maksPemain: 4,
+      peta: 'salib4',
+      goldAwal: 500,
+      slot: [
+        { indeks: 0, tim: 'blue', jenis: 'manusia', aliansi: 1, hero: 'king', kesulitanAi: 'medium', nama: 'Budi', terisi: true },
+        { indeks: 1, tim: 'red', jenis: 'manusia', aliansi: 2, hero: 'knight', kesulitanAi: 'medium', nama: 'Komandan', terisi: true },
+        { indeks: 2, tim: 'green', jenis: 'manusia', aliansi: 3, hero: 'champion', kesulitanAi: 'medium', nama: 'Terbuka (LAN)', terisi: false },
+        { indeks: 3, tim: 'yellow', jenis: 'manusia', aliansi: 4, hero: 'berserker', kesulitanAi: 'medium', nama: 'Terbuka (LAN)', terisi: false },
+      ],
+    })
+    expect(lobi.layarAktif).toBe('room')
+    const baris0 = lobi.akar.querySelector('.slot-baris[data-slot-index="0"]')!
+    const baris1 = lobi.akar.querySelector('.slot-baris[data-slot-index="1"]')!
+    expect(baris0.textContent).toContain('Budi')
+    expect(baris1.textContent).toContain('Komandan (Anda)')
+
+    // Jika Host menutup room -> tamu kembali ke layar Wi-Fi
+    lobi.keluarDariRoom('Host menutup room')
+    expect(lobi.layarAktif).toBe('wifi')
+    expect(lobi.akar.textContent).toContain('Host menutup room')
   })
 })

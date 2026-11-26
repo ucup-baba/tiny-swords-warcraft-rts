@@ -78,6 +78,7 @@ class Permainan {
   private perangkatSentuh = deteksiPerangkatSentuh()
   private abaikanPutar = false
   private modeStatis = false
+  private timerNamaLan = 0
 
   constructor() {
     const gaya = document.createElement('style')
@@ -212,16 +213,22 @@ class Permainan {
       buatRoom: (nama, hero) => {
         if (this.modeStatis) return
         this.pastikanLan(nama)
+        this.lan?.kirimNama(nama)
         this.lan?.buatRoom(hero)
       },
       buatRoomKonfig: (nama, konfig) => {
         if (this.modeStatis) return
         this.pastikanLan(nama)
-        const slotLan = konfig.slot.map((s) => ({ ...s }))
-        // Pastikan minimal ada 1 slot terbuka agar teman di LAN bisa bergabung
+        this.lan?.kirimNama(nama)
+        const slotLan = konfig.slot.map((s, i) => (
+          i === 0 ? { ...s, jenis: 'manusia' as const, nama } : { ...s }
+        ))
+        // Pastikan minimal ada slot terbuka agar teman di Wi-Fi selalu bisa bergabung
         if (slotLan.length > 1 && !slotLan.some((s, i) => i > 0 && s.jenis === 'manusia')) {
-          slotLan[1]!.jenis = 'manusia'
-          slotLan[1]!.nama = 'Terbuka (LAN)'
+          for (let i = 1; i < slotLan.length; i++) {
+            slotLan[i]!.jenis = 'manusia'
+            slotLan[i]!.nama = 'Terbuka (LAN)'
+          }
         }
         this.lan?.buatRoom(slotLan[0]?.hero ?? 'king', {
           peta: konfig.peta,
@@ -237,17 +244,24 @@ class Permainan {
         if (this.modeStatis) return
         this.lan?.ubahSlot(opsi)
       },
+      ubahNama: (nama) => {
+        if (this.modeStatis || !this.lan) return
+        window.clearTimeout(this.timerNamaLan)
+        this.timerNamaLan = window.setTimeout(() => {
+          this.lan?.kirimNama(nama)
+        }, 250)
+      },
       gabungRoom: (kode, nama, hero) => {
         if (this.modeStatis) return
-        if (!kode) return this.hud.tampilkanToast('Masukkan kode room dulu')
+        if (!kode) return this.hud.tampilkanToast('Masukkan kode room dulu', true)
         this.pastikanLan(nama)
+        this.lan?.kirimNama(nama)
         this.lan?.gabung(kode, hero)
       },
       mulaiLan: () => this.lan?.mulai(),
       keluarRoom: () => {
         this.lan?.keluar()
         this.peranLanRoom = null
-        this.lobi.setStatusRoom('Keluar dari room.', false, false)
       },
       ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
       layarPenuh: () => void this.mintaLayarPenuh(),
@@ -345,7 +359,6 @@ class Permainan {
 
     this.fase = 'lobi'
     this.lobi.tampil(true)
-    this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
 
     // Deteksi server LAN lokal vs hosting statis (GitHub Pages):
     // Hanya menyambung WebSocket /ws jika endpoint ./alamat mengembalikan JSON server.
@@ -466,12 +479,24 @@ class Permainan {
         this.sembunyikanPutus()
         if (this.dunia) this.dunia.hasil = { jenis: 'menang', tim: this.timSaya }
       },
-      galat: (pesan) => this.hud.tampilkanToast(pesan, true),
+      roomKeluar: (pesan) => {
+        this.peranLanRoom = null
+        this.lobi.keluarDariRoom(pesan)
+        this.hud.tampilkanToast(pesan, true)
+      },
+      galat: (pesan) => {
+        this.lobi.tampilkanGalatLan(pesan)
+        this.hud.tampilkanToast(pesan, true)
+      },
+      tersambung: () => {
+        this.lobi.setStatusKoneksi(true)
+      },
       terputus: () => {
+        this.lobi.setStatusKoneksi(false)
         this.hud.tampilkanToast('Koneksi LAN terputus — mencoba menyambung lagi…')
         window.setTimeout(() => {
           this.lan = null
-          this.pastikanLan(nama)
+          this.pastikanLan(this.lobi.nama)
           window.setTimeout(() => this.lan?.sambungUlang(), 400)
         }, 1200)
       },
@@ -1267,6 +1292,7 @@ class Permainan {
   }
 
   private kembaliKeLobby(): void {
+    const bekasLan = this.peran !== 'solo'
     this.lan?.keluar()
     this.dunia = null
     this.daftarAi = []
@@ -1278,7 +1304,11 @@ class Permainan {
     this.sembunyikanPutus()
     this.tutupMenuJeda()
     this.lobi.tampil(true)
-    this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
+    if (bekasLan && !this.modeStatis) {
+      this.lobi.keluarDariRoom()
+    } else {
+      this.lobi.bukaLayar('pilih')
+    }
   }
 
   private selesaikan(): void {

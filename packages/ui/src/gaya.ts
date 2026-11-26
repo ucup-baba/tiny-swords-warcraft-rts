@@ -742,5 +742,295 @@ img, canvas { image-rendering: pixelated; }
   padding: 10px 14px;
   font-size: 15px;
 }
+
+/* --- Pemisahan Lobi Awal: Menu Mode (Main vs AI / Wi-Fi LAN) & Hub Wi-Fi --- */
+.lobi-judul-baris {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.btn-kembali {
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 244, 214, 0.85);
+  border: 2px solid #593b20;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-kembali:hover {
+  background: #ffd86b;
+  border-color: #24160b;
+}
+.mode-pilihan-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+.mode-kartu {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  background: rgba(255, 248, 228, 0.56);
+  border: 2.5px solid #5c3c1e;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.mode-kartu-atas {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mode-ikon {
+  font-size: 32px;
+  line-height: 1;
+}
+.mode-lencana {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  background: #3d2410;
+  color: #ffd86b;
+  letter-spacing: 0.4px;
+}
+.mode-lencana.wifi {
+  background: #1b4d3e;
+  color: #a8ffda;
+}
+.mode-lencana.nonaktif {
+  background: #5a4b3f;
+  color: #e6d8c3;
+}
+.mode-kartu h2 {
+  font-size: 20px;
+  color: #24160b;
+  margin: 4px 0 2px;
+}
+.mode-daftar {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3d2410;
+}
+.mode-daftar li::before {
+  content: '▸ ';
+  color: #8c4b14;
+}
+.mode-status-bar {
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(36, 22, 11, 0.14);
+  border: 1.5px solid rgba(74, 48, 24, 0.35);
+  color: #2e1b0c;
+}
+.wifi-info-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(36, 22, 11, 0.15);
+  border: 1.5px solid rgba(74, 48, 24, 0.4);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+}
+.wifi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+  align-items: stretch;
+}
+.wifi-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(255, 248, 228, 0.45);
+  border: 2px solid rgba(74, 48, 24, 0.5);
+  border-radius: 7px;
+}
+.wifi-panel h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #2d1808;
+}
+.wifi-pratinjau {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  background: #1d2a33;
+  border: 2px solid #4e341e;
+  border-radius: 5px;
+}
+.wifi-pratinjau canvas {
+  display: block;
+  width: 196px;
+  height: 98px;
+  border-radius: 3px;
+  flex: none;
+}
+.wifi-pratinjau-info {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e8d5a9;
+  line-height: 1.35;
+}
+.wifi-kode-baris {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.wifi-kode-input {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--tinta);
+  background: rgba(255, 250, 236, 0.96);
+  border: 2px solid #593b20;
+  border-radius: 5px;
+}
+.wifi-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 256px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.wifi-room-kartu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--tinta);
+  background: rgba(255, 250, 236, 0.88);
+  border: 2px solid #5c3c1e;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.wifi-room-kartu:hover:not(:disabled) {
+  background: #ffe8a3;
+  border-color: #24160b;
+}
+.wifi-room-kartu:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: rgba(220, 210, 190, 0.65);
+}
+.wifi-room-atas, .wifi-room-bawah {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wifi-room-kode {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #2b1a0c;
+  color: #ffd86b;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.wifi-room-host {
+  font-size: 13px;
+  font-weight: 700;
+  color: #24160b;
+}
+.wifi-room-bawah {
+  font-size: 11px;
+  font-weight: 700;
+  color: #52341b;
+}
+.wifi-badge-buka {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #1d6b3b;
+  color: #fff;
+}
+.wifi-badge-penuh {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #9e2f24;
+  color: #fff;
+}
+.room-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 7px 12px;
+  background: linear-gradient(90deg, rgba(43, 26, 12, 0.88), rgba(68, 42, 18, 0.85));
+  border: 2px solid #b57b14;
+  border-radius: 6px;
+  color: #f8e9c4;
+}
+.room-banner-kiri {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.room-kode-besar {
+  padding: 3px 10px;
+  background: #ffd86b;
+  color: #24160b;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.room-tunggu-box {
+  padding: 10px 12px;
+  text-align: center;
+  background: rgba(36, 22, 11, 0.16);
+  border: 2px dashed #6b4928;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3d210a;
+  line-height: 1.4;
+}
+.lobi-galat {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8f1d14;
+  min-height: 16px;
+}
 `
 }
