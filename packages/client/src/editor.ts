@@ -4,7 +4,7 @@ import {
 } from '@hftf/aset'
 import {
   DUNIA_H, DUNIA_W, INFO_BIOMA, INFO_PETA, JENIS_PETA, PETA_BARIS, PETA_KOLOM,
-  TILE, TIM_PEMAIN, TINGGI, WARNA_TIM, balikKodeRamp, buatIdPetaCustom, cekValidasiPeta,
+  RAMP_MAKS, TILE, TIM_PEMAIN, TINGGI, WARNA_TIM, balikKodeRamp, buatIdPetaCustom, cekValidasiPeta,
   decodeRle, encodeRle, hitungTitikSimetri, type BangunanPetaCustom, type BonusPetaCustom,
   type CampPetaCustom, type DataPetaCustom, type DekoPetaCustom, type EntitasPetaCustom,
   type JenisBangunanCustom, type JenisDekoCustom, type JenisPeta, type ModeSimetri,
@@ -35,7 +35,7 @@ type KategoriPalet = 'terrain' | 'sumber' | 'goblin' | 'deko' | 'bangunan'
 type BentukKuas = 'bulat' | 'kotak'
 
 type JenisItem =
-  | { kat: 'terrain'; mode: 'air' | 'dataran' | 'plateau' | 'puncak' | 'jalan' | 'hapusJalan' | 'rampAuto' | 'rampNS' | 'rampBarat' | 'rampTimur' | 'jembH' | 'jembV' }
+  | { kat: 'terrain'; mode: 'air' | 'dataran' | 'plateau' | 'puncak' | 'jalan' | 'hapusJalan' | 'rampAuto' | 'rampNS' | 'rampBarat' | 'rampTimur' | 'rampRumputBarat' | 'rampRumputTimur' | 'jembH' | 'jembV' }
   | { kat: 'spawn' }
   | { kat: 'tambang'; jenis: 'mine' | 'node'; varian?: number }
   | { kat: 'hutanAcak' }
@@ -45,6 +45,16 @@ type JenisItem =
   | { kat: 'camp'; jenis: 'kecil' | 'besar' }
   | { kat: 'deko'; jenis: JenisDekoCustom }
   | { kat: 'bangunan'; jenis: JenisBangunanCustom }
+
+function asetBiomaEditor(bioma?: TemaBioma): Aset {
+  switch (bioma) {
+    case 2: return TERRAIN_FREE.tileBioma2
+    case 3: return TERRAIN_FREE.tileBioma3
+    case 4: return TERRAIN_FREE.tileBioma4
+    case 5: return TERRAIN_FREE.tileBioma5
+    default: return TERRAIN_FREE.tileHijau
+  }
+}
 
 interface SnapshotRiwayat {
   bioma: TemaBioma
@@ -59,17 +69,29 @@ const MAKS_RIWAYAT = 40
 
 const WARNA_SLOTS = TIM_PEMAIN
 
-const KATALOG_TERRAIN: readonly { id: string; label: string; aset?: Aset; sx?: number; sy?: number; item: JenisItem }[] = [
+const KATALOG_TERRAIN: readonly {
+  id: string
+  label: string
+  aset?: Aset
+  ikutBioma?: boolean
+  sx?: number
+  sy?: number
+  sw?: number
+  sh?: number
+  item: JenisItem
+}[] = [
   { id: 't-air', label: 'Air Laut', aset: TERRAIN.air, item: { kat: 'terrain', mode: 'air' } },
-  { id: 't-lv1', label: 'Daratan Lv.1', aset: TERRAIN_FREE.tileHijau, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'dataran' } },
-  { id: 't-lv2', label: 'Plateau Lv.2', aset: TERRAIN_FREE.tileHijau, sx: 5 * 64, sy: 0, item: { kat: 'terrain', mode: 'plateau' } },
-  { id: 't-lv3', label: 'Puncak Lv.3', aset: TERRAIN_FREE.tileHijau, sx: 7 * 64, sy: 0, item: { kat: 'terrain', mode: 'puncak' } },
+  { id: 't-lv1', label: 'Daratan Lv.1', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'dataran' } },
+  { id: 't-lv2', label: 'Plateau Lv.2', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 5 * 64, sy: 0, item: { kat: 'terrain', mode: 'plateau' } },
+  { id: 't-lv3', label: 'Puncak Lv.3', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 7 * 64, sy: 0, item: { kat: 'terrain', mode: 'puncak' } },
   { id: 't-jln', label: 'Jalan Pasir', aset: TERRAIN.tanahDatar, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'jalan' } },
-  { id: 't-hjln', label: 'Hapus Jalan', aset: TERRAIN_FREE.tileHijau, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'hapusJalan' } },
+  { id: 't-hjln', label: 'Hapus Jalan', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'hapusJalan' } },
   { id: 't-ra', label: 'Tangga Auto', aset: TERRAIN.tanahTinggi, sx: 64, sy: 7 * 64, item: { kat: 'terrain', mode: 'rampAuto' } },
   { id: 't-rns', label: 'Tangga N/S', aset: TERRAIN.tanahTinggi, sx: 64, sy: 7 * 64, item: { kat: 'terrain', mode: 'rampNS' } },
   { id: 't-rb', label: 'Tangga Barat', aset: TERRAIN.tanahTinggi, sx: 0, sy: 7 * 64, item: { kat: 'terrain', mode: 'rampBarat' } },
   { id: 't-rt', label: 'Tangga Timur', aset: TERRAIN.tanahTinggi, sx: 2 * 64, sy: 7 * 64, item: { kat: 'terrain', mode: 'rampTimur' } },
+  { id: 't-lrb', label: 'Lereng Barat', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 0, sy: 4 * 64, sw: 64, sh: 128, item: { kat: 'terrain', mode: 'rampRumputBarat' } },
+  { id: 't-lrt', label: 'Lereng Timur', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 3 * 64, sy: 4 * 64, sw: 64, sh: 128, item: { kat: 'terrain', mode: 'rampRumputTimur' } },
   { id: 't-jh', label: 'Jemb Horiz', aset: TERRAIN.jembatan, sx: 64, sy: 0, item: { kat: 'terrain', mode: 'jembH' } },
   { id: 't-jv', label: 'Jemb Vert', aset: TERRAIN.jembatan, sx: 0, sy: 2 * 64, item: { kat: 'terrain', mode: 'jembV' } },
 ]
@@ -175,14 +197,17 @@ function asetBangunanEditor(b: BangunanPetaCustom): { aset: Aset; timWarna?: (ty
 }
 
 /** Menggambar thumbnail sprite 28x28 terpotong rapi ke elemen kanvas mini. */
-function gambarIkonMini(kanvas: HTMLCanvasElement, aset: Aset, sxPaksa?: number, syPaksa?: number): void {
+function gambarIkonMini(
+  kanvas: HTMLCanvasElement, aset: Aset,
+  sxPaksa?: number, syPaksa?: number, swPaksa?: number, shPaksa?: number,
+): void {
   const ctx = kanvas.getContext('2d')
   const im = gambarDari(aset)
   if (!ctx || !im) return
   ctx.clearRect(0, 0, kanvas.width, kanvas.height)
   ctx.imageSmoothingEnabled = false
   const f = sxPaksa !== undefined && syPaksa !== undefined
-    ? { sx: sxPaksa, sy: syPaksa, sw: 64, sh: 64 }
+    ? { sx: sxPaksa, sy: syPaksa, sw: swPaksa ?? 64, sh: shPaksa ?? 64 }
     : frame(aset, 0)
   const rasio = Math.min(kanvas.width / f.sw, kanvas.height / f.sh)
   const dw = f.sw * rasio
@@ -225,7 +250,7 @@ export class PengendaliEditor {
   private modalBg: HTMLElement
   private modalTersimpanEl: HTMLElement
   private inputImpor: HTMLInputElement
-  private semuaIkonMini: { k: HTMLCanvasElement; aset: Aset; sx?: number; sy?: number }[] = []
+  private semuaIkonMini: { k: HTMLCanvasElement; aset: Aset; sx?: number; sy?: number; sw?: number; sh?: number }[] = []
 
   private terbuka = false
   private idPeta = buatIdPetaCustom()
@@ -309,6 +334,7 @@ export class PengendaliEditor {
         this.dorongUndo()
         this.terrain.bioma = bId
         this.segarkanBiomaUi()
+        if (this.kategori === 'terrain') this.renderPaletItem()
         this.renderTerrain.kotorkanSemua()
         this.minimapKotor = true
         this.tampilkanToast(`Bioma: ${INFO_BIOMA[bId].nama}`)
@@ -671,7 +697,7 @@ export class PengendaliEditor {
       kolom: PETA_KOLOM,
       baris: PETA_BARIS,
       tinggi: decodeRle(data.tinggiRle, total, TINGGI.puncak),
-      ramp: decodeRle(data.rampRle, total, 3),
+      ramp: decodeRle(data.rampRle, total, RAMP_MAKS),
       jembatan: decodeRle(data.jembatanRle, total, 2),
       jalan: decodeRle(data.jalanRle, total, 1),
       bioma: data.bioma,
@@ -682,6 +708,7 @@ export class PengendaliEditor {
     this.renderTerrain.setTerrain(this.terrain, true)
     this.minimapKotor = true
     this.segarkanBiomaUi()
+    if (this.kategori === 'terrain') this.renderPaletItem()
     this.segarkanAlatUi()
     this.perbaruiValidasiUi()
     pusatkan(this.kam, DUNIA_W / 2, DUNIA_H / 2)
@@ -851,7 +878,10 @@ export class PengendaliEditor {
     this.kontainerItem.textContent = ''
     this.semuaIkonMini = []
 
-    const tambahTombol = (id: string, label: string, aset: Aset | undefined, item: JenisItem, sx?: number, sy?: number): void => {
+    const tambahTombol = (
+      id: string, label: string, aset: Aset | undefined, item: JenisItem,
+      sx?: number, sy?: number, sw?: number, sh?: number,
+    ): void => {
       const btn = el('button', `ed-item-btn${this.itemIdAktif === id ? ' aktif' : ''}`)
       btn.type = 'button'
       btn.dataset['itemId'] = id
@@ -860,11 +890,13 @@ export class PengendaliEditor {
       k.width = 28
       k.height = 28
       if (aset) {
-        gambarIkonMini(k, aset, sx, sy)
+        gambarIkonMini(k, aset, sx, sy, sw, sh)
         this.semuaIkonMini.push({
           k, aset,
           ...(sx !== undefined ? { sx } : {}),
           ...(sy !== undefined ? { sy } : {}),
+          ...(sw !== undefined ? { sw } : {}),
+          ...(sh !== undefined ? { sh } : {}),
         })
       }
       btn.append(k, el('span', undefined, label))
@@ -881,7 +913,10 @@ export class PengendaliEditor {
     }
 
     if (this.kategori === 'terrain') {
-      for (const it of KATALOG_TERRAIN) tambahTombol(it.id, it.label, it.aset, it.item, it.sx, it.sy)
+      const asetBio = asetBiomaEditor(this.terrain.bioma)
+      for (const it of KATALOG_TERRAIN) {
+        tambahTombol(it.id, it.label, it.ikutBioma ? asetBio : it.aset, it.item, it.sx, it.sy, it.sw, it.sh)
+      }
     } else if (this.kategori === 'sumber') {
       for (const it of KATALOG_SUMBER) tambahTombol(it.id, it.label, it.aset, it.item)
     } else if (this.kategori === 'goblin') {
@@ -905,7 +940,7 @@ export class PengendaliEditor {
 
   private segarkanSemuaIkonMini(): void {
     for (const item of this.semuaIkonMini) {
-      gambarIkonMini(item.k, item.aset, item.sx, item.sy)
+      gambarIkonMini(item.k, item.aset, item.sx, item.sy, item.sw, item.sh)
     }
   }
 
@@ -926,13 +961,14 @@ export class PengendaliEditor {
     const total = PETA_KOLOM * PETA_BARIS
     this.terrain.bioma = s.bioma
     this.terrain.tinggi.set(decodeRle(s.tinggiRle, total, TINGGI.puncak))
-    this.terrain.ramp.set(decodeRle(s.rampRle, total, 3))
+    this.terrain.ramp.set(decodeRle(s.rampRle, total, RAMP_MAKS))
     this.terrain.jembatan.set(decodeRle(s.jembatanRle, total, 2))
     this.terrain.jalan.set(decodeRle(s.jalanRle, total, 1))
     this.entitas = JSON.parse(s.entitasJson) as EntitasPetaCustom
     this.renderTerrain.kotorkanSemua()
     this.minimapKotor = true
     this.segarkanBiomaUi()
+    if (this.kategori === 'terrain') this.renderPaletItem()
     this.segarkanAlatUi()
     this.perbaruiValidasiUi()
   }
@@ -1143,12 +1179,14 @@ export class PengendaliEditor {
     if ((naikTimur || turunBarat) && !ns && !(naikBarat || turunTimur)) return 2
     if ((naikBarat || turunTimur) && !ns && !(naikTimur || turunBarat)) return 3
     if (ns) return 1
-    // Periksa juga tangga kiri/kanan di atas/bawah supaya lebar tangga konsisten
-    if (ty > 0 && (this.terrain.ramp[(ty - 1) * PETA_KOLOM + tx] ?? 0) >= 2) {
-      return this.terrain.ramp[(ty - 1) * PETA_KOLOM + tx] as 2 | 3
+    // Periksa juga tangga batu kiri/kanan di atas/bawah supaya lebar tangga konsisten
+    if (ty > 0) {
+      const rAtas = this.terrain.ramp[(ty - 1) * PETA_KOLOM + tx] ?? 0
+      if (rAtas === 2 || rAtas === 3) return rAtas
     }
-    if (ty + 1 < PETA_BARIS && (this.terrain.ramp[(ty + 1) * PETA_KOLOM + tx] ?? 0) >= 2) {
-      return this.terrain.ramp[(ty + 1) * PETA_KOLOM + tx] as 2 | 3
+    if (ty + 1 < PETA_BARIS) {
+      const rBawah = this.terrain.ramp[(ty + 1) * PETA_KOLOM + tx] ?? 0
+      if (rBawah === 2 || rBawah === 3) return rBawah
     }
     return 1
   }
@@ -1213,6 +1251,25 @@ export class PengendaliEditor {
         this.terrain.jalan[idx] = 0
         const kode = mode === 'rampBarat' ? 2 : 3
         this.terrain.ramp[idx] = balikKodeRamp(kode, balikX)
+        break
+      }
+      case 'rampRumputBarat':
+      case 'rampRumputTimur': {
+        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
+        this.terrain.jembatan[idx] = 0
+        this.terrain.jalan[idx] = 0
+        const kode = balikKodeRamp(mode === 'rampRumputBarat' ? 4 : 5, balikX)
+        // Jika diklik di samping tebing plateau/puncak (+1 level solid), otomatis samakan tinggi agar lereng menyatu mulus tanpa garis putus!
+        const hx = kode === 4 ? tx + 1 : tx - 1
+        if (hx >= 0 && hx < PETA_KOLOM) {
+          const idxTinggi = ty * PETA_KOLOM + hx
+          const hSamping = this.terrain.tinggi[idxTinggi]!
+          const rSamping = this.terrain.ramp[idxTinggi]!
+          if (rSamping === 0 && hSamping === this.terrain.tinggi[idx]! + 1 && hSamping <= TINGGI.puncak) {
+            this.terrain.tinggi[idx] = hSamping
+          }
+        }
+        this.terrain.ramp[idx] = kode
         break
       }
       case 'jembH':
@@ -1394,6 +1451,12 @@ export class PengendaliEditor {
     }
     const rv = this.terrain.ramp[idx]!
     if (rv > 0) {
+      if (rv === 4 || rv === 5) {
+        const id = rv === 4 ? 't-lrb' : 't-lrt'
+        const mode = rv === 4 ? 'rampRumputBarat' : 'rampRumputTimur'
+        this.pilihDariPipet('terrain', id, { kat: 'terrain', mode }, `Pipet: Lereng Rumput ${rv === 4 ? 'Barat' : 'Timur'}`)
+        return
+      }
       const id = rv === 1 ? 't-rns' : rv === 2 ? 't-rb' : 't-rt'
       const mode = rv === 1 ? 'rampNS' : rv === 2 ? 'rampBarat' : 'rampTimur'
       this.pilihDariPipet('terrain', id, { kat: 'terrain', mode }, 'Pipet: Tangga Batu')
@@ -1432,6 +1495,8 @@ export class PengendaliEditor {
       rampNS: ['t-rb', 'rampBarat', 'Tangga Barat'],
       rampBarat: ['t-rt', 'rampTimur', 'Tangga Timur'],
       rampTimur: ['t-ra', 'rampAuto', 'Tangga Auto'],
+      rampRumputBarat: ['t-lrt', 'rampRumputTimur', 'Lereng Timur'],
+      rampRumputTimur: ['t-lrb', 'rampRumputBarat', 'Lereng Barat'],
       jembH: ['t-jv', 'jembV', 'Jembatan Vertikal'],
       jembV: ['t-jh', 'jembH', 'Jembatan Horizontal'],
     }
@@ -1706,7 +1771,9 @@ export class PengendaliEditor {
     const namaLv = h === 0 ? 'Air' : h === 1 ? 'Daratan Lv.1' : h === 2 ? 'Plateau Lv.2' : 'Puncak Lv.3'
     const ket: string[] = [`(${tx}, ${ty}) · ${namaLv}`]
     if (this.terrain.jembatan[idx]! > 0) ket.push('Jembatan')
-    if (this.terrain.ramp[idx]! > 0) ket.push('Tangga')
+    const rvInfo = this.terrain.ramp[idx]!
+    if (rvInfo >= 4) ket.push(rvInfo === 4 ? 'Lereng Rumput Barat' : 'Lereng Rumput Timur')
+    else if (rvInfo > 0) ket.push('Tangga Batu')
     if (this.terrain.jalan[idx] === 1) ket.push('Jalan')
     this.infoTileEl.textContent = ket.join(' · ')
   }
@@ -1941,7 +2008,27 @@ export class PengendaliEditor {
 
     ctx.save()
     for (const s of titikSim) {
-      if (this.alat === 'kuas' && this.itemAktif.kat !== 'terrain' && this.itemAktif.kat !== 'hutanAcak') {
+      if (
+        this.alat === 'kuas' &&
+        this.itemAktif.kat === 'terrain' &&
+        (this.itemAktif.mode === 'rampRumputBarat' || this.itemAktif.mode === 'rampRumputTimur')
+      ) {
+        const imBio = gambarDari(asetBiomaEditor(this.terrain.bioma))
+        if (imBio) {
+          const kode = balikKodeRamp(this.itemAktif.mode === 'rampRumputBarat' ? 4 : 5, s.balikX)
+          const kolSrc = kode === 4 ? 0 : 3
+          ctx.globalAlpha = 0.62
+          for (const [dx, dy] of offsets) {
+            const x = s.tx + dx
+            const y = s.ty + dy
+            if (!this.tileDalamBatas(x, y)) continue
+            ctx.drawImage(imBio, kolSrc * TILE, 4 * TILE, TILE, TILE, x * TILE, y * TILE, TILE, TILE)
+            if (y + 1 < PETA_BARIS) {
+              ctx.drawImage(imBio, kolSrc * TILE, 5 * TILE, TILE, TILE, x * TILE, (y + 1) * TILE, TILE, TILE)
+            }
+          }
+        }
+      } else if (this.alat === 'kuas' && this.itemAktif.kat !== 'terrain' && this.itemAktif.kat !== 'hutanAcak') {
         ctx.globalAlpha = 0.58
         const wx = s.tx * TILE + TILE / 2
         const wy = s.ty * TILE + TILE / 2
@@ -2068,7 +2155,7 @@ function eksporSiapTerrain(data: DataPetaCustom): { terrain: Terrain; entitas: E
       kolom: PETA_KOLOM,
       baris: PETA_BARIS,
       tinggi: decodeRle(data.tinggiRle, total, TINGGI.puncak),
-      ramp: decodeRle(data.rampRle, total, 3),
+      ramp: decodeRle(data.rampRle, total, RAMP_MAKS),
       jembatan: decodeRle(data.jembatanRle, total, 2),
       jalan: decodeRle(data.jalanRle, total, 1),
       bioma: data.bioma,

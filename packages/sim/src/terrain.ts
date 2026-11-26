@@ -9,7 +9,7 @@ export interface Terrain {
   baris: number
   /** Ketinggian per tile: 0 air, 1 dataran, 2 plateau, 3 puncak. */
   tinggi: Uint8Array
-  /** 0 = bukan ramp, 1 = tangga N/S, 2 = tangga barat (naik ke timur), 3 = tangga timur (naik ke barat). */
+  /** 0 = bukan, 1 = tangga batu N/S, 2 = tangga batu barat, 3 = tangga batu timur, 4 = lereng rumput barat, 5 = lereng rumput timur. */
   ramp: Uint8Array
   /** 0 = bukan jembatan, 1 = jembatan horizontal, 2 = jembatan vertikal. */
   jembatan: Uint8Array

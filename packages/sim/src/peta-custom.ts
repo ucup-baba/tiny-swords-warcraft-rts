@@ -1,5 +1,5 @@
 import {
-  PETA_BARIS, PETA_KOLOM, TINGGI, decodeRle, encodeRle,
+  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, decodeRle, encodeRle,
   type CampPetaCustom, type DataPetaCustom, type DekoPetaCustom, type EntitasPetaCustom,
   type PohonPetaCustom, type SpawnPetaCustom, type TambangPetaCustom, type Tinggi,
 } from '@hftf/shared'
@@ -17,7 +17,7 @@ export function buatTerrainDariCustom(data: DataPetaCustom): { terrain: Terrain;
     kolom: kol,
     baris: bar,
     tinggi: decodeRle(data.tinggiRle, total, TINGGI.puncak),
-    ramp: decodeRle(data.rampRle, total, 3),
+    ramp: decodeRle(data.rampRle, total, RAMP_MAKS),
     jembatan: decodeRle(data.jembatanRle, total, 2),
     jalan: decodeRle(data.jalanRle, total, 1),
     bioma: data.bioma,

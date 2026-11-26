@@ -101,7 +101,9 @@ export class PeremajaTerrain {
   /** Tebing plateau Lv.2 jatuh ke tile (tx, ty+1): kol 0..3, baris 4 (di atas rumput) atau 5 (di atas air). */
   private readonly tebingPlatKol: Int8Array
   private readonly tebingPlatBar: Int8Array
-  /** Ramp Lv.1 <-> Lv.2: 0=bukan, 1=N/S, 2=barat, 3=timur. */
+  /** Kaki lereng rumput Lv.1/Lv.2 di tile selatan (tx, ty+1): 0=bukan, 4=lereng barat (0,5), 5=lereng timur (3,5). */
+  private readonly tebingLereng: Uint8Array
+  /** Ramp Lv.1 <-> Lv.2: 0=bukan, 1=batu N/S, 2=batu barat, 3=batu timur, 4=lereng rumput barat, 5=lereng rumput timur. */
   private readonly jenisRamp: Uint8Array
   private readonly rampKol: Int8Array
   private readonly rampBar: Int8Array
@@ -110,7 +112,9 @@ export class PeremajaTerrain {
   private readonly puncakBar: Int8Array
   private readonly tebingPuncakKol: Int8Array
   private readonly tebingPuncakBar: Int8Array
-  /** Ramp Lv.2 <-> Lv.3: 0=bukan, 1=N/S, 2=barat, 3=timur. */
+  /** Kaki lereng rumput Lv.3 di tile selatan (tx, ty+1): 0=bukan, 4=lereng barat (0,5), 5=lereng timur (3,5). */
+  private readonly tebingLereng3: Uint8Array
+  /** Ramp Lv.2 <-> Lv.3: 0=bukan, 1=batu N/S, 2=batu barat, 3=batu timur, 4=lereng rumput barat, 5=lereng rumput timur. */
   private readonly jenisRamp3: Uint8Array
   private readonly ramp3Kol: Int8Array
   private readonly ramp3Bar: Int8Array
@@ -121,6 +125,8 @@ export class PeremajaTerrain {
   private daftarAwan: AwanPos[] = []
   private tanggaBarat: HTMLCanvasElement | null = null
   private tanggaTimur: HTMLCanvasElement | null = null
+  private lerengPuncakKanvas: HTMLCanvasElement | null = null
+  private lerengPuncakBioma = -1
   private readonly chunk = new Map<string, Chunk>()
   private urutanPakai = 0
 
@@ -142,6 +148,7 @@ export class PeremajaTerrain {
     this.platBar = new Int8Array(total).fill(-1)
     this.tebingPlatKol = new Int8Array(total).fill(-1)
     this.tebingPlatBar = new Int8Array(total).fill(-1)
+    this.tebingLereng = new Uint8Array(total)
     this.jenisRamp = new Uint8Array(total)
     this.rampKol = new Int8Array(total).fill(-1)
     this.rampBar = new Int8Array(total).fill(-1)
@@ -149,6 +156,7 @@ export class PeremajaTerrain {
     this.puncakBar = new Int8Array(total).fill(-1)
     this.tebingPuncakKol = new Int8Array(total).fill(-1)
     this.tebingPuncakBar = new Int8Array(total).fill(-1)
+    this.tebingLereng3 = new Uint8Array(total)
     this.jenisRamp3 = new Uint8Array(total)
     this.ramp3Kol = new Int8Array(total).fill(-1)
     this.ramp3Bar = new Int8Array(total).fill(-1)
@@ -215,6 +223,7 @@ export class PeremajaTerrain {
     this.platBar.fill(-1)
     this.tebingPlatKol.fill(-1)
     this.tebingPlatBar.fill(-1)
+    this.tebingLereng.fill(0)
     this.jenisRamp.fill(0)
     this.rampKol.fill(-1)
     this.rampBar.fill(-1)
@@ -222,6 +231,7 @@ export class PeremajaTerrain {
     this.puncakBar.fill(-1)
     this.tebingPuncakKol.fill(-1)
     this.tebingPuncakBar.fill(-1)
+    this.tebingLereng3.fill(0)
     this.jenisRamp3.fill(0)
     this.ramp3Kol.fill(-1)
     this.ramp3Bar.fill(-1)
@@ -297,10 +307,13 @@ export class PeremajaTerrain {
           this.butuhAir[i] = 1
           this.busaPantai[i] = 1
         }
-        // Jika tile langsung di selatan adalah air (bukan jembatan), pasang tebing batu laut!
+        // Jika tile langsung di selatan adalah air (bukan jembatan), pasang tebing batu laut (kecuali lereng rumput Lv.1)!
         if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.air && jemb(tx, ty + 1) === 0) {
+          const rvSini = rampVal(tx, ty)
           const idxBawah = (ty + 1) * kol + tx
-          this.tebingLautKol[idxBawah] = sel.kol
+          if (!(hv === TINGGI.dataran && (rvSini === 4 || rvSini === 5))) {
+            this.tebingLautKol[idxBawah] = sel.kol
+          }
           this.butuhAir[idxBawah] = 1
           this.busaPantai[idxBawah] = 1
         }
@@ -317,7 +330,7 @@ export class PeremajaTerrain {
           this.jalanSy[i] = sj.bar * TILE
         }
 
-        // Tangga batu yang ditaruh di Dataran Lv.1 (1x1 tepat di sel yang diklik, mis. kaki tebing selatan Lv.2)
+        // Tangga batu / lereng rumput yang ditaruh di Dataran Lv.1 (1x1 tepat di sel yang diklik)
         if (hv === TINGGI.dataran) {
           const rv1 = rampVal(tx, ty)
           if (rv1 === 1) {
@@ -336,10 +349,15 @@ export class PeremajaTerrain {
             )
             this.jenisRamp[i] = rv1
             this.rampBar[i] = sb1.bar
+          } else if (rv1 === 4 || rv1 === 5) {
+            this.jenisRamp[i] = rv1
+            if (ty + 1 < bar && h(tx, ty + 1) <= TINGGI.dataran && !isRamp(tx, ty + 1)) {
+              this.tebingLereng[(ty + 1) * kol + tx] = rv1
+            }
           }
         }
 
-        // Level 2: Plateau & Ramp / Tangga batu Lv.1 <-> Lv.2 (murni 1 tile, tanpa sel bayangan di bawah)
+        // Level 2: Plateau & Ramp / Tangga batu / Lereng rumput Lv.1 <-> Lv.2 (murni 1 tile)
         if (hv >= TINGGI.plateau) {
           const rv2 = hv === TINGGI.plateau ? rampVal(tx, ty) : 0
           if (rv2 === 1) {
@@ -357,6 +375,11 @@ export class PeremajaTerrain {
               this.tebingPlatKol[idxBawah] = kiriPlat && kananPlat ? 1 : kiriPlat ? 2 : kananPlat ? 0 : 3
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
             }
+          } else if (rv2 === 4 || rv2 === 5) {
+            this.jenisRamp[i] = rv2
+            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+              this.tebingLereng[(ty + 1) * kol + tx] = rv2
+            }
           } else {
             const sp = selAutotile(
               atas2(tx - 1, ty), atas2(tx + 1, ty), atas2(tx, ty - 1), atas2(tx, ty + 1),
@@ -371,7 +394,7 @@ export class PeremajaTerrain {
           }
         }
 
-        // Level 3: Puncak tertinggi & Ramp / Tangga batu Lv.2 <-> Lv.3 (murni 1 tile)
+        // Level 3: Puncak tertinggi & Ramp / Tangga batu / Lereng rumput Lv.2 <-> Lv.3 (murni 1 tile)
         if (hv === TINGGI.puncak) {
           const rv3 = rampVal(tx, ty)
           if (rv3 === 1) {
@@ -388,6 +411,11 @@ export class PeremajaTerrain {
               const kananP = atas3(tx + 1, ty)
               this.tebingPuncakKol[idxBawah] = kiriP && kananP ? 1 : kiriP ? 2 : kananP ? 0 : 3
               this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+            }
+          } else if (rv3 === 4 || rv3 === 5) {
+            this.jenisRamp3[i] = rv3
+            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+              this.tebingLereng3[(ty + 1) * kol + tx] = rv3
             }
           } else {
             const s3 = selAutotile(
@@ -413,7 +441,7 @@ export class PeremajaTerrain {
           const i = off + tx
           if (!darat(tx, ty)) continue
           if (isRamp(tx, ty) || jln(tx, ty)) continue
-          if (this.tebingPlatKol[i]! >= 0 || this.tebingPuncakKol[i]! >= 0) continue
+          if (this.tebingPlatKol[i]! >= 0 || this.tebingPuncakKol[i]! >= 0 || this.tebingLereng[i]! > 0 || this.tebingLereng3[i]! > 0) continue
           const acak = cakar(tx, ty)
           if (acak % 9 === 0) this.dekoIdx[i] = (acak >> 4) % 15
         }
@@ -686,6 +714,30 @@ export class PeremajaTerrain {
     return k
   }
 
+  /**
+   * Membangun cache 128x64 (kol 0 = lereng barat, kol 1 = lereng timur) untuk lereng rumput Puncak Lv.3
+   * yang membawa highlight hangat identik dengan permukaan Puncak Lv.3 agar transisi nol garis potong!
+   */
+  private ambilLerengPuncak(tileFree: HTMLImageElement): HTMLCanvasElement | null {
+    const b = this.terrain.bioma ?? 1
+    if (this.lerengPuncakKanvas && this.lerengPuncakBioma === b) return this.lerengPuncakKanvas
+    const k = document.createElement('canvas')
+    k.width = TILE * 2
+    k.height = TILE
+    const c = k.getContext('2d')
+    if (!c) return null
+    c.imageSmoothingEnabled = false
+    c.drawImage(tileFree, 0, 4 * TILE, TILE, TILE, 0, 0, TILE, TILE)
+    c.drawImage(tileFree, 3 * TILE, 4 * TILE, TILE, TILE, TILE, 0, TILE, TILE)
+    c.globalCompositeOperation = 'source-atop'
+    c.fillStyle = 'rgba(255, 252, 214, 0.11)'
+    c.fillRect(0, 0, TILE * 2, TILE)
+    c.globalCompositeOperation = 'source-over'
+    this.lerengPuncakKanvas = k
+    this.lerengPuncakBioma = b
+    return k
+  }
+
   private gambarRentangTile(
     ctx: CanvasRenderingContext2D, tx0: number, ty0: number, asalPxX: number, asalPxY: number,
   ): void {
@@ -778,20 +830,25 @@ export class PeremajaTerrain {
         const i = off + tx
         const px = asalPxX + (tx - tx0) * TILE
 
-        // 2a. Tebing batu plateau Lv.2 di atas rumput / air + bayangan jatuh di kakinya
-        const tpk = this.tebingPlatKol[i]!
-        if (tpk >= 0) {
-          const tpb = this.tebingPlatBar[i]!
-          if (tpb === 4 && bayang) {
-            ctx.save()
-            ctx.globalAlpha = 0.45
-            ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
-            ctx.restore()
-          }
-          if (tileFree) {
-            ctx.drawImage(tileFree, (5 + tpk) * TILE, tpb * TILE, TILE, TILE, px, py, TILE, TILE)
-          } else if (tinggiU010) {
-            ctx.drawImage(tinggiU010, tpk * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+        // 2a. Tebing batu plateau Lv.2 atau kaki lereng rumput Lv.1/Lv.2 (baris 5 Tilemap_color)
+        const tlr = this.tebingLereng[i]!
+        if ((tlr === 4 || tlr === 5) && tileFree) {
+          ctx.drawImage(tileFree, (tlr === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        } else {
+          const tpk = this.tebingPlatKol[i]!
+          if (tpk >= 0) {
+            const tpb = this.tebingPlatBar[i]!
+            if (tpb === 4 && bayang) {
+              ctx.save()
+              ctx.globalAlpha = 0.45
+              ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
+              ctx.restore()
+            }
+            if (tileFree) {
+              ctx.drawImage(tileFree, (5 + tpk) * TILE, tpb * TILE, TILE, TILE, px, py, TILE, TILE)
+            } else if (tinggiU010) {
+              ctx.drawImage(tinggiU010, tpk * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+            }
           }
         }
 
@@ -810,7 +867,7 @@ export class PeremajaTerrain {
           }
         }
 
-        // 2d. Tile Ramp / Tangga batu Lv.1 <-> Lv.2
+        // 2d. Tile Ramp: tangga batu (1..3) atau lereng rumput resmi Free Pack (4=barat, 5=timur)
         const jr = this.jenisRamp[i]!
         if (jr === 1 && tinggiU010) {
           ctx.drawImage(tinggiU010, this.rampKol[i]! * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
@@ -819,11 +876,18 @@ export class PeremajaTerrain {
           if (strip) {
             ctx.drawImage(strip, 0, this.rampBar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
           }
+        } else if (jr === 4 || jr === 5) {
+          if (tileFree) {
+            ctx.drawImage(tileFree, (jr === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
+          } else if (tinggiU010) {
+            const strip = this.ambilTanggaEW(tinggiU010, jr === 4 ? 2 : 3)
+            if (strip) ctx.drawImage(strip, 0, 3 * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
         }
       }
     }
 
-    // Pass 2.5: Tebing Batu Puncak Lv.3, tangga batu Lv.3, & permukaan Puncak Level 3!
+    // Pass 2.5: Tebing Batu Puncak Lv.3, tangga batu / lereng rumput Lv.3, & permukaan Puncak Level 3!
     for (let ty = ty0; ty <= ty2; ty++) {
       const off = ty * kol
       const py = asalPxY + (ty - ty0) * TILE
@@ -831,19 +895,24 @@ export class PeremajaTerrain {
         const i = off + tx
         const px = asalPxX + (tx - tx0) * TILE
 
-        const tp3k = this.tebingPuncakKol[i]!
-        if (tp3k >= 0) {
-          const tp3b = this.tebingPuncakBar[i]!
-          if (tp3b === 4 && bayang) {
-            ctx.save()
-            ctx.globalAlpha = 0.45
-            ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
-            ctx.restore()
-          }
-          if (tileFree) {
-            ctx.drawImage(tileFree, (5 + tp3k) * TILE, tp3b * TILE, TILE, TILE, px, py, TILE, TILE)
-          } else if (tinggiU010) {
-            ctx.drawImage(tinggiU010, tp3k * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+        const tlr3 = this.tebingLereng3[i]!
+        if ((tlr3 === 4 || tlr3 === 5) && tileFree) {
+          ctx.drawImage(tileFree, (tlr3 === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        } else {
+          const tp3k = this.tebingPuncakKol[i]!
+          if (tp3k >= 0) {
+            const tp3b = this.tebingPuncakBar[i]!
+            if (tp3b === 4 && bayang) {
+              ctx.save()
+              ctx.globalAlpha = 0.45
+              ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
+              ctx.restore()
+            }
+            if (tileFree) {
+              ctx.drawImage(tileFree, (5 + tp3k) * TILE, tp3b * TILE, TILE, TILE, px, py, TILE, TILE)
+            } else if (tinggiU010) {
+              ctx.drawImage(tinggiU010, tp3k * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+            }
           }
         }
 
@@ -870,6 +939,18 @@ export class PeremajaTerrain {
           const strip = this.ambilTanggaEW(tinggiU010, jr3)
           if (strip) {
             ctx.drawImage(strip, 0, this.ramp3Bar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+        } else if (jr3 === 4 || jr3 === 5) {
+          if (tileFree) {
+            const lp = this.ambilLerengPuncak(tileFree)
+            if (lp) {
+              ctx.drawImage(lp, (jr3 === 4 ? 0 : 1) * TILE, 0, TILE, TILE, px, py, TILE, TILE)
+            } else {
+              ctx.drawImage(tileFree, (jr3 === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
+            }
+          } else if (tinggiU010) {
+            const strip = this.ambilTanggaEW(tinggiU010, jr3 === 4 ? 2 : 3)
+            if (strip) ctx.drawImage(strip, 0, 3 * TILE, TILE, TILE, px, py, TILE, TILE)
           }
         }
       }

@@ -4,6 +4,17 @@ import { PETA_BARIS, PETA_KOLOM, TINGGI } from './konstanta.js'
 export const DAFTAR_BIOMA = [1, 2, 3, 4, 5] as const
 export type TemaBioma = (typeof DAFTAR_BIOMA)[number]
 
+/**
+ * Kode grid `ramp`:
+ * - `0`: bukan ramp
+ * - `1`: tangga batu N/S
+ * - `2`: tangga batu barat (naik ke timur)
+ * - `3`: tangga batu timur (naik ke barat)
+ * - `4`: lereng rumput barat (Tilemap_color kol 0, naik ke timur)
+ * - `5`: lereng rumput timur (Tilemap_color kol 3, naik ke barat)
+ */
+export const RAMP_MAKS = 5
+
 export const INFO_BIOMA: Record<TemaBioma, {
   nama: string
   ringkas: string
@@ -207,11 +218,13 @@ export function hitungTitikSimetri(
   return unik
 }
 
-/** Membalik kode ramp Timur (3) <-> Barat (2) ketika kuas cermin horizontal aktif. */
+/** Membalik kode ramp Timur <-> Barat (tangga batu 2<->3 dan lereng rumput 4<->5) ketika kuas cermin horizontal aktif. */
 export function balikKodeRamp(kode: number, balikX: boolean): number {
   if (!balikX) return kode
   if (kode === 2) return 3
   if (kode === 3) return 2
+  if (kode === 4) return 5
+  if (kode === 5) return 4
   return kode
 }
 
@@ -416,7 +429,7 @@ export function cekValidasiPeta(data: DataPetaCustom): HasilValidasiPeta {
   const bar = data.baris
   const total = kol * bar
   const tinggi = decodeRle(data.tinggiRle, total, TINGGI.puncak)
-  const ramp = decodeRle(data.rampRle, total, 3)
+  const ramp = decodeRle(data.rampRle, total, RAMP_MAKS)
 
   const spawn = data.entitas.spawn
   if (spawn.length < 2) {

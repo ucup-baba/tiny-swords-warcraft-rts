@@ -1,5 +1,5 @@
 import {
-  PETA_BARIS, PETA_KOLOM, TINGGI, balikKodeRamp, cekValidasiPeta, decodeRle, encodeRle,
+  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, balikKodeRamp, cekValidasiPeta, decodeRle, encodeRle,
   hitungTitikSimetri, validasiDataPetaCustom, type DataPetaCustom,
 } from '@hftf/shared'
 import { describe, expect, it } from 'vitest'
@@ -62,8 +62,12 @@ describe('RLE, Simetri, & Validasi Peta Custom (@hftf/shared)', () => {
 
     expect(balikKodeRamp(2, true)).toBe(3)
     expect(balikKodeRamp(3, true)).toBe(2)
+    expect(balikKodeRamp(4, true)).toBe(5)
+    expect(balikKodeRamp(5, true)).toBe(4)
     expect(balikKodeRamp(1, true)).toBe(1)
     expect(balikKodeRamp(2, false)).toBe(2)
+    expect(balikKodeRamp(4, false)).toBe(4)
+    expect(balikKodeRamp(5, false)).toBe(5)
   })
 
   it('validasiDataPetaCustom menerima data sah dan menolak bentuk/versi/RLE tidak sah', () => {
@@ -283,5 +287,71 @@ describe('Terrain 3-Tingkat, Template, & Ekspor Peta Bawaan (@hftf/sim)', () => 
     expect(jalur).not.toBeNull()
     expect(jalur!.titik.some((p) => keTile(p.x) === 25 && keTile(p.y) === 31)).toBe(true)
     expect(jalur!.titik.some((p) => keTile(p.x) === 25 && keTile(p.y) === 27)).toBe(true)
+  })
+
+  it('lereng rumput 1x1 (kode 4 Barat & 5 Timur) dipertahankan oleh RLE/validasi dan dilalui A* Lv.1 -> Lv.2 -> Lv.3', () => {
+    const total = PETA_KOLOM * PETA_BARIS
+    const tinggi = new Uint8Array(total).fill(TINGGI.dataran)
+    const ramp = new Uint8Array(total)
+    const kosong = new Uint8Array(total)
+
+    // Plateau Lv.2 di [20..30, 20..26] & Puncak Lv.3 di [22..28, 21..24]
+    for (let ty = 20; ty <= 26; ty++) {
+      for (let tx = 20; tx <= 30; tx++) tinggi[ty * PETA_KOLOM + tx] = TINGGI.plateau
+    }
+    for (let ty = 21; ty <= 24; ty++) {
+      for (let tx = 22; tx <= 28; tx++) tinggi[ty * PETA_KOLOM + tx] = TINGGI.puncak
+    }
+
+    // Pasang Lereng Rumput Barat (kode 4) 1x1 di sisi barat Lv.2 (20, 26)
+    // dan Lereng Rumput Timur (kode 5) 1x1 di sisi timur Lv.3 (28, 24)
+    ramp[26 * PETA_KOLOM + 20] = 4
+    ramp[24 * PETA_KOLOM + 28] = 5
+
+    // Round-trip RLE sampai RAMP_MAKS (5) tidak boleh terjepit ke 3
+    const rampDekode = decodeRle(encodeRle(ramp), total, RAMP_MAKS)
+    expect(rampDekode[26 * PETA_KOLOM + 20]).toBe(4)
+    expect(rampDekode[24 * PETA_KOLOM + 28]).toBe(5)
+
+    const data: DataPetaCustom = {
+      versi: 1,
+      id: 'lereng-rumput',
+      nama: 'Lereng Rumput 3-Tingkat',
+      bioma: 5,
+      kolom: PETA_KOLOM,
+      baris: PETA_BARIS,
+      tinggiRle: encodeRle(tinggi),
+      rampRle: encodeRle(ramp),
+      jembatanRle: encodeRle(kosong),
+      jalanRle: encodeRle(kosong),
+      entitas: {
+        spawn: [
+          { slot: 0, tx: 16, ty: 26 },
+          { slot: 1, tx: 25, ty: 22 },
+        ],
+        pohon: [],
+        tambang: [],
+        domba: [],
+        camp: [],
+        deko: [],
+        bangunan: [],
+        bonus: [],
+      },
+      diubahPada: 2,
+    }
+
+    const { terrain: t } = buatTerrainDariCustom(data)
+    expect(t.ramp[26 * PETA_KOLOM + 20]).toBe(4)
+    expect(t.ramp[24 * PETA_KOLOM + 28]).toBe(5)
+    expect(bolehLangkah(t, 19, 26, 20, 26)).toBe(true)
+    expect(bolehLangkah(t, 19, 25, 20, 25)).toBe(false)
+    expect(bolehLangkah(t, 29, 24, 28, 24)).toBe(true)
+    expect(bolehLangkah(t, 29, 23, 28, 23)).toBe(false)
+
+    expect(cekValidasiPeta(data).siapMain).toBe(true)
+    const jalur = cariJalur(t, keTengahPiksel(16), keTengahPiksel(26), keTengahPiksel(25), keTengahPiksel(22))
+    expect(jalur).not.toBeNull()
+    expect(jalur!.titik.some((p) => keTile(p.x) === 20 && keTile(p.y) === 26)).toBe(true)
+    expect(jalur!.titik.some((p) => keTile(p.x) === 28 && keTile(p.y) === 24)).toBe(true)
   })
 })
