@@ -9,6 +9,7 @@
  *   - seluruh aset yang terdaftar di manifes SEMUA (@hftf/aset)
  *   - .nojekyll
  */
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -44,11 +45,20 @@ salin('index.html')
 salin('bundel.js')
 salin('public/font/PixelifySans.ttf')
 
-// Verifikasi index.html memakai path relatif (wajib untuk subpath GitHub Pages).
+// Verifikasi index.html memakai path relatif (wajib untuk subpath GitHub Pages)
+// dan tambahkan query versi otomatis agar cache browser HP langsung segar.
 const html = readFileSync(join(TUJUAN, 'index.html'), 'utf8')
 if (html.includes('src="/bundel.js"')) {
   throw new Error('index.html masih memakai path absolut /bundel.js — harus ./bundel.js!')
 }
+const versiBundel = createHash('sha256')
+  .update(readFileSync(join(TUJUAN, 'bundel.js')))
+  .digest('hex')
+  .slice(0, 8)
+writeFileSync(
+  join(TUJUAN, 'index.html'),
+  html.replace('src="./bundel.js"', `src="./bundel.js?v=${versiBundel}"`),
+)
 
 for (const rel of daftarAset) salin(rel)
 writeFileSync(join(TUJUAN, '.nojekyll'), '')

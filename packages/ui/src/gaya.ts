@@ -41,23 +41,26 @@ html, body {
 
 img, canvas { image-rendering: pixelated; }
 
-/* --- Bingkai skala resolusi tetap 1280x720 (nol scrollbar) --- */
+/* --- Bingkai skala resolusi tetap 1280x720 (nol scrollbar, selalu terpusat di HP/Desktop) --- */
 #bingkai-layar {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: radial-gradient(circle at center, #241b13 0%, #100c09 100%);
 }
 
 #akar {
-  position: relative;
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 1280px;
   height: 720px;
   display: flex;
   overflow: hidden;
   transform-origin: center center;
+  transform: translate(-50%, -50%);
   box-shadow: 0 0 42px rgba(0, 0, 0, 0.85);
 }
 
@@ -450,22 +453,22 @@ img, canvas { image-rendering: pixelated; }
   background: rgba(12,9,6,0.82); z-index: 25;
 }
 .kotak {
-  width: min(680px, 92%); max-height: 676px; overflow: hidden; padding: 18px 24px;
-  ${sembilanIris(UI.panelUkir, 24, basis)};
+  width: min(760px, 94%); max-height: 688px; overflow-y: auto; padding: 12px 18px;
+  ${sembilanIris(UI.panelUkir, 20, basis)};
   background: var(--kayu-gelap);
   color: var(--tinta);
 }
-.kotak h1 { font-size: 22px; color: var(--tinta); margin-bottom: 4px; }
-.kotak h2 { font-size: 16px; color: #4a2a0e; margin: 10px 0 4px; }
-.kotak p { font-size: 13px; line-height: 1.4; margin-bottom: 6px; color: #362111; font-weight: 700; }
-.baris { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+.kotak h1 { font-size: 20px; color: var(--tinta); margin-bottom: 2px; }
+.kotak h2 { font-size: 14px; color: #4a2a0e; margin: 7px 0 3px; }
+.kotak p { font-size: 12px; line-height: 1.35; margin-bottom: 4px; color: #362111; font-weight: 700; }
+.baris { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; align-items: center; }
 .tombol-besar {
-  padding: 9px 18px; font-family: inherit; font-size: 14px; font-weight: 700;
+  padding: 6px 14px; font-family: inherit; font-size: 13px; font-weight: 700;
   color: var(--tinta); cursor: pointer; background: transparent;
-  ${sembilanIris(UI.tombolBlue, 15, basis)};
+  ${sembilanIris(UI.tombolBlue, 12, basis)};
 }
-.tombol-besar.merah { ${sembilanIris(UI.tombolRed, 15, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-.tombol-besar:disabled { ${sembilanIris(UI.tombolMati, 15, basis)}; cursor: not-allowed; }
+.tombol-besar.merah { ${sembilanIris(UI.tombolRed, 12, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.tombol-besar:disabled { ${sembilanIris(UI.tombolMati, 12, basis)}; cursor: not-allowed; }
 
 #muat-bar { height: 16px; background: rgba(0,0,0,0.45); margin-top: 10px; }
 #muat-isi { height: 100%; width: 0%; background: var(--emas); transition: width 0.12s linear; }

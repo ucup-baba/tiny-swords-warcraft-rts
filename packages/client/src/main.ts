@@ -235,7 +235,12 @@ class Permainan {
     this.pasangInput()
     this.sentuh.pasang(this.hud.kanvas, this.hud.petaMini, this.hud.joystickEl, this.hud.joystickKenop)
     window.addEventListener('resize', () => this.ukurUlang())
-    window.addEventListener('orientationchange', () => this.ukurUlang())
+    window.addEventListener('orientationchange', () => {
+      this.ukurUlang()
+      window.setTimeout(() => this.ukurUlang(), 150)
+    })
+    window.visualViewport?.addEventListener('resize', () => this.ukurUlang())
+    document.addEventListener('fullscreenchange', () => this.ukurUlang())
     this.ukurUlang()
     void this.boot()
   }
@@ -582,8 +587,13 @@ class Permainan {
    * diskalakan otomatis mengikuti jendela browser — nol scrollbar di layar mana pun.
    */
   private ukurUlang(): void {
-    const skala = Math.max(0.25, Math.min(window.innerWidth / 1280, window.innerHeight / 720))
-    this.hud.akar.style.transform = `scale(${skala})`
+    const rect = this.hud.bingkai.getBoundingClientRect()
+    const vw = rect.width > 0 ? rect.width : (window.visualViewport?.width ?? window.innerWidth)
+    const vh = rect.height > 0 ? rect.height : (window.visualViewport?.height ?? window.innerHeight)
+    const skala = Math.max(0.15, Math.min(vw / 1280, vh / 720))
+    // #akar diposisikan absolute di (50%, 50%), jadi translate(-50%, -50%) wajib
+    // sebelum scale() agar selalu tepat di tengah viewport meski layar HP < 1280x720.
+    this.hud.akar.style.transform = `translate(-50%, -50%) scale(${skala})`
     const k = this.hud.kanvas
     k.width = 976
     k.height = 720
@@ -593,7 +603,7 @@ class Permainan {
     if (this.ctx) this.ctx.imageSmoothingEnabled = false
 
     // Tampilkan anjuran putar HP ke Landscape saat layar mobile dalam orientasi portrait.
-    const portraitMobile = window.innerHeight > window.innerWidth && window.innerWidth < 900 && this.perangkatSentuh
+    const portraitMobile = vh > vw && vw < 900 && this.perangkatSentuh
     if (!portraitMobile) this.abaikanPutar = false
     this.hud.setLayarPutar(portraitMobile && !this.abaikanPutar)
   }

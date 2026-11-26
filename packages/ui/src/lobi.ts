@@ -54,7 +54,7 @@ export class Lobi {
     const barisNama = el('div', 'baris')
     this.inputNama = el('input')
     this.inputNama.value = 'Komandan'
-    this.inputNama.style.cssText = 'padding:9px 12px;font-family:inherit;font-size:15px;flex:1;min-width:160px'
+    this.inputNama.style.cssText = 'padding:6px 10px;font-family:inherit;font-size:14px;flex:1;min-width:160px'
     barisNama.append(el('span', undefined, 'Nama:'), this.inputNama)
     kotak.append(barisNama)
 
@@ -64,10 +64,10 @@ export class Lobi {
     for (const h of ['berserker', 'king', 'knight', 'champion'] as PeranHeroAset[]) {
       const b = el('button', 'tombol-besar')
       b.type = 'button'
-      b.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 12px'
+      b.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 10px'
       const im = el('img')
       im.src = urlAset(HERO_BLUE[h].potret, basis)
-      im.style.cssText = 'width:40px;height:40px'
+      im.style.cssText = 'width:34px;height:34px'
       b.append(im, el('span', undefined, UNIT[h].nama.split(' ')[0] ?? h))
       b.addEventListener('click', () => {
         this.heroDipilih = h
@@ -83,7 +83,7 @@ export class Lobi {
     kotak.append(el('h2', undefined, 'Main Sendiri (Solo vs AI)'))
     const barisSolo = el('div', 'baris')
     const pilihKesulitan = el('select')
-    pilihKesulitan.style.cssText = 'padding:9px 12px;font-family:inherit;font-size:15px'
+    pilihKesulitan.style.cssText = 'padding:6px 10px;font-family:inherit;font-size:14px'
     for (const [v, t] of [['normal', 'Normal'], ['sulit', 'Sulit (Agresif)']] as const) {
       const o = el('option', undefined, t)
       o.value = v
@@ -134,7 +134,7 @@ export class Lobi {
     this.inputKode = el('input')
     this.inputKode.placeholder = 'KODE ROOM'
     this.inputKode.maxLength = 5
-    this.inputKode.style.cssText = 'padding:9px 12px;font-family:inherit;font-size:15px;width:140px;text-transform:uppercase'
+    this.inputKode.style.cssText = 'padding:6px 10px;font-family:inherit;font-size:14px;width:130px;text-transform:uppercase'
     this.tombolGabung = el('button', 'tombol-besar merah', 'Gabung')
     this.tombolGabung.type = 'button'
     this.tombolGabung.addEventListener('click', () =>

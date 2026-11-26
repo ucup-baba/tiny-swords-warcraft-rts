@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { buatBangunan, buatDunia, buatUnit, antreLatih, mulaiRiset } from '@hftf/sim'
+import { bangunGaya } from '../src/gaya.js'
 import { Hud } from '../src/hud.js'
 import { Lobi } from '../src/lobi.js'
 
@@ -151,5 +152,17 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     hud.perbaruiSeleksi(d, 'blue', [], null, false, { jenis: 'pohon', id: pohon.id })
     expect(hud.akar.querySelector('#seleksi-judul')?.textContent).toBe('Pohon Pinus')
     expect(hud.akar.querySelector('.hp-teks')?.textContent).toContain('Kayu')
+  })
+
+  it('CSS bingkai layar memusatkan stage 1280x720 dengan position absolute + translate(-50%, -50%) tanpa grid clamping di layar HP', () => {
+    const css = bangunGaya('')
+    const blokBingkai = css.match(/#bingkai-layar\s*\{[^}]*\}/)?.[0] ?? ''
+    const blokAkar = css.match(/#akar\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(blokBingkai).not.toContain('place-items: center')
+    expect(blokBingkai).not.toContain('display: grid')
+    expect(blokAkar).toContain('position: absolute')
+    expect(blokAkar).toContain('left: 50%')
+    expect(blokAkar).toContain('top: 50%')
+    expect(blokAkar).toContain('translate(-50%, -50%)')
   })
 })
