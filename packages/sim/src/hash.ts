@@ -19,7 +19,7 @@ export function hashDunia(dunia: Dunia): string {
   if (dunia.hasil.jenis === 'menang') serap(dunia.hasil.tim)
   serap('|')
 
-  for (const tim of ['blue', 'red', 'neutral'] as const) {
+  for (const tim of [...dunia.pemainAktif, 'neutral'] as const) {
     const k = dunia.tim[tim]
     serap(`${tim}:${n(k.sumberDaya.gold)},${n(k.sumberDaya.kayu)},${n(k.sumberDaya.daging)},`)
     serap(`${k.heroHidup ?? '-'},${k.heroGugur ? `${k.heroGugur.peran}@${k.heroGugur.level}` : '-'},`)

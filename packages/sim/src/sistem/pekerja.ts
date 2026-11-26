@@ -238,7 +238,7 @@ function panenDomba(dunia: Dunia, u: Unit): void {
     return
   }
   hadapKe(u, domba.x)
-  u.aksi = 'tebang'
+  u.aksi = 'sembelih'
   u.tikPanen += DT_TETAP
   if (u.tikPanen < PANEN.detikPerPanen) return
   u.tikPanen = 0
@@ -262,7 +262,7 @@ function pungutDaging(dunia: Dunia, u: Unit): void {
     return
   }
   hadapKe(u, daging.x)
-  u.aksi = 'bangun'
+  u.aksi = 'sembelih'
   u.bawaanJenis = 'daging'
   u.bawaanJumlah = daging.jumlah
   const i = dunia.daging.indexOf(daging)

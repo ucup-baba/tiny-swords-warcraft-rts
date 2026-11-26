@@ -19,6 +19,8 @@ export const TERRAIN = {
   jembatan: { file: 'Terrain/Bridge/Bridge_All.png', pack: 'u010', fw: 64, fh: 64, kolom: 3, baris: 4, fps: 0 },
   batuAir1: { file: 'Terrain/Water/Rocks/Rocks_01.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
   batuAir2: { file: 'Terrain/Water/Rocks/Rocks_02.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
+  batuAir3: { file: 'Terrain/Water/Rocks/Rocks_03.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
+  batuAir4: { file: 'Terrain/Water/Rocks/Rocks_04.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
 } as const satisfies Record<string, Aset>
 
 /**
@@ -48,7 +50,9 @@ export const SUMBER = {
   dombaLompat: { file: 'Resources/Sheep/HappySheep_Bouncing.png', pack: 'u010', fw: 128, fh: 128, kolom: 6, baris: 1, fps: 10 },
   dagingMuncul: { file: 'Resources/Resources/M_Spawn.png', pack: 'u010', fw: 128, fh: 128, kolom: 7, baris: 1, fps: 12 },
   dagingDiam: { file: 'Resources/Resources/M_Idle.png', pack: 'u010', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0 },
+  goldMuncul: { file: 'Resources/Resources/G_Spawn.png', pack: 'u010', fw: 128, fh: 128, kolom: 7, baris: 1, fps: 12 },
   goldDiam: { file: 'Resources/Resources/G_Idle.png', pack: 'u010', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0 },
+  kayuMuncul: { file: 'Resources/Resources/W_Spawn.png', pack: 'u010', fw: 128, fh: 128, kolom: 7, baris: 1, fps: 12 },
   kayuDiam: { file: 'Resources/Resources/W_Idle.png', pack: 'u010', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0 },
 } as const satisfies Record<string, Aset>
 
@@ -93,6 +97,20 @@ function bangunanTim(warna: WarnaTim) {
 
 export const BANGUNAN_BLUE = bangunanTim('blue')
 export const BANGUNAN_RED = bangunanTim('red')
+
+/** Bangunan resmi Update 010 warna tambahan (Purple & Yellow) untuk mode 4–6 pemain. */
+export const BANGUNAN_U010_WARNA = {
+  purple: {
+    castle: { file: 'Factions/Knights/Buildings/Castle/Castle_Purple.png', pack: 'u010', fw: 320, fh: 256, kolom: 1, baris: 1, fps: 0 },
+    house: { file: 'Factions/Knights/Buildings/House/House_Purple.png', pack: 'u010', fw: 128, fh: 192, kolom: 1, baris: 1, fps: 0 },
+    tower: { file: 'Factions/Knights/Buildings/Tower/Tower_Purple.png', pack: 'u010', fw: 128, fh: 256, kolom: 1, baris: 1, fps: 0 },
+  },
+  yellow: {
+    castle: { file: 'Factions/Knights/Buildings/Castle/Castle_Yellow.png', pack: 'u010', fw: 320, fh: 256, kolom: 1, baris: 1, fps: 0 },
+    house: { file: 'Factions/Knights/Buildings/House/House_Yellow.png', pack: 'u010', fw: 128, fh: 192, kolom: 1, baris: 1, fps: 0 },
+    tower: { file: 'Factions/Knights/Buildings/Tower/Tower_Yellow.png', pack: 'u010', fw: 128, fh: 256, kolom: 1, baris: 1, fps: 0 },
+  },
+} as const satisfies Record<'purple' | 'yellow', Record<'castle' | 'house' | 'tower', Aset>>
 
 export const BANGUNAN_FASE = {
   castleKonstruksi: { file: 'Factions/Knights/Buildings/Castle/Castle_Construction.png', pack: 'u010', fw: 320, fh: 256, kolom: 1, baris: 1, fps: 0 },
@@ -191,6 +209,56 @@ function unitTim(warna: WarnaTim) {
 export const UNIT_BLUE = unitTim('blue')
 export const UNIT_RED = unitTim('red')
 
+/** Unit resmi Update 010 warna tambahan (Purple & Yellow); Archer Purple memakai nama berkas asli `Archer_Purlple.png`. */
+export const UNIT_U010_WARNA = {
+  purple: {
+    warrior: { file: 'Factions/Knights/Troops/Warrior/Purple/Warrior_Purple.png', pack: 'u010', fw: 192, fh: 192, kolom: 6, baris: 8, fps: 12 },
+    archer: {
+      file: 'Factions/Knights/Troops/Archer/Purple/Archer_Purlple.png', pack: 'u010', fw: 192, fh: 192, kolom: 8, baris: 7,
+      frameBaris: [6, 6, 8, 8, 8, 8, 8], fps: 12,
+    },
+  },
+  yellow: {
+    warrior: { file: 'Factions/Knights/Troops/Warrior/Yellow/Warrior_Yellow.png', pack: 'u010', fw: 192, fh: 192, kolom: 6, baris: 8, fps: 12 },
+    archer: {
+      file: 'Factions/Knights/Troops/Archer/Yellow/Archer_Yellow.png', pack: 'u010', fw: 192, fh: 192, kolom: 8, baris: 7,
+      frameBaris: [6, 6, 8, 8, 8, 8, 8], fps: 12,
+    },
+  },
+} as const satisfies Record<'purple' | 'yellow', Record<'warrior' | 'archer', Aset>>
+
+const ALASAN_PAWN_FREE = 'Update 010 tidak punya animasi alat lengkap (beliung, pisau, jalan bawa alat, dan bawaan menyatu)'
+
+/**
+ * Seluruh 20 sheet Pawn resmi Tiny Swords (Free Pack) — animasi kontekstual:
+ * jalan & diam memegang alat sesuai tugas (kapak/beliung/palu/pisau) dan membawa
+ * kayu/emas/daging menyatu mulus tanpa sprite tempel terpisah.
+ */
+export const PAWN_FREE = {
+  idle: { file: 'Units/Blue Units/Pawn/Pawn_Idle.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idleKapak: { file: 'Units/Blue Units/Pawn/Pawn_Idle Axe.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idleBeliung: { file: 'Units/Blue Units/Pawn/Pawn_Idle Pickaxe.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idlePalu: { file: 'Units/Blue Units/Pawn/Pawn_Idle Hammer.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idlePisau: { file: 'Units/Blue Units/Pawn/Pawn_Idle Knife.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idleKayu: { file: 'Units/Blue Units/Pawn/Pawn_Idle Wood.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idleGold: { file: 'Units/Blue Units/Pawn/Pawn_Idle Gold.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  idleDaging: { file: 'Units/Blue Units/Pawn/Pawn_Idle Meat.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+
+  lari: { file: 'Units/Blue Units/Pawn/Pawn_Run.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariKapak: { file: 'Units/Blue Units/Pawn/Pawn_Run Axe.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariBeliung: { file: 'Units/Blue Units/Pawn/Pawn_Run Pickaxe.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariPalu: { file: 'Units/Blue Units/Pawn/Pawn_Run Hammer.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariPisau: { file: 'Units/Blue Units/Pawn/Pawn_Run Knife.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariKayu: { file: 'Units/Blue Units/Pawn/Pawn_Run Wood.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariGold: { file: 'Units/Blue Units/Pawn/Pawn_Run Gold.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+  lariDaging: { file: 'Units/Blue Units/Pawn/Pawn_Run Meat.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 12, alasan: ALASAN_PAWN_FREE },
+
+  aksiKapak: { file: 'Units/Blue Units/Pawn/Pawn_Interact Axe.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 11, alasan: ALASAN_PAWN_FREE },
+  aksiBeliung: { file: 'Units/Blue Units/Pawn/Pawn_Interact Pickaxe.png', pack: 'free', fw: 192, fh: 192, kolom: 6, baris: 1, fps: 11, alasan: ALASAN_PAWN_FREE },
+  aksiPalu: { file: 'Units/Blue Units/Pawn/Pawn_Interact Hammer.png', pack: 'free', fw: 192, fh: 192, kolom: 3, baris: 1, fps: 10, alasan: ALASAN_PAWN_FREE },
+  aksiPisau: { file: 'Units/Blue Units/Pawn/Pawn_Interact Knife.png', pack: 'free', fw: 192, fh: 192, kolom: 4, baris: 1, fps: 11, alasan: ALASAN_PAWN_FREE },
+} as const satisfies Record<string, Aset>
+
 export const HERO_PERAN = ['berserker', 'king', 'knight', 'champion'] as const
 export type PeranHeroAset = (typeof HERO_PERAN)[number]
 
@@ -287,7 +355,7 @@ export const KURSOR = Object.fromEntries(
 ) as Record<string, Aset>
 
 export const AVATAR = Object.fromEntries(
-  Array.from({ length: 25 }, (_, i) => {
+  Array.from({ length: 6 }, (_, i) => {
     const n = String(i + 1).padStart(2, '0')
     return [`avatar${n}`, {
       file: `UI Elements/UI Elements/Human Avatars/Avatars_${n}.png`, pack: 'free', fw: 256, fh: 256, kolom: 1, baris: 1, fps: 0,
@@ -300,7 +368,10 @@ export const AVATAR = Object.fromEntries(
 export const SEMUA: Record<string, Aset> = {
   ...pref('terrain', TERRAIN), ...pref('deko', DEKO), ...pref('sumber', SUMBER),
   ...pref('efek', EFEK), ...pref('bgBlue', BANGUNAN_BLUE), ...pref('bgRed', BANGUNAN_RED),
+  ...pref('bgPurple', BANGUNAN_U010_WARNA.purple), ...pref('bgYellow', BANGUNAN_U010_WARNA.yellow),
   ...pref('bgFase', BANGUNAN_FASE), ...pref('unitBlue', UNIT_BLUE), ...pref('unitRed', UNIT_RED),
+  ...pref('unitPurple', UNIT_U010_WARNA.purple), ...pref('unitYellow', UNIT_U010_WARNA.yellow),
+  ...pref('pawnFree', PAWN_FREE),
   ...pref('goblin', GOBLIN), ...pref('ui', UI), ...pref('ikon', IKON),
   ...pref('kursor', KURSOR), ...pref('avatar', AVATAR),
   ...heroRata('heroBlue', HERO_BLUE), ...heroRata('heroRed', HERO_RED),

@@ -1,17 +1,20 @@
 import {
-  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BARIS, BARIS_PAWN, EFEK, GOBLIN as ASET_GOBLIN,
-  HERO_BLUE, HERO_RED, SUMBER, UNIT_BLUE, UNIT_RED, frame, jumlahFrameBaris, type Aset,
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS, EFEK, GOBLIN as ASET_GOBLIN,
+  HERO_BLUE, HERO_RED, PAWN_FREE, SUMBER, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA, frame, jumlahFrameBaris, type Aset,
 } from '@hftf/aset'
-import type { Tim } from '@hftf/shared'
+import { WARNA_TIM, type Tim } from '@hftf/shared'
 import {
-  AMBANG_API, BANGUNAN, peranGoblin, pernahLihat, terlihatDi,
+  AMBANG_API, BANGUNAN, peranGoblin, pernahLihat, sekutu, terlihatDi,
   type Bangunan, type Dunia, type Unit,
 } from '@hftf/sim'
-import { gambarDari } from './gambar.js'
+import { gambarDari, gambarTim } from './gambar.js'
 import type { Kamera } from './kamera.js'
 import { pandangan } from './kamera.js'
 
-const asetTim = <T>(tim: Tim, blue: T, red: T): T => (tim === 'red' ? red : blue)
+const unitPack = (tim: Tim) => (tim === 'red' ? UNIT_RED : UNIT_BLUE)
+const heroPack = (tim: Tim) => (tim === 'red' ? HERO_RED : HERO_BLUE)
+const bangunanPack = (tim: Tim) => (tim === 'red' ? BANGUNAN_RED : BANGUNAN_BLUE)
+const warnaTintUmum = (tim: Tim): Tim => (tim === 'red' || tim === 'blue' || tim === 'neutral' ? 'blue' : tim)
 
 /**
  * Frame pohon yang sedang goyang.
@@ -36,9 +39,9 @@ const PIJAK = 0.68
 /** Menggambar satu frame sprite dengan kaki karakter tepat di (x, y). */
 function sprite(
   ctx: CanvasRenderingContext2D, a: Aset, indeks: number,
-  x: number, y: number, skala = 1, balik = false, pijak = PIJAK, rotasi = 0,
+  x: number, y: number, skala = 1, balik = false, pijak = PIJAK, rotasi = 0, tim?: Tim,
 ): void {
-  const im = gambarDari(a)
+  const im = tim && tim !== 'blue' && tim !== 'neutral' ? gambarTim(a, tim) : gambarDari(a)
   if (!im) return
   const f = frame(a, indeks)
   const w = f.sw * skala
@@ -72,9 +75,34 @@ function barisArcherSerang(sudut: number): number {
   return 6
 }
 
-function asetUnit(u: Unit, tim: Tim, t: number): { aset: Aset; indeks: number; skala: number } {
-  const U = asetTim(tim, UNIT_BLUE, UNIT_RED)
-  const H = asetTim(tim, HERO_BLUE, HERO_RED)
+function asetPawnFree(u: Unit): Aset {
+  const sedangLari = u.aksi === 'lari' || u.aksi === 'bawaLari'
+
+  // 1. Membawa hasil panen: gunakan sprite Pawn + kayu/emas/daging menyatu.
+  if (u.bawaanJenis === 'kayu') return sedangLari ? PAWN_FREE.lariKayu : PAWN_FREE.idleKayu
+  if (u.bawaanJenis === 'gold') return sedangLari ? PAWN_FREE.lariGold : PAWN_FREE.idleGold
+  if (u.bawaanJenis === 'daging') return sedangLari ? PAWN_FREE.lariDaging : PAWN_FREE.idleDaging
+
+  // 2. Sedang mengayun alat (interaksi aktif)
+  if (u.aksi === 'tebang') return PAWN_FREE.aksiKapak
+  if (u.aksi === 'tambang') return PAWN_FREE.aksiBeliung
+  if (u.aksi === 'bangun') return PAWN_FREE.aksiPalu
+  if (u.aksi === 'sembelih' || u.aksi === 'serang') return PAWN_FREE.aksiPisau
+
+  // 3. Berjalan atau diam bersiap sesuai tugas (kapak/beliung/palu/pisau sudah di tangan)
+  if (u.tugas === 'tebang') return sedangLari ? PAWN_FREE.lariKapak : PAWN_FREE.idleKapak
+  if (u.tugas === 'tambang') return sedangLari ? PAWN_FREE.lariBeliung : PAWN_FREE.idleBeliung
+  if (u.tugas === 'bangun' || u.tugas === 'perbaiki') return sedangLari ? PAWN_FREE.lariPalu : PAWN_FREE.idlePalu
+  if (u.tugas === 'gembala' || u.tugas === 'pungut' || u.tugas === 'serang' || u.tugas === 'serangPindah') {
+    return sedangLari ? PAWN_FREE.lariPisau : PAWN_FREE.idlePisau
+  }
+  return sedangLari ? PAWN_FREE.lari : PAWN_FREE.idle
+}
+
+function asetUnit(u: Unit, tim: Tim, t: number): { aset: Aset; indeks: number; skala: number; timWarna?: Tim } {
+  const U = unitPack(tim)
+  const H = heroPack(tim)
+  const tint = warnaTintUmum(tim)
   const aksi = u.aksi
   const fase = u.id * 0.37
 
@@ -93,49 +121,45 @@ function asetUnit(u: Unit, tim: Tim, t: number): { aset: Aset; indeks: number; s
   if (u.hero) {
     const set = H[u.peran as keyof typeof H]
     const a = aksi === 'serang' ? set.serang : aksi === 'lari' ? set.lari : set.idle
-    return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.74 }
+    return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.74, timWarna: tint }
   }
 
   switch (u.peran) {
     case 'pawn': {
-      const a = U.pawn
-      let baris: number = BARIS_PAWN.diam
-      if (aksi === 'tebang') baris = BARIS_PAWN.kapak
-      else if (aksi === 'tambang' || aksi === 'bangun' || aksi === 'serang') baris = BARIS_PAWN.palu
-      else if (aksi === 'bawaLari') baris = BARIS_PAWN.bawaLari
-      else if (aksi === 'bawaDiam') baris = BARIS_PAWN.bawaDiam
-      else if (aksi === 'lari') baris = BARIS_PAWN.lari
-      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
+      const a = asetPawnFree(u)
+      // Sheet Free Pack Pawn semuanya berbasis biru -> recolor ringan per tim di cache kanvas.
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68, timWarna: tim }
     }
     case 'warrior': {
-      const a = U.warrior
+      const a = (tim === 'purple' || tim === 'yellow') ? UNIT_U010_WARNA[tim].warrior : U.warrior
+      const tintW = (tim === 'purple' || tim === 'yellow') ? 'blue' : tint
       const baris = aksi === 'serang' ? BARIS.serang : aksi === 'lari' ? BARIS.lari : BARIS.idle
-      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68, timWarna: tintW }
     }
     case 'archer': {
-      const a = U.archer
+      const a = (tim === 'purple' || tim === 'yellow') ? UNIT_U010_WARNA[tim].archer : U.archer
+      const tintA = (tim === 'purple' || tim === 'yellow') ? 'blue' : tint
       const baris = aksi === 'serang'
         ? barisArcherSerang(u.sudutSerang)
         : aksi === 'lari' ? BARIS.lari : BARIS.idle
-      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68, timWarna: tintA }
     }
     case 'lancer': {
       const a = aksi === 'serang' ? U.lancerSerang : aksi === 'lari' ? U.lancerLari : U.lancerIdle
-      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.43 }
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.43, timWarna: tint }
     }
     case 'monk': {
       const a = aksi === 'serang' ? U.monkSembuh : aksi === 'lari' ? U.monkLari : U.monkIdle
-      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68 }
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68, timWarna: tint }
     }
     default: {
       const a = aksi === 'serang' ? U.mageSerang : aksi === 'lari' ? U.mageLari : U.mageIdle
-      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68 }
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68, timWarna: tint }
     }
   }
 }
 
-function asetBangunan(b: Bangunan, tim: Tim): Aset | null {
-  const B = asetTim(tim, BANGUNAN_BLUE, BANGUNAN_RED)
+function asetBangunan(b: Bangunan, tim: Tim): { aset: Aset; timWarna?: Tim } | null {
   if (b.fase === 'konstruksi') {
     const map: Record<Bangunan['jenis'], Aset> = {
       castle: BANGUNAN_FASE.castleKonstruksi,
@@ -146,7 +170,7 @@ function asetBangunan(b: Bangunan, tim: Tim): Aset | null {
       monastery: BANGUNAN_FASE.monasteryKonstruksi,
       altar: BANGUNAN_FASE.altarKonstruksi,
     }
-    return map[b.jenis]
+    return { aset: map[b.jenis] }
   }
   if (b.fase === 'hancur') {
     const map: Record<Bangunan['jenis'], Aset> = {
@@ -158,16 +182,22 @@ function asetBangunan(b: Bangunan, tim: Tim): Aset | null {
       monastery: BANGUNAN_FASE.monasteryHancur,
       altar: BANGUNAN_FASE.altarHancur,
     }
-    return map[b.jenis]
+    return { aset: map[b.jenis] }
   }
-  return B[b.jenis] ?? null
+  if ((tim === 'purple' || tim === 'yellow') && (b.jenis === 'castle' || b.jenis === 'house' || b.jenis === 'tower')) {
+    return { aset: BANGUNAN_U010_WARNA[tim][b.jenis], timWarna: 'blue' }
+  }
+  const B = bangunanPack(tim)
+  const aset = B[b.jenis]
+  return aset ? { aset, timWarna: warnaTintUmum(tim) } : null
 }
 
 /** Menggambar bendera Rally Point pixel-art yang berkibar di titik kumpul bangunan. */
 function gambarBenderaRally(ctx: CanvasRenderingContext2D, x: number, y: number, tim: Tim, t: number): void {
   const kibar = Math.sin(t * 7) * 3
-  const warnaKain = tim === 'blue' ? '#4a98f0' : '#e05a4a'
-  const warnaTepi = tim === 'blue' ? '#1c4478' : '#7a2018'
+  const warna = WARNA_TIM[tim]
+  const warnaKain = warna.utama
+  const warnaTepi = warna.gelap
 
   // Cincin tanah
   ctx.strokeStyle = '#ffd86b'
@@ -214,7 +244,7 @@ function barHp(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, p
   ctx.fillRect(x - w / 2 - 1, y - 1, w + 2, h + 2)
   ctx.fillStyle = isi > 0.5 ? '#6fd36f' : isi > 0.25 ? '#e8c75a' : '#e05a4a'
   ctx.fillRect(x - w / 2, y, w * isi, h)
-  ctx.strokeStyle = tim === 'blue' ? '#4a86c8' : '#c85a4a'
+  ctx.strokeStyle = WARNA_TIM[tim]?.utama ?? '#c85a4a'
   ctx.lineWidth = 1
   ctx.strokeRect(x - w / 2 - 1.5, y - 1.5, w + 3, h + 3)
 }
@@ -369,7 +399,7 @@ export function gambarEntitas(
 
   let rallyAktif: Bangunan | null = null
   for (const b of dunia.bangunan) {
-    if (b.tim !== timSaya ? !diingat(b.x, b.y) : !diLayar(b.x, b.y)) continue
+    if (!sekutu(b.tim, timSaya, dunia) ? !diingat(b.x, b.y) : !diLayar(b.x, b.y)) continue
     if (
       opsi.terpilihBangunan === b.id &&
       b.tim === timSaya &&
@@ -382,7 +412,7 @@ export function gambarEntitas(
   }
 
   for (const u of dunia.unit) {
-    if (u.tim !== timSaya ? !terlihat(u.x, u.y) : !diLayar(u.x, u.y)) continue
+    if (!sekutu(u.tim, timSaya, dunia) ? !terlihat(u.x, u.y) : !diLayar(u.x, u.y)) continue
     const [rx, ry] = posisiHalus(u.id, u.x, u.y, posLama, alpha)
     antrean.push({ jenis: 6, y: ry, obj: u, x: rx, yr: ry })
   }
@@ -469,8 +499,8 @@ export function gambarEntitas(
         const b = item.obj
         const def = BANGUNAN[b.jenis]
         if (b.fase !== 'hancur') bayangan(ctx, b.x, b.y, def.w * 0.38)
-        const a = asetBangunan(b, b.tim)
-        if (a) sprite(ctx, a, 0, b.x, b.y, def.w / a.fw, false, 0.86)
+        const hasilBg = asetBangunan(b, b.tim)
+        if (hasilBg) sprite(ctx, hasilBg.aset, 0, b.x, b.y, def.w / hasilBg.aset.fw, false, 0.86, 0, hasilBg.timWarna)
 
         if (opsi.terpilihBangunan === b.id) {
           ctx.strokeStyle = '#ffd86b'
@@ -497,7 +527,7 @@ export function gambarEntitas(
         const uy = item.yr
         const terpilih = opsi.terpilihUnit.has(u.id)
         if (terpilih) {
-          ctx.strokeStyle = u.tim === timSaya ? '#8ef08e' : '#f08e8e'
+          ctx.strokeStyle = sekutu(u.tim, timSaya, dunia) ? '#8ef08e' : '#f08e8e'
           ctx.lineWidth = 2
           ctx.beginPath()
           ctx.ellipse(ux, uy + 4, 22, 10, 0, 0, Math.PI * 2)
@@ -510,17 +540,12 @@ export function gambarEntitas(
           ctx.fill()
         }
 
-        bayangan(ctx, ux, uy, u.hero ? 20 : 15)
-        const { aset, indeks, skala } = asetUnit(u, u.tim, t)
-        sprite(ctx, aset, indeks, ux, uy, skala, u.arah < 0)
-
-        if (u.peran === 'pawn' && u.bawaanJenis) {
-          const asetBawa = u.bawaanJenis === 'gold'
-            ? SUMBER.goldDiam
-            : u.bawaanJenis === 'kayu' ? SUMBER.kayuDiam : SUMBER.dagingDiam
-          const ayun = u.aksi === 'bawaLari' ? Math.sin(t * 14) * 2 : 0
-          sprite(ctx, asetBawa, 0, ux, uy - 36 + ayun, 0.42, false, 0.6)
+        // Sheet Free Pack Pawn sudah membawa bayangan bawaan di bawah kaki.
+        if (!(u.peran === 'pawn' && u.campId === null)) {
+          bayangan(ctx, ux, uy, u.hero ? 20 : 15)
         }
+        const { aset, indeks, skala, timWarna } = asetUnit(u, u.tim, t)
+        sprite(ctx, aset, indeks, ux, uy, skala, u.arah < 0, PIJAK, 0, timWarna)
 
         if (u.hp < u.hpMaks || terpilih) barHp(ctx, ux, uy - 62, 40, u.hp / u.hpMaks, u.tim)
         if (u.hero && u.campId === null) {
@@ -554,9 +579,9 @@ export function gambarEntitas(
   // Proyektil di atas semuanya
   for (const pr of dunia.proyektil) {
     if (fogAktif && !terlihatDi(dunia, timSaya, pr.x, pr.y)) continue
-    const U = asetTim(pr.tim, UNIT_BLUE, UNIT_RED)
+    const U = unitPack(pr.tim)
     const a = pr.jenis === 'panah' ? U.panah : U.mageOrb
     const rot = pr.jenis === 'panah' ? Math.atan2(pr.ty - pr.y, pr.tx - pr.x) : 0
-    sprite(ctx, a, pr.jenis === 'panah' ? 0 : Math.floor(t * 12), pr.x, pr.y, 0.72, false, 0.5, rot)
+    sprite(ctx, a, pr.jenis === 'panah' ? 0 : Math.floor(t * 12), pr.x, pr.y, 0.72, false, 0.5, rot, warnaTintUmum(pr.tim))
   }
 }

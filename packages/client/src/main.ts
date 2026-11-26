@@ -1,13 +1,20 @@
-import { BANGUNAN_BLUE, BANGUNAN_FASE, BARIS, KURSOR, SUMBER, UNIT_BLUE, type Aset, type PeranHeroAset } from '@hftf/aset'
+import {
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS,
+  HERO_BLUE, HERO_RED, KURSOR, PAWN_FREE, SUMBER, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA,
+  type Aset, type PeranHeroAset,
+} from '@hftf/aset'
 import {
   Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, buatKursorAksi,
   gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongKursor, potongSprite, pusatkan,
 } from '@hftf/render'
-import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
-import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
+import { KlienLan, TransportLokal, type MulaiLanInfo, type RingkasRoom } from '@hftf/net'
+import {
+  DT_TETAP, DUNIA_H, DUNIA_W, GOLD_AWAL_BAKU, WARNA_TIM, buatSlotDefault,
+  type KonfigMatch, type Tim, type TimPemain,
+} from '@hftf/shared'
 import {
   BANGUNAN, REVIVE, RISET, TINGKAT_MAKS, UNIT, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
-  hitungFog, supplyMaks, supplyTerpakai, terapkanPerintah, terapkanSnapshot,
+  hitungFog, supplyMaks, supplyTerpakai, terapkanPerintah, terapkanSnapshot, timMenang,
   type Bangunan, type Dunia, type JenisRiset, type KeadaanAi, type PeranUnit, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
 import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type ModeSentuh, type PerintahKartu } from '@hftf/ui'
@@ -25,10 +32,18 @@ type Fase = 'muat' | 'lobi' | 'main' | 'selesai'
 class Permainan {
   private fase: Fase = 'muat'
   private dunia: Dunia | null = null
-  private ai: KeadaanAi | null = null
+  private daftarAi: KeadaanAi[] = []
   private transport: TransportLokal<Perintah, never> | null = null
   private lan: KlienLan | null = null
   private peran: 'solo' | 'host' | 'tamu' = 'solo'
+  private peranLanRoom: 'host' | 'tamu' | null = null
+  private tamuAktif: TimPemain[] = []
+  private konfigTerakhir: KonfigMatch = {
+    peta: 'klasik2',
+    goldAwal: GOLD_AWAL_BAKU,
+    slot: buatSlotDefault('klasik2'),
+  }
+  private asetSiap = false
   private akumulatorSiar = 0
   private overlayPutus: HTMLElement | null = null
   private menuJeda: HTMLElement | null = null
@@ -188,11 +203,39 @@ class Permainan {
     })
 
     this.lobi = new Lobi(BASIS, {
-      mulaiSolo: (hero, kesulitan) => this.mulaiSolo(hero, kesulitan),
+      mulaiSolo: (hero, kesulitan) => {
+        const slot = buatSlotDefault('klasik2', this.lobi.nama, hero)
+        if (slot[1]) slot[1].kesulitanAi = kesulitan === 'sulit' ? 'susah' : 'medium'
+        this.mulaiSkirmish({ peta: 'klasik2', goldAwal: GOLD_AWAL_BAKU, slot })
+      },
+      mulaiMatch: (konfig) => this.mulaiSkirmish(konfig),
       buatRoom: (nama, hero) => {
         if (this.modeStatis) return
         this.pastikanLan(nama)
         this.lan?.buatRoom(hero)
+      },
+      buatRoomKonfig: (nama, konfig) => {
+        if (this.modeStatis) return
+        this.pastikanLan(nama)
+        const slotLan = konfig.slot.map((s) => ({ ...s }))
+        // Pastikan minimal ada 1 slot terbuka agar teman di LAN bisa bergabung
+        if (slotLan.length > 1 && !slotLan.some((s, i) => i > 0 && s.jenis === 'manusia')) {
+          slotLan[1]!.jenis = 'manusia'
+          slotLan[1]!.nama = 'Terbuka (LAN)'
+        }
+        this.lan?.buatRoom(slotLan[0]?.hero ?? 'king', {
+          peta: konfig.peta,
+          goldAwal: konfig.goldAwal,
+          slot: slotLan,
+        })
+      },
+      aturRoom: (konfig) => {
+        if (this.modeStatis) return
+        this.lan?.aturRoom(konfig)
+      },
+      ubahSlotTamu: (opsi) => {
+        if (this.modeStatis) return
+        this.lan?.ubahSlot(opsi)
       },
       gabungRoom: (kode, nama, hero) => {
         if (this.modeStatis) return
@@ -203,6 +246,7 @@ class Permainan {
       mulaiLan: () => this.lan?.mulai(),
       keluarRoom: () => {
         this.lan?.keluar()
+        this.peranLanRoom = null
         this.lobi.setStatusRoom('Keluar dari room.', false, false)
       },
       ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
@@ -279,39 +323,8 @@ class Permainan {
       console.error('Aset gagal dimuat:', hasil.gagal)
       this.hud.tampilkanToast(`${hasil.gagal.length} aset gagal dimuat — cek console`)
     }
-    // Kartu produksi memakai sprite unit yang sebenarnya, dipotong sekali
-    // setelah aset dimuat. `ui` tidak boleh mengimpor `render`, jadi client
-    // yang menyambungkan keduanya.
-    this.hud.pasangPotret((peran) => {
-      switch (peran) {
-        case 'pawn':
-        case 'warrior':
-        case 'archer': {
-          const a = UNIT_BLUE[peran]
-          return potongSprite(a, BARIS.idle * a.kolom, 64)
-        }
-        case 'lancer': return potongSprite(UNIT_BLUE.lancerIdle, 0, 64)
-        case 'monk': return potongSprite(UNIT_BLUE.monkIdle, 0, 64)
-        case 'mage': return potongSprite(UNIT_BLUE.mageIdle, 0, 64)
-        case 'pohon': return potongSprite(SUMBER.pohon, 0, 64)
-        case 'tunggul': return potongSprite(SUMBER.pohon, 8, 64)
-        case 'tambang': return potongSprite(SUMBER.tambangAktif, 0, 64)
-        case 'domba': return potongSprite(SUMBER.dombaDiam, 0, 64)
-        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 64)
-        default: return null
-      }
-    })
-
-    // Ikon sumber daya (gold, kayu, daging, supply) & kursor di-crop ke kotak isi
-    // supaya tajam dan berukuran proporsional, bukan menyusut di dalam padding 128x128.
-    this.hud.pasangIkonSumber((kunci) => {
-      switch (kunci) {
-        case 'gold': return potongSprite(SUMBER.goldDiam, 0, 48)
-        case 'kayu': return potongSprite(SUMBER.kayuDiam, 0, 48)
-        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 48)
-        case 'supply': return potongSprite(BANGUNAN_BLUE.house, 0, 48)
-      }
-    })
+    this.asetSiap = true
+    this.segarkanPotretTim(this.timSaya)
     for (const nama of ['kursor01', 'kursor02', 'kursor03', 'kursor04'] as const) {
       const hasilPotong = potongKursor(KURSOR[nama]!, 42, nama === 'kursor03' || nama === 'kursor04')
       if (hasilPotong) this.kursorPotong.set(nama, hasilPotong)
@@ -359,38 +372,90 @@ class Permainan {
     requestAnimationFrame((t) => this.bingkai(t))
   }
 
+  /** Memperbarui ikon potret unit, hero, bangunan & supply sesuai warna tim pemain. */
+  private segarkanPotretTim(timAktif: Tim): void {
+    if (!this.asetSiap) return
+    const tint = (t: Tim): Tim => (t === 'red' || t === 'blue' || t === 'neutral' ? 'blue' : t)
+    const unitSet = (t: Tim) => (t === 'red' ? UNIT_RED : UNIT_BLUE)
+    const heroSet = (t: Tim) => (t === 'red' ? HERO_RED : HERO_BLUE)
+    const bgSet = (t: Tim) => (t === 'red' ? BANGUNAN_RED : BANGUNAN_BLUE)
+
+    this.hud.pasangPotret((peran) => {
+      if (peran.startsWith('bg:')) {
+        const [, jenis, overrideTim] = peran.split(':')
+        const t = (overrideTim as Tim) || timAktif
+        if ((t === 'purple' || t === 'yellow') && (jenis === 'castle' || jenis === 'house' || jenis === 'tower')) {
+          return potongSprite(BANGUNAN_U010_WARNA[t][jenis], 0, 64, 'blue')
+        }
+        const a = bgSet(t)[jenis as keyof typeof BANGUNAN_BLUE]
+        return a ? potongSprite(a, 0, 64, tint(t)) : null
+      }
+      if (peran.startsWith('hero:')) {
+        const h = peran.slice(5) as keyof typeof HERO_BLUE
+        const a = heroSet(timAktif)[h]?.potret
+        return a ? potongSprite(a, 0, 64, tint(timAktif)) : null
+      }
+      switch (peran) {
+        case 'pawn': return potongSprite(PAWN_FREE.idle, 0, 64, timAktif)
+        case 'warrior':
+        case 'archer': {
+          if (timAktif === 'purple' || timAktif === 'yellow') {
+            const a = UNIT_U010_WARNA[timAktif][peran]
+            return potongSprite(a, BARIS.idle * a.kolom, 64, 'blue')
+          }
+          const a = unitSet(timAktif)[peran]
+          return potongSprite(a, BARIS.idle * a.kolom, 64, tint(timAktif))
+        }
+        case 'lancer': return potongSprite(unitSet(timAktif).lancerIdle, 0, 64, tint(timAktif))
+        case 'monk': return potongSprite(unitSet(timAktif).monkIdle, 0, 64, tint(timAktif))
+        case 'mage': return potongSprite(unitSet(timAktif).mageIdle, 0, 64, tint(timAktif))
+        case 'pohon': return potongSprite(SUMBER.pohon, 0, 64)
+        case 'tunggul': return potongSprite(SUMBER.pohon, 8, 64)
+        case 'tambang': return potongSprite(SUMBER.tambangAktif, 0, 64)
+        case 'domba': return potongSprite(SUMBER.dombaDiam, 0, 64)
+        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 64)
+        default: return null
+      }
+    })
+
+    const houseAset = (timAktif === 'purple' || timAktif === 'yellow')
+      ? BANGUNAN_U010_WARNA[timAktif].house
+      : bgSet(timAktif).house
+    const houseTint = (timAktif === 'purple' || timAktif === 'yellow') ? 'blue' : tint(timAktif)
+    this.hud.pasangIkonSumber((kunci) => {
+      switch (kunci) {
+        case 'gold': return potongSprite(SUMBER.goldDiam, 0, 48)
+        case 'kayu': return potongSprite(SUMBER.kayuDiam, 0, 48)
+        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 48)
+        case 'supply': return potongSprite(houseAset, 0, 48, houseTint)
+      }
+    })
+  }
+
   /** Membuka koneksi papan sekali saja, lalu dipakai ulang. */
   private pastikanLan(nama: string): void {
     if (this.lan) return
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     this.lan = new KlienLan(`${proto}://${location.host}/ws`, {
       daftar: (room: RingkasRoom[]) => this.lobi.setDaftarRoom(room),
-      room: (kode, peran, _tim, ringkas) => {
-        const siap = ringkas.jumlah === 2
-        this.lobi.setStatusRoom(
-          `Room ${kode} — Host: ${ringkas.hostNama}` +
-          (ringkas.tamuNama ? ` • Tamu: ${ringkas.tamuNama}` : ' • menunggu pemain 2…'),
-          siap && peran === 'host', true)
+      room: (kode, peran, tim, ringkas) => {
+        this.peranLanRoom = peran
+        this.lobi.terimaRoomLan(kode, peran, tim, ringkas)
       },
-      mulai: (seed, tim, heroBlue, heroRed) => {
-        // Papan hanya pernah mengirim blue/red; neutral tidak mungkin.
-        if (tim !== 'blue' && tim !== 'red') return
-        this.mulaiLan(seed, tim, heroBlue, heroRed)
+      mulai: (seed, tim, heroBlue, heroRed, info) => {
+        this.mulaiLan(seed, tim, heroBlue, heroRed, info)
       },
       cmd: (tim, cmd) => {
-        // Host menerapkan perintah guest lewat jalur yang sama dengan miliknya.
         if (this.peran === 'host' && this.dunia) terapkanPerintah(this.dunia, tim, cmd as Perintah)
       },
       snapshot: (state) => {
         if (this.peran !== 'tamu' || !this.dunia) return
         const lama = new Map(this.dunia.unit.map((u) => [u.id, u]))
-        terapkanSnapshot(this.dunia, state as Snapshot, lama)
+        terapkanSnapshot(this.dunia, state as Snapshot, lama, this.timSaya)
         if (this.dunia.kejadian.length > 0) {
           this.efek.serap(this.dunia.kejadian, this.timSaya)
           this.dunia.kejadian.length = 0
         }
-        // Guest menghitung fog-nya sendiri dari unit miliknya, yang selalu
-        // lengkap di snapshot. Tanpa ini layarnya hitam total.
         hitungFog(this.dunia)
         this.fog?.kotor()
         this.minimap?.segarkanFog()
@@ -401,7 +466,7 @@ class Permainan {
         this.sembunyikanPutus()
         if (this.dunia) this.dunia.hasil = { jenis: 'menang', tim: this.timSaya }
       },
-      galat: (pesan) => this.hud.tampilkanToast(pesan),
+      galat: (pesan) => this.hud.tampilkanToast(pesan, true),
       terputus: () => {
         this.hud.tampilkanToast('Koneksi LAN terputus — mencoba menyambung lagi…')
         window.setTimeout(() => {
@@ -437,24 +502,52 @@ class Permainan {
     this.overlayPutus = null
   }
 
-  private mulaiLan(seed: number, tim: 'blue' | 'red', heroBlue: string, heroRed: string): void {
+  private mulaiLan(seed: number, tim: TimPemain, heroBlue: string, heroRed: string, info?: MulaiLanInfo): void {
     this.timSaya = tim
-    this.peran = tim === 'blue' ? 'host' : 'tamu'
+    this.peran = this.peranLanRoom === 'host' ? 'host' : 'tamu'
+    const peta = info?.peta ?? 'klasik2'
+    const goldAwal = info?.goldAwal ?? GOLD_AWAL_BAKU
+    const slotAktif = info?.slot && info.slot.length > 0
+      ? info.slot.map((s) => ({
+        indeks: s.indeks,
+        tim: s.tim,
+        jenis: s.terisi ? s.jenis : 'kosong' as const,
+        aliansi: s.aliansi,
+        hero: s.hero,
+        kesulitanAi: s.kesulitanAi,
+        nama: s.nama,
+      }))
+      : buatSlotDefault('klasik2')
+
     this.dunia = buatDunia({
       seed,
+      peta,
+      goldAwal,
       heroBlue: heroBlue as PeranHeroAset,
       heroRed: heroRed as PeranHeroAset,
+      ...(info?.slot && info.slot.length > 0 ? { slot: slotAktif } : {}),
     })
-    this.ai = null
+
+    if (this.peran === 'host') {
+      this.daftarAi = slotAktif
+        .filter((s) => s.jenis === 'ai')
+        .map((s) => buatAi(s.tim, s.kesulitanAi, seed))
+      this.tamuAktif = slotAktif
+        .filter((s) => s.jenis === 'manusia' && s.tim !== tim)
+        .map((s) => s.tim)
+    } else {
+      this.daftarAi = []
+      this.tamuAktif = []
+    }
+
     this.transport = null
     this.terrainRender = new PeremajaTerrain(this.dunia.terrain)
     this.minimap = new Minimap(this.dunia)
     this.fog = new LapisanFog(this.dunia.terrain.kolom, this.dunia.terrain.baris)
     this.input = buatInput()
     this.hud.setTim(tim)
+    this.segarkanPotretTim(tim)
     fokusKeCastle(this.dunia, tim, this.kam)
-    // Fog dihitung SEKARANG. Guest tidak menjalankan simulasi, jadi tanpa ini
-    // layarnya hitam total sampai snapshot pertama tiba.
     hitungFog(this.dunia)
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
@@ -467,19 +560,36 @@ class Permainan {
     this.perbaruiHud()
   }
 
-  private mulaiSolo(hero: PeranHeroAset, kesulitan: 'normal' | 'sulit'): void {
+  private mulaiSkirmish(konfigMasuk: KonfigMatch): void {
+    const konfig: KonfigMatch = {
+      peta: konfigMasuk.peta,
+      goldAwal: konfigMasuk.goldAwal,
+      slot: konfigMasuk.slot.map((s) => ({ ...s })),
+    }
+    this.konfigTerakhir = konfig
     this.peran = 'solo'
-    this.timSaya = 'blue'
+    const slotManusia = konfig.slot.find((s) => s.jenis === 'manusia') ?? konfig.slot[0]!
+    this.timSaya = slotManusia.tim
     const seed = Math.floor(Math.random() * 1_000_000)
-    this.dunia = buatDunia({ seed, heroBlue: hero, heroRed: 'champion' })
-    this.ai = buatAi('red', kesulitan, seed)
-    this.transport = new TransportLokal<Perintah, never>('blue')
+
+    this.dunia = buatDunia({
+      seed,
+      peta: konfig.peta,
+      goldAwal: konfig.goldAwal,
+      slot: konfig.slot,
+    })
+    this.daftarAi = konfig.slot
+      .filter((s) => s.jenis === 'ai')
+      .map((s) => buatAi(s.tim, s.kesulitanAi, seed))
+    this.tamuAktif = []
+    this.transport = new TransportLokal<Perintah, never>(this.timSaya)
     this.terrainRender = new PeremajaTerrain(this.dunia.terrain)
     this.minimap = new Minimap(this.dunia)
     this.fog = new LapisanFog(this.dunia.terrain.kolom, this.dunia.terrain.baris)
     this.input = buatInput()
-    this.hud.setTim('blue')
-    fokusKeCastle(this.dunia, 'blue', this.kam)
+    this.hud.setTim(this.timSaya)
+    this.segarkanPotretTim(this.timSaya)
+    fokusKeCastle(this.dunia, this.timSaya, this.kam)
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
@@ -949,8 +1059,9 @@ class Permainan {
         let langkah = 0
         while (this.akumulator >= DT_TETAP && langkah < 4) {
           this.rekamPosisiLama()
-          if (this.ai && this.dunia.hasil.jenis === 'berlangsung') {
-            for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
+          for (const ai of this.daftarAi) {
+            if (this.dunia.hasil.jenis !== 'berlangsung') break
+            for (const p of langkahAi(this.dunia, ai)) terapkanPerintah(this.dunia, ai.tim, p)
           }
           langkahBanyak(this.dunia, 1)
           this.efek.serap(this.dunia.kejadian, this.timSaya)
@@ -961,12 +1072,14 @@ class Permainan {
           this.akumulator = 0
         }
 
-        // Host menyiarkan snapshot ~15 Hz, sudah disaring fog guest.
+        // Host menyiarkan snapshot ~15 Hz, disaring fog masing-masing pemain tamu.
         if (this.peran === 'host') {
           this.akumulatorSiar += dt
           if (this.akumulatorSiar >= 1 / 15) {
             this.akumulatorSiar = 0
-            this.lan?.kirimSnapshot(buatSnapshot(this.dunia, 'red'))
+            for (const timTamu of this.tamuAktif) {
+              this.lan?.kirimSnapshot(buatSnapshot(this.dunia, timTamu), timTamu)
+            }
           }
         }
       }
@@ -1156,7 +1269,9 @@ class Permainan {
   private kembaliKeLobby(): void {
     this.lan?.keluar()
     this.dunia = null
-    this.ai = null
+    this.daftarAi = []
+    this.tamuAktif = []
+    this.peranLanRoom = null
     this.peran = 'solo'
     this.fase = 'lobi'
     this.kursor.style.display = 'none'
@@ -1173,8 +1288,9 @@ class Permainan {
     this.sembunyikanPutus()
 
     const h = this.dunia.hasil
-    const menang = h.jenis === 'menang' && h.tim === this.timSaya
-    const judul = h.jenis === 'draw' ? 'SERI' : menang ? 'KEMENANGAN KERAJAAN!' : 'KEKALAHAN'
+    const menang = timMenang(this.dunia, this.timSaya)
+    const pemenangLabel = h.jenis === 'menang' ? ` (${WARNA_TIM[h.tim].kerajaan})` : ''
+    const judul = h.jenis === 'draw' ? 'SERI' : menang ? `KEMENANGAN KERAJAAN!${pemenangLabel}` : `KEKALAHAN${pemenangLabel}`
     const hero = this.dunia.tim[this.timSaya]
     const s = hero.statistik
     const menit = Math.floor(this.dunia.tick / 3600)
@@ -1203,7 +1319,7 @@ class Permainan {
     })
     kotak.querySelector('#ulang')?.addEventListener('click', () => {
       kotak.remove()
-      this.mulaiSolo(this.lobi.hero, 'normal')
+      this.mulaiSkirmish(this.konfigTerakhir)
     })
   }
 

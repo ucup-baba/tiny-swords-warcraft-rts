@@ -1,5 +1,5 @@
-import { DUNIA_H, DUNIA_W, TILE, TINGGI, type Tim } from '@hftf/shared'
-import { pernahLihat, terlihatDi, TICK_PER_FOG, type Dunia } from '@hftf/sim'
+import { DUNIA_H, DUNIA_W, TILE, TINGGI, WARNA_TIM, type Tim } from '@hftf/shared'
+import { pernahLihat, sekutu, terlihatDi, TICK_PER_FOG, type Dunia } from '@hftf/sim'
 import type { Kamera } from './kamera.js'
 
 /**
@@ -38,10 +38,12 @@ export class Minimap {
     const sy = h / t.baris
     for (let ty = 0; ty < t.baris; ty++) {
       for (let tx = 0; tx < t.kolom; tx++) {
-        const v = t.tinggi[ty * t.kolom + tx]!
+        const idx = ty * t.kolom + tx
+        const v = t.tinggi[idx]!
         c.fillStyle =
-          v === TINGGI.air ? '#2f5f6e'
-          : t.ramp[ty * t.kolom + tx] === 1 ? '#9c8f63'
+          (t.jembatan[idx] ?? 0) > 0 ? '#b5824c'
+          : v === TINGGI.air ? '#2f5f6e'
+          : t.ramp[idx] === 1 ? '#9c8f63'
           : v === TINGGI.plateau ? '#7f9e86'
           : '#5f8a4e'
         c.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
@@ -64,14 +66,14 @@ export class Minimap {
 
     for (const b of this.dunia.bangunan) {
       if (b.fase === 'hancur') continue
-      if (b.tim !== timSaya && !pernahLihat(this.dunia, timSaya, b.x, b.y)) continue
-      ctx.fillStyle = b.tim === 'blue' ? '#5aa9ff' : b.tim === 'red' ? '#ff6a5a' : '#c9a227'
+      if (!sekutu(b.tim, timSaya, this.dunia) && !pernahLihat(this.dunia, timSaya, b.x, b.y)) continue
+      ctx.fillStyle = WARNA_TIM[b.tim]?.utama ?? '#c9a227'
       const s = b.jenis === 'castle' ? 5 : 3
       ctx.fillRect(px(b.x) - s / 2, py(b.y) - s / 2, s, s)
     }
     for (const u of this.dunia.unit) {
-      if (u.tim !== timSaya && !terlihatDi(this.dunia, timSaya, u.x, u.y)) continue
-      ctx.fillStyle = u.tim === 'blue' ? '#9fd2ff' : u.tim === 'red' ? '#ffa89f' : '#e0c24a'
+      if (!sekutu(u.tim, timSaya, this.dunia) && !terlihatDi(this.dunia, timSaya, u.x, u.y)) continue
+      ctx.fillStyle = WARNA_TIM[u.tim]?.terang ?? '#e0c24a'
       const s = u.hero ? 4 : 2
       ctx.fillRect(px(u.x) - s / 2, py(u.y) - s / 2, s, s)
     }
@@ -132,7 +134,7 @@ export class Minimap {
     }
 
     // Kotak kamera
-    ctx.strokeStyle = timSaya === 'blue' ? '#cfe9ff' : '#ffd7cf'
+    ctx.strokeStyle = WARNA_TIM[timSaya]?.terang ?? '#cfe9ff'
     ctx.lineWidth = 1.5
     ctx.strokeRect(
       px(kam.x), py(kam.y),

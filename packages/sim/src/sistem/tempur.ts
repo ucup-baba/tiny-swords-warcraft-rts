@@ -8,7 +8,7 @@ import { pengali, type JenisBaju, type JenisSerangan } from '../definisi/tempur.
 import { REVIVE, UNIT, type KategoriUnit } from '../definisi/unit.js'
 import { segarkanHalangan } from '../halangan.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
-import { adalahUnit, bermusuhan, cariUnit, jarak, musuhTerdekat } from '../util.js'
+import { adalahUnit, bermusuhan, cariUnit, jarak, musuhTerdekat, sekutu } from '../util.js'
 import { peranGoblin } from './goblin.js'
 import { jangkauanEfektif, langkahMenuju } from './gerak.js'
 
@@ -64,7 +64,7 @@ export function lukaiUnit(
 
   const k = dunia.tim[target.tim]
   k.statistik.gugur++
-  if (pembunuh && pembunuh !== target.tim) dunia.tim[pembunuh].statistik.bunuh++
+  if (pembunuh && bermusuhan(pembunuh, target.tim, dunia)) dunia.tim[pembunuh].statistik.bunuh++
 
   // Goblin menjatuhkan gold LANGSUNG ke pembunuhnya (PRD §10.4) - tidak perlu
   // diangkut Pawn, berbeda dari tambang.
@@ -116,7 +116,7 @@ export function lukaiUnit(
 /** Hero yang hidup dan cukup dekat dengan kematian ini mendapat XP (PRD §10.4). */
 export function beriXpSekitar(dunia: Dunia, korban: { x: number; y: number; tim: Tim }, xp: number): void {
   for (const u of dunia.unit) {
-    if (!u.hero || !bermusuhan(u.tim, korban.tim)) continue
+    if (!u.hero || !bermusuhan(u.tim, korban.tim, dunia)) continue
     if (jarak(u.x, u.y, korban.x, korban.y) > RADIUS_XP) continue
     tambahXp(dunia, u, xp)
   }
@@ -292,19 +292,19 @@ export function langkahProyektil(dunia: Dunia): void {
     if (p.area) {
       for (let j = dunia.unit.length - 1; j >= 0; j--) {
         const u = dunia.unit[j]
-        if (!u || !bermusuhan(u.tim, p.tim)) continue
+        if (!u || !bermusuhan(u.tim, p.tim, dunia)) continue
         if (jarak(p.x, p.y, u.x, u.y) <= RADIUS_SPLASH) lukaiUnit(dunia, u, p.dmg, null, p.tim, p.serangan)
       }
     } else if (p.targetId !== null) {
       const t = cariUnit(dunia, p.targetId)
-      if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null, p.tim, p.serangan)
+      if (t && bermusuhan(t.tim, p.tim, dunia)) lukaiUnit(dunia, t, p.dmg, null, p.tim, p.serangan)
     }
 
     // Bangunan di titik jatuh juga terkena. Tanpa ini archer dan mage sama
     // sekali TIDAK bisa melukai bangunan: proyektil ke bangunan dikirim dengan
     // targetId null, dan kedua cabang di atas melewatkannya.
     const bangunanKena = dunia.bangunan.find(
-      (b) => b.fase !== 'hancur' && bermusuhan(b.tim, p.tim) &&
+      (b) => b.fase !== 'hancur' && bermusuhan(b.tim, p.tim, dunia) &&
         jarak(p.x, p.y, b.x, b.y) <= BANGUNAN[b.jenis].radius)
     if (bangunanKena) lukaiBangunan(dunia, bangunanKena, p.dmg, p.tim, p.serangan)
 
@@ -404,7 +404,7 @@ function langkahMonk(dunia: Dunia, u: Unit): void {
   const radius = u.tugas === 'tahan' ? u.jarak : RADIUS_CARI_SEMBUH
 
   for (const s of dunia.unit) {
-    if (s.tim !== u.tim || s === u || s.hp >= s.hpMaks) continue
+    if (!sekutu(s.tim, u.tim, dunia) || s === u || s.hp >= s.hpMaks) continue
     if (jarak(u.x, u.y, s.x, s.y) > radius) continue
     const porsi = s.hp / s.hpMaks
     if (porsi < terparah) {

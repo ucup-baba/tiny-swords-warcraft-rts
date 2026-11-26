@@ -1,4 +1,4 @@
-import type { Tim } from '@hftf/shared'
+import { DUNIA_W, type Tim } from '@hftf/shared'
 import { BANGUNAN, HP_AWAL_KONSTRUKSI, type JenisBangunan } from '../definisi/bangunan.js'
 import { UNIT, type PeranUnit } from '../definisi/unit.js'
 import { segarkanHalangan } from '../halangan.js'
@@ -26,7 +26,7 @@ export function buatUnit(dunia: Dunia, tim: Tim, peran: PeranUnit, x: number, y:
     bawaanJenis: null,
     bawaanJumlah: 0,
     tikPanen: 0,
-    arah: tim === 'red' ? -1 : 1,
+    arah: dunia.peta === 'klasik2' ? (tim === 'red' ? -1 : 1) : (x > DUNIA_W / 2 ? -1 : 1),
     aksi: 'diam',
     tikAksi: 0,
     sudutSerang: 0,
@@ -60,7 +60,7 @@ export function buatBangunan(
     sisaBangun: fase === 'aktif' ? 0 : def.waktuBangun,
     antrean: [],
     jedaTembak: 0,
-    rallyX: x + (tim === 'blue' ? 95 : -95),
+    rallyX: x + (dunia.peta === 'klasik2' ? (tim === 'blue' ? 95 : -95) : (x < DUNIA_W / 2 ? 95 : -95)),
     rallyY: y + 60,
     revive: null,
     jedaDomba: jenis === 'castle' ? 25 : jenis === 'house' ? 30 : 0,

@@ -1,4 +1,7 @@
-import { DT_TETAP, PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type Tim } from '@hftf/shared'
+import {
+  DT_TETAP, GOLD_AWAL_BAKU, INFO_PETA, PETA_BARIS, PETA_KOLOM, TIM, TINGGI, jepitGoldAwal,
+  type JenisPeta, type KonfigSlot, type Tim, type TimPemain,
+} from '@hftf/shared'
 import { BANGUNAN } from './definisi/bangunan.js'
 import { SEMUA_RISET, type JenisRiset } from './definisi/riset.js'
 import type { PeranHero } from './definisi/unit.js'
@@ -13,17 +16,22 @@ import { KAYU_POHON_BARU, langkahPawn } from './sistem/pekerja.js'
 import { buatBangunan, buatUnit } from './sistem/spawn.js'
 import { langkahAkhir } from './sistem/akhir.js'
 import { langkahCamp, tambahCamp } from './sistem/goblin.js'
-import { buatFog, langkahFog } from './sistem/fog.js'
+import { buatFog, langkahFog, type Fog } from './sistem/fog.js'
 import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
-import { buatTerrain, keTengahPiksel, keTile, tinggiDi, type Terrain } from './terrain.js'
+import {
+  adalahJembatan, adalahRamp, buatTerrain, indeks, keTengahPiksel, keTile, tinggiDi,
+} from './terrain.js'
 import { batalkanJalur, pisahUnit } from './sistem/gerak.js'
 
 export interface OpsiDunia {
   seed: number
+  peta?: JenisPeta
+  goldAwal?: number
   heroBlue?: PeranHero
   heroRed?: PeranHero
+  slot?: readonly KonfigSlot[]
 }
 
 function statistikKosong(): Statistik {
@@ -33,9 +41,9 @@ function statistikKosong(): Statistik {
   }
 }
 
-function keadaanTim(hero: PeranHero): KeadaanTim {
+function keadaanTim(hero: PeranHero, goldAwal = GOLD_AWAL_BAKU): KeadaanTim {
   return {
-    sumberDaya: { gold: 320, kayu: 220, daging: 140 },
+    sumberDaya: { gold: goldAwal, kayu: 220, daging: 140 },
     statistik: statistikKosong(),
     heroHidup: null,
     heroGugur: null,
@@ -47,13 +55,69 @@ function keadaanTim(hero: PeranHero): KeadaanTim {
 }
 
 export function buatDunia(opsi: OpsiDunia): Dunia {
+  const peta: JenisPeta = opsi.peta ?? 'klasik2'
+  const goldAwal = jepitGoldAwal(opsi.goldAwal ?? GOLD_AWAL_BAKU)
   const rng = buatRng(opsi.seed)
-  const { terrain, titik } = buatTerrain(rng)
+  const { terrain, titik } = buatTerrain(rng, peta)
+
+  const info = INFO_PETA[peta]
+  let daftarSlot: KonfigSlot[]
+  if (opsi.slot && opsi.slot.length > 0) {
+    daftarSlot = opsi.slot
+      .filter((s) => s.jenis !== 'kosong')
+      .slice(0, info.maksPemain)
+      .map((s, idx) => ({ ...s, indeks: Math.min(info.maksPemain - 1, Math.max(0, s.indeks ?? idx)) }))
+  } else {
+    const heroUrut: PeranHero[] = [
+      opsi.heroBlue ?? 'king',
+      opsi.heroRed ?? 'champion',
+      'knight',
+      'berserker',
+      'champion',
+      'knight',
+    ]
+    daftarSlot = info.warnaDefault.map((tim, i) => ({
+      indeks: i,
+      tim,
+      jenis: i === 0 ? 'manusia' : 'ai',
+      aliansi: i + 1,
+      hero: heroUrut[i % heroUrut.length]!,
+      kesulitanAi: 'medium',
+      nama: tim.toUpperCase(),
+    }))
+  }
+
+  const pemainAktif: TimPemain[] = []
+  const aliansi = Object.fromEntries(TIM.map((t, i) => [t, t === 'neutral' ? 0 : i + 1])) as Record<Tim, number>
+  const heroPerTim = Object.fromEntries(TIM.map((t) => [t, 'king' as PeranHero])) as Record<Tim, PeranHero>
+  heroPerTim.blue = opsi.heroBlue ?? 'king'
+  heroPerTim.red = opsi.heroRed ?? 'champion'
+  heroPerTim.neutral = 'berserker'
+
+  for (const s of daftarSlot) {
+    if (!pemainAktif.includes(s.tim)) pemainAktif.push(s.tim)
+    aliansi[s.tim] = s.aliansi
+    heroPerTim[s.tim] = s.hero as PeranHero
+  }
+  if (pemainAktif.length === 0) {
+    pemainAktif.push('blue', 'red')
+  }
+
+  const fog = Object.fromEntries(
+    TIM.map((t) => [t, buatFog(terrain.kolom, terrain.baris)]),
+  ) as Record<Tim, Fog>
+  const tim = Object.fromEntries(
+    TIM.map((t) => [t, keadaanTim(heroPerTim[t], t === 'neutral' ? GOLD_AWAL_BAKU : goldAwal)]),
+  ) as Record<Tim, KeadaanTim>
+
   const dunia: Dunia = {
     tick: 0,
     rng,
     idBerikut: 1,
     hasil: { jenis: 'berlangsung' },
+    peta,
+    pemainAktif,
+    aliansi,
     terrain,
     titik,
     halangan: buatHalangan(terrain.kolom, terrain.baris),
@@ -66,19 +130,15 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     daging: [],
     proyektil: [],
     camp: [],
-    fog: {
-      blue: buatFog(terrain.kolom, terrain.baris),
-      red: buatFog(terrain.kolom, terrain.baris),
-      neutral: buatFog(terrain.kolom, terrain.baris),
-    },
-    tim: {
-      blue: keadaanTim(opsi.heroBlue ?? 'king'),
-      red: keadaanTim(opsi.heroRed ?? 'champion'),
-      neutral: keadaanTim('berserker'),
-    },
+    fog,
+    tim,
     kejadian: [],
   }
-  isiPeta(dunia)
+  if (peta === 'klasik2') {
+    isiPetaKlasik2(dunia, daftarSlot)
+  } else {
+    isiPetaKepulauan(dunia, daftarSlot)
+  }
   return dunia
 }
 
@@ -86,7 +146,7 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
  * Mengisi peta di atas terrain yang sudah dibentuk (PRD §9.3).
  * Simetri rotasi 180 derajat — bukan cermin.
  */
-function isiPeta(dunia: Dunia): void {
+function isiPetaKlasik2(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void {
   const t = dunia.terrain
   const putar = (tx: number, ty: number): [number, number] => [PETA_KOLOM - tx, PETA_BARIS - ty]
 
@@ -103,11 +163,12 @@ function isiPeta(dunia: Dunia): void {
     return [tx, ty]
   }
 
-  const basisBlue = dataranDekat(20, 76)
-  const basisRed = dataranDekat(...putar(20, 76))
+  const basisA = dataranDekat(20, 76)
+  const basisB = dataranDekat(...putar(20, 76))
+  const timA: TimPemain = daftarSlot[0]?.tim ?? 'blue'
+  const timB: TimPemain = daftarSlot[1]?.tim ?? 'red'
 
-  for (const [tim, [btx, bty]] of [['blue', basisBlue], ['red', basisRed]] as const) {
-    const arah = tim === 'blue' ? 1 : -1
+  for (const [tim, [btx, bty], arah] of [[timA, basisA, 1], [timB, basisB, -1]] as const) {
     const P = (tx: number, ty: number): [number, number] => [keTengahPiksel(tx), keTengahPiksel(ty)]
 
     const [cx, cy] = P(btx, bty)
@@ -126,10 +187,7 @@ function isiPeta(dunia: Dunia): void {
     const [mx, my] = P(...dataranDekat(btx - 6 * arah, bty + 3 * arah))
     dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'mine', x: mx, y: my, gold: 3500 })
 
-    // Hutan: 3 rumpun per pemain (PRD §9.3). Satu di dalam basis, dua lagi
-    // harus diperebutkan. Versi pertama hanya menaruh 8 pohon per basis dan
-    // 25 pohon di SELURUH peta — totalnya 2.250 kayu, kurang dari biaya tiga
-    // Castle, jadi ekonomi kayu mati sebelum match separuh jalan.
+    // Hutan: 3 rumpun per pemain (PRD §9.3).
     const rumpun: [number, number][] = [
       [btx + 6 * arah, bty - 4 * arah],
       [btx + 16 * arah, bty - 12 * arah],
@@ -137,10 +195,6 @@ function isiPeta(dunia: Dunia): void {
     ]
     for (const [rx, ry] of rumpun) {
       for (let i = 0; i < 9; i++) {
-        // Offset DI DALAM rumpun juga harus dicerminkan dengan `arah`.
-        // Tanpa itu kedua rumpun menjulur ke arah absolut yang sama dan biru
-        // berakhir dengan 457 kayu lebih banyak dalam radius 20 tile — 22%
-        // keunggulan ekonomi yang tidak disengaja.
         const [tx2, ty2] = dataranDekat(rx + (i % 3) * 2 * arah, ry + Math.floor(i / 3) * 2 * arah)
         const [wx, wy] = P(tx2, ty2)
         dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
@@ -171,10 +225,6 @@ function isiPeta(dunia: Dunia): void {
     x: keTengahPiksel(pusat.tx), y: keTengahPiksel(pusat.ty), gold: 4500,
   })
 
-  // Camp goblin penjaga harta (PRD §10.5): satu camp kecil per tambang
-  // ekspansi, dan satu camp besar menjaga tambang pusat di atas plateau.
-  // Camp ditaruh TEPAT di tambang yang dijaganya. Offset absolut membuat
-  // jaraknya ke tiap basis berbeda dan merusak simetri rotasi.
   for (const tb of dunia.tambang) {
     if (tb.jenis !== 'stone') continue
     tambahCamp(dunia, 'kecil', tb.x, tb.y)
@@ -198,9 +248,126 @@ function isiPeta(dunia: Dunia): void {
   segarkanHalangan(dunia)
 }
 
+function dekatJembatan(t: Dunia['terrain'], tx: number, ty: number): boolean {
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      if (adalahJembatan(t, tx + dx, ty + dy)) return true
+    }
+  }
+  return false
+}
+
 /**
- * Bangunan hanya boleh berdiri di tapak yang SERAGAM ketinggiannya — tidak
- * boleh menjembatani dua level (PRD §9.4 / AC-9.6).
+ * Mengisi peta kepulauan multipemain (`salib4` 4P / `bintang6` 6P) beserta basis simetris,
+ * hutan pulau, tambang ekspansi, dan penjaga goblin di pusat arena.
+ */
+function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void {
+  const t = dunia.terrain
+  const P = (tx: number, ty: number): [number, number] => [keTengahPiksel(tx), keTengahPiksel(ty)]
+
+  const dataranBebas = (tx: number, ty: number): [number, number] => {
+    for (let r = 0; r <= 12; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (r > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+          const x = tx + dx
+          const y = ty + dy
+          if (
+            tinggiDi(t, x, y) === TINGGI.dataran &&
+            !adalahRamp(t, x, y) &&
+            !dekatJembatan(t, x, y)
+          ) {
+            return [x, y]
+          }
+        }
+      }
+    }
+    return [tx, ty]
+  }
+
+  for (let idx = 0; idx < dunia.titik.basis.length; idx++) {
+    const b = dunia.titik.basis[idx]!
+    const slot = daftarSlot.find((s) => s.indeks === idx) ?? null
+    const sx = b.arahX !== 0 ? b.arahX : (idx % 2 === 0 ? 1 : -1)
+    const sy = b.arahY !== 0 ? b.arahY : 1
+    const [btx, bty] = dataranBebas(b.tx, b.ty)
+
+    // Setiap pulau selalu memiliki 1 tambang emas utama & 2 rumpun hutan (bahkan jika slot kosong).
+    const [mx, my] = P(...dataranBebas(btx - 5 * sx, bty - 3 * sy))
+    dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'mine', x: mx, y: my, gold: 3500 })
+
+    const rumpun: [number, number][] = [
+      [btx - 7 * sx, bty - 7 * sy],
+      [btx + 5 * sx, bty - 7 * sy],
+    ]
+    for (const [rx, ry] of rumpun) {
+      for (let i = 0; i < 8; i++) {
+        const [tx2, ty2] = dataranBebas(rx + (i % 4) * 2 * sx, ry + Math.floor(i / 4) * 2 * sy)
+        const [wx, wy] = P(tx2, ty2)
+        if (Math.hypot(wx - mx, wy - my) < 96) continue
+        if (dunia.pohon.some((p) => Math.hypot(p.x - wx, p.y - wy) < 48)) continue
+        dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
+      }
+    }
+
+    if (!slot) continue
+    const tim = slot.tim
+
+    const [cx, cy] = P(btx, bty)
+    buatBangunan(dunia, tim, 'castle', cx, cy, 'aktif')
+
+    const [hx, hy] = P(...dataranBebas(btx + 5 * sx, bty - 2 * sy))
+    buatBangunan(dunia, tim, 'house', hx, hy, 'aktif')
+
+    for (let i = 0; i < 5; i++) {
+      const [px, py] = P(...dataranBebas(btx + (i - 2), bty + 3 * sy))
+      buatUnit(dunia, tim, 'pawn', px, py)
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const [dx, dy] = P(...dataranBebas(btx - 5 * sx + i * 2 * sx, bty + 5 * sy))
+      dunia.domba.push(buatDomba(dunia.idBerikut++, dx, dy, 45, 1.0 + i * 0.9))
+    }
+
+    const peran = dunia.tim[tim].heroPilihan
+    const [ux, uy] = P(...dataranBebas(btx + 2 * sx, bty + 4 * sy))
+    const hero = buatUnit(dunia, tim, peran, ux, uy)
+    dunia.tim[tim].heroHidup = hero.id
+  }
+
+  // Tambang kaya di plateau pusat + camp besar penjaga
+  const pusat = dunia.titik.plateauPusat
+  dunia.tambang.push({
+    id: dunia.idBerikut++,
+    jenis: 'mine',
+    x: keTengahPiksel(pusat.tx),
+    y: keTengahPiksel(pusat.ty),
+    gold: dunia.peta === 'bintang6' ? 6000 : 5000,
+  })
+  tambahCamp(dunia, 'besar', keTengahPiksel(pusat.tx), keTengahPiksel(pusat.ty))
+
+  // Tambang ekspansi & camp kecil di arena tengah
+  for (const ek of dunia.titik.ekspansi) {
+    const [tx, ty] = dataranBebas(ek.tx, ek.ty)
+    const [ex, ey] = P(tx, ty)
+    dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'stone', x: ex, y: ey, gold: 1500 })
+    tambahCamp(dunia, 'kecil', ex, ey)
+
+    // Sedikit pohon netral dekat tepi ekspansi
+    for (let i = 0; i < 5; i++) {
+      const [ptx, pty] = dataranBebas(tx + ((i % 3) - 1) * 3, ty + (i < 3 ? -3 : 3))
+      const [px, py] = P(ptx, pty)
+      if (Math.hypot(px - ex, py - ey) < 96) continue
+      if (dunia.pohon.some((p) => Math.hypot(p.x - px, p.y - py) < 52)) continue
+      dunia.pohon.push({ id: dunia.idBerikut++, x: px, y: py, kayu: 120 })
+    }
+  }
+
+  segarkanHalangan(dunia)
+}
+
+/**
+ * Bangunan hanya boleh berdiri di tapak yang SERAGAM ketinggiannya dan BUKAN jembatan.
  */
 export function bolehTaruhBangunan(dunia: Dunia, jenis: Parameters<typeof buatBangunan>[2], x: number, y: number): boolean {
   const def = BANGUNAN[jenis]
@@ -216,6 +383,9 @@ export function bolehTaruhBangunan(dunia: Dunia, jenis: Parameters<typeof buatBa
   for (let ty = y1; ty <= y2; ty++) {
     for (let tx = x1; tx <= x2; tx++) {
       if (tinggiDi(t, tx, ty) !== dasar) return false
+      if (tx >= 0 && ty >= 0 && tx < t.kolom && ty < t.baris && t.jembatan[indeks(t, tx, ty)] !== 0) {
+        return false
+      }
     }
   }
 

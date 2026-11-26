@@ -190,3 +190,58 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     expect(hud.akar.querySelector('#pita-status')?.firstChild).toBe(anakPertama)
   })
 })
+
+describe('Lobi Warcraft III — Peta 2/4/6P, 4 Tier AI, Aliansi, & Custom Gold', () => {
+  it('berpindah peta mengubah jumlah slot & mendukung 4 tingkat kesulitan AI + custom gold awal', () => {
+    const mulaiMatch = vi.fn()
+    const lobi = new Lobi('', {
+      mulaiSolo: vi.fn(),
+      mulaiMatch,
+      buatRoom: vi.fn(),
+      gabungRoom: vi.fn(),
+      mulaiLan: vi.fn(),
+      keluarRoom: vi.fn(),
+    })
+
+    // Awalnya peta klasik2 (2 slot)
+    expect(lobi.akar.querySelectorAll('.slot-baris')).toHaveLength(2)
+
+    // Pindah ke Pulau Salib (4P)
+    lobi.akar.querySelector<HTMLButtonElement>('.peta-btn[data-peta="salib4"]')!.click()
+    expect(lobi.akar.querySelectorAll('.slot-baris')).toHaveLength(4)
+
+    // Pindah ke Kepulauan Bintang (6P)
+    lobi.akar.querySelector<HTMLButtonElement>('.peta-btn[data-peta="bintang6"]')!.click()
+    expect(lobi.akar.querySelectorAll('.slot-baris')).toHaveLength(6)
+
+    // Dropdown AI harus menyediakan ke-4 tingkat (Gampang, Medium, Susah, Extreme)
+    const selAi = lobi.akar.querySelector<HTMLSelectElement>('select[data-role-select="1"]')!
+    const opsi = [...selAi.options].map((o) => o.value)
+    expect(opsi).toContain('ai:gampang')
+    expect(opsi).toContain('ai:medium')
+    expect(opsi).toContain('ai:susah')
+    expect(opsi).toContain('ai:extreme')
+    selAi.value = 'ai:extreme'
+    selAi.dispatchEvent(new Event('change'))
+
+    // Atur custom gold awal via input angka
+    const goldInput = lobi.akar.querySelector<HTMLInputElement>('.gold-input')!
+    goldInput.value = '1750'
+    goldInput.dispatchEvent(new Event('change'))
+
+    // Aktifkan preset aliansi 3v3
+    const btn3v3 = [...lobi.akar.querySelectorAll<HTMLButtonElement>('.btn-kecil')].find((b) => b.textContent === '3v3')!
+    btn3v3.click()
+
+    // Mulai pertandingan -> mengirim KonfigMatch lengkap
+    lobi.akar.querySelector<HTMLButtonElement>('.cta-mulai')!.click()
+    expect(mulaiMatch).toHaveBeenCalledTimes(1)
+    const arg = mulaiMatch.mock.calls[0]![0]
+    expect(arg.peta).toBe('bintang6')
+    expect(arg.goldAwal).toBe(1750)
+    expect(arg.slot).toHaveLength(6)
+    expect(arg.slot[1].kesulitanAi).toBe('extreme')
+    expect(arg.slot[0].aliansi).toBe(1)
+    expect(arg.slot[3].aliansi).toBe(2)
+  })
+})

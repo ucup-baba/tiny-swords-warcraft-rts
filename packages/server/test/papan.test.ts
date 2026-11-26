@@ -238,3 +238,74 @@ describe('AC-15.8 / 15.9 — pengerasan', () => {
     expect(terakhir(b, 'snapshot')).toBeDefined()
   })
 })
+
+describe('Multipemain LAN 2–6 Pemain, Peta, Custom Gold, & Slot AI', () => {
+  it('bisa membuat room 6 pemain (bintang6), 5 tamu bergabung, host atur gold/AI, dan semua menerima mulai', () => {
+    const p = papanBaru()
+    const klien = ['h', 't1', 't2', 't3', 't4', 't5'].map((id) => sambung(p, id))
+    const host = klien[0]!
+    kirim(p, host.id, { t: 'halo', nama: 'RajaHost' })
+    kirim(p, host.id, { t: 'buat-room', hero: 'king', peta: 'bintang6', goldAwal: 1200 })
+
+    const kode = terakhir(host, 'room')!.kode
+    expect(terakhir(host, 'room')!.ringkas.peta).toBe('bintang6')
+    expect(terakhir(host, 'room')!.ringkas.goldAwal).toBe(1200)
+    expect(terakhir(host, 'room')!.ringkas.maksPemain).toBe(6)
+
+    for (let i = 1; i < klien.length; i++) {
+      kirim(p, klien[i]!.id, { t: 'halo', nama: `P${i}` })
+      kirim(p, klien[i]!.id, { t: 'gabung-room', kode, hero: 'knight' })
+    }
+    expect(terakhir(host, 'room')!.ringkas.jumlah).toBe(6)
+
+    // Tamu ekstra ke-7 ditolak karena penuh
+    const extra = sambung(p, 't7')
+    kirim(p, extra.id, { t: 'gabung-room', kode, hero: 'king' })
+    expect(terakhir(extra, 'galat')).toBeDefined()
+
+    // Tamu #4 mengubah aliansinya sendiri menjadi Tim 1
+    kirim(p, klien[3]!.id, { t: 'ubah-slot', hero: 'berserker', aliansi: 1 })
+    expect(terakhir(host, 'room')!.ringkas.slot[3]!.hero).toBe('berserker')
+    expect(terakhir(host, 'room')!.ringkas.slot[3]!.aliansi).toBe(1)
+
+    // Host memulai -> keenam pemain mendapat seed yang SAMA & tim berbeda
+    kirim(p, host.id, { t: 'mulai' })
+    const seeds = klien.map((k) => terakhir(k, 'mulai')!.seed)
+    const tims = klien.map((k) => terakhir(k, 'mulai')!.tim)
+    expect(new Set(seeds).size).toBe(1)
+    expect(new Set(tims).size).toBe(6)
+    expect(terakhir(klien[4]!, 'mulai')!.goldAwal).toBe(1200)
+
+    // Snapshot bertarget (untuk tim tertentu) hanya terkirim ke tamu tersebut
+    for (const k of klien) k.kotak.length = 0
+    kirim(p, host.id, { t: 'snapshot', untuk: tims[2], state: { tick: 99 } })
+    expect(terakhir(klien[2]!, 'snapshot')).toBeDefined()
+    expect(terakhir(klien[1]!, 'snapshot')).toBeUndefined()
+
+    // Cmd dari tamu ke-4 diteruskan ke host dengan label tim yang tepat
+    kirim(p, klien[3]!.id, { t: 'cmd', cmd: { jenis: 'stop', ids: [1] } })
+    expect(terakhir(host, 'cmd')!.tim).toBe(tims[3])
+  })
+
+  it('host bisa mengisi slot kosong dengan AI dan memulai room 1 manusia + AI di peta salib4', () => {
+    const p = papanBaru()
+    const a = sambung(p, 'a')
+    kirim(p, 'a', { t: 'buat-room', hero: 'king', peta: 'salib4', goldAwal: 750 })
+    const slotBaru = terakhir(a, 'room')!.ringkas.slot.map((s, i) => ({
+      indeks: s.indeks,
+      tim: s.tim,
+      jenis: i === 0 ? 'manusia' : 'ai',
+      aliansi: s.aliansi,
+      hero: s.hero,
+      kesulitanAi: 'extreme',
+      nama: s.nama,
+    }))
+    kirim(p, 'a', { t: 'atur-room', slot: slotBaru })
+    kirim(p, 'a', { t: 'mulai' })
+    const m = terakhir(a, 'mulai')
+    expect(m).toBeDefined()
+    expect(m!.peta).toBe('salib4')
+    expect(m!.goldAwal).toBe(750)
+    expect(m!.slot.filter((s) => s.jenis === 'ai')).toHaveLength(3)
+  })
+})

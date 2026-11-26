@@ -1,5 +1,5 @@
 import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, SUMBER } from '@hftf/aset'
-import type { Tim } from '@hftf/shared'
+import { WARNA_TIM, type Tim } from '@hftf/shared'
 import {
   BANGUNAN, DETIK_TUMBUH_POHON, KAYU_POHON_BARU, NAMA_BAJU, NAMA_SERANGAN, REVIVE, RISET, SKILL, TINGKAT_MAKS, UNIT,
   UNIT_REGULER, URUTAN_BANGUN, ringkasCounter, risetDi, supplyMaks, supplyTerpakai,
@@ -357,20 +357,27 @@ export class Hud {
   }
 
   setTim(tim: Tim): void {
-    this.akar.classList.toggle('red', tim === 'red')
-    this.pita.classList.toggle('red', tim === 'red')
+    const info = WARNA_TIM[tim]
+    this.akar.dataset['tim'] = tim
+    this.akar.classList.toggle('red', info.pita === 'red')
+    this.pita.classList.toggle('red', info.pita === 'red')
+    this.pita.classList.toggle('yellow', info.pita === 'yellow')
   }
 
   perbaruiPita(dunia: Dunia, tim: Tim, mode: string, fps?: number): void {
     const detik = Math.floor(dunia.tick / 60)
     const mm = String(Math.floor(detik / 60)).padStart(2, '0')
     const ss = String(detik % 60).padStart(2, '0')
-    const nama = tim === 'blue' ? 'BLUE KINGDOM' : 'RED EMPIRE'
+    const info = WARNA_TIM[tim]
+    const nama = info.kerajaan
     const labelFps = fps && fps > 0 ? `${Math.round(fps)} FPS` : ''
-    const kunci = `${nama}|${mm}:${ss}|${mode}|${labelFps}`
+    const kunci = `${tim}|${nama}|${mm}:${ss}|${mode}|${labelFps}`
     if (kunci === this.kunciPita) return
     this.kunciPita = kunci
     this.pita.textContent = ''
+    const titik = el('span', 'titik-tim')
+    titik.style.background = info.utama
+    this.pita.append(titik)
     const bagianDaftar = labelFps ? [nama, `${mm}:${ss}`, mode, labelFps] : [nama, `${mm}:${ss}`, mode]
     for (const [i, bagian] of bagianDaftar.entries()) {
       if (i > 0) this.pita.append(el('span', 'pisah', '•'))
@@ -468,7 +475,7 @@ export class Hud {
 
       const im = el('img')
       if (item.kunci === 'hero' && heroHidup) {
-        im.src = urlAset(HERO_BLUE[heroHidup.peran as keyof typeof HERO_BLUE].potret, this.basis)
+        im.src = this.potret(`hero:${heroHidup.peran}`) ?? urlAset(HERO_BLUE[heroHidup.peran as keyof typeof HERO_BLUE].potret, this.basis)
       } else {
         im.src = this.potret(item.peranPotret) ?? urlAset(AVATAR['avatar01']!, this.basis)
       }
@@ -516,7 +523,7 @@ export class Hud {
           const def = BANGUNAN[jenis]
           const mampu = s.gold >= def.gold && s.kayu >= def.kayu
           this.kisi.append(this.kartu({
-            ikon: urlAset(BANGUNAN_BLUE[jenis]!, this.basis),
+            ikon: this.potret(`bg:${jenis}`) ?? urlAset(BANGUNAN_BLUE[jenis]!, this.basis),
             nama: def.nama,
             biaya: `${def.gold}g ${def.kayu}k`,
             mati: !mampu,
@@ -552,7 +559,7 @@ export class Hud {
           const biayaGold = REVIVE.goldPerLevel * k.heroGugur.level
           const punyaAltar = aktif.some((b) => b.jenis === 'altar')
           this.kisi.append(this.kartu({
-            ikon: urlAset(HERO_BLUE[k.heroGugur.peran].potret, this.basis),
+            ikon: this.potret(`hero:${k.heroGugur.peran}`) ?? urlAset(HERO_BLUE[k.heroGugur.peran].potret, this.basis),
             nama: punyaAltar ? 'Bangkitkan' : 'Perlu Altar',
             biaya: `${biayaGold}g ${REVIVE.daging}d`,
             mati: !punyaAltar || s.gold < biayaGold || s.daging < REVIVE.daging,
@@ -620,7 +627,11 @@ export class Hud {
     // 1. Mode bangunan terpilih (termasuk Riset Kontekstual & Progres Pelatihan ala Warcraft!)
     if (bangunanTerpilih) {
       const def = BANGUNAN[bangunanTerpilih.jenis]
-      this.setPotretSeleksi(urlAset(BANGUNAN_BLUE[bangunanTerpilih.jenis]!, this.basis))
+      this.setPotretSeleksi(
+        this.potret(`bg:${bangunanTerpilih.jenis}:${bangunanTerpilih.tim}`) ??
+        this.potret(`bg:${bangunanTerpilih.jenis}`) ??
+        urlAset(BANGUNAN_BLUE[bangunanTerpilih.jenis]!, this.basis),
+      )
       const porsiHp = Math.max(0, Math.min(1, bangunanTerpilih.hp / bangunanTerpilih.hpMaks))
       this.setHpSeleksi(
         true,
@@ -687,7 +698,7 @@ export class Hud {
     const defUtama = UNIT[utama.peran]
     this.setPotretSeleksi(
       utama.hero
-        ? urlAset(HERO_BLUE[utama.peran as keyof typeof HERO_BLUE].potret, this.basis)
+        ? (this.potret(`hero:${utama.peran}`) ?? urlAset(HERO_BLUE[utama.peran as keyof typeof HERO_BLUE].potret, this.basis))
         : (this.potret(utama.peran) ?? urlAset(AVATAR['avatar01']!, this.basis)),
     )
     const porsiHp = Math.max(0, Math.min(1, utama.hp / utama.hpMaks))
@@ -718,7 +729,7 @@ export class Hud {
         m.dataset['unitId'] = String(u.id)
         const im = el('img')
         im.src = u.hero
-          ? urlAset(HERO_BLUE[u.peran as keyof typeof HERO_BLUE].potret, this.basis)
+          ? (this.potret(`hero:${u.peran}`) ?? urlAset(HERO_BLUE[u.peran as keyof typeof HERO_BLUE].potret, this.basis))
           : (this.potret(u.peran) ?? urlAset(AVATAR['avatar01']!, this.basis))
         const bar = el('div', 'mini-hp')
         const isi = el('div')
@@ -839,10 +850,10 @@ export class Hud {
         im.src = this.potret(sedangLatih.peran) ?? urlAset(AVATAR['avatar01']!, this.basis)
         judul = `Melatih ${UNIT[sedangLatih.peran].nama}`
       } else if (sedangRiset) {
-        im.src = urlAset(BANGUNAN_BLUE[b.jenis]!, this.basis)
+        im.src = this.potret(`bg:${b.jenis}`) ?? urlAset(BANGUNAN_BLUE[b.jenis]!, this.basis)
         judul = `Riset ${RISET[sedangRiset.jenis].nama}`
       } else if (sedangRevive) {
-        im.src = urlAset(HERO_BLUE[sedangRevive.peran].potret, this.basis)
+        im.src = this.potret(`hero:${sedangRevive.peran}`) ?? urlAset(HERO_BLUE[sedangRevive.peran].potret, this.basis)
         judul = `Bangkit ${UNIT[sedangRevive.peran].nama}`
       }
       const sapuan = el('div', 'sapuan-gelap')
@@ -1034,7 +1045,7 @@ export class Hud {
       if (!tb) return false
       judul = tb.jenis === 'mine' ? 'Tambang Emas' : 'Batu Emas'
       nilai = Math.round(tb.gold)
-      maks = tb.jenis === 'mine' ? 4500 : 1400
+      maks = Math.max(nilai, tb.jenis === 'mine' ? 4500 : 1400)
       labelBar = `${nilai} Gold`
       detail = 'Sumber Emas • Panen dengan Pawn'
       warnaBar = '#e8b931'

@@ -110,7 +110,7 @@ function musuhDekat(dunia: Dunia, x: number, y: number, radius: number): Unit | 
   let terbaik: Unit | null = null
   let dekat = radius
   for (const u of dunia.unit) {
-    if (!bermusuhan(u.tim, 'neutral')) continue
+    if (!bermusuhan(u.tim, 'neutral', dunia)) continue
     const d = jarak(x, y, u.x, u.y)
     if (d < dekat) {
       dekat = d
@@ -161,7 +161,7 @@ function langkahGoblin(dunia: Dunia, camp: Camp, g: Unit): void {
     // Barrel meledak di tempat lalu mati (PRD §10.2).
     for (let i = dunia.unit.length - 1; i >= 0; i--) {
       const k = dunia.unit[i]
-      if (!k || !bermusuhan(k.tim, 'neutral')) continue
+      if (!k || !bermusuhan(k.tim, 'neutral', dunia)) continue
       if (jarak(g.x, g.y, k.x, k.y) <= 110) lukaiUnit(dunia, k, def.dmg, g)
     }
     lukaiUnit(dunia, g, g.hpMaks * 2, null)

@@ -1,20 +1,11 @@
-import { DT_TETAP, type Tim } from '@hftf/shared'
+import { DT_TETAP, type Tim, type TimPemain } from '@hftf/shared'
 import { BANGUNAN } from '../definisi/bangunan.js'
 import type { Dunia } from '../tipe.js'
 
 /**
  * Grace sebelum mati-ekonomi menjadi kekalahan (PRD §13.1).
- *
- * CATATAN REVISI: PRD §13.1 versi pertama membuat poin 2 mustahil tercapai —
- * poin 1 ("semua castle hancur = kalah") sudah memicu kekalahan lebih dulu,
- * sehingga syarat "tidak punya castle DAN tidak punya pawn DAN gold kurang"
- * tidak pernah sempat dievaluasi. Di sini keduanya digabung supaya dua-duanya
- * hidup: castle habis + tanpa pawn = langsung kalah; castle habis + punya pawn
- * = diberi grace untuk membangun castle baru.
  */
 export const GRACE_MATI_EKONOMI = 20
-
-const PEMAIN: readonly Tim[] = ['blue', 'red']
 
 function punyaCastle(dunia: Dunia, tim: Tim): boolean {
   return dunia.bangunan.some((b) => b.tim === tim && b.jenis === 'castle' && b.fase !== 'hancur')
@@ -24,53 +15,62 @@ function punyaPawn(dunia: Dunia, tim: Tim): boolean {
   return dunia.unit.some((u) => u.tim === tim && u.peran === 'pawn')
 }
 
+export function pemainMasihHidup(dunia: Dunia, tim: TimPemain): boolean {
+  const k = dunia.tim[tim]
+  if (k.menyerah) return false
+  if (punyaCastle(dunia, tim)) return true
+  if (!punyaPawn(dunia, tim)) return false
+  return !(k.sumberDaya.gold < BANGUNAN.castle.gold && k.matiEkonomiDetik >= GRACE_MATI_EKONOMI)
+}
+
+export function timMenang(dunia: Dunia, tim: Tim): boolean {
+  if (dunia.hasil.jenis !== 'menang') return false
+  if (dunia.hasil.tim === tim) return true
+  if (tim === 'neutral' || dunia.hasil.tim === 'neutral') return false
+  return dunia.aliansi[dunia.hasil.tim] === dunia.aliansi[tim]
+}
+
 export function langkahAkhir(dunia: Dunia): void {
   if (dunia.hasil.jenis !== 'berlangsung') return
 
-  const kalah: Record<string, boolean> = {}
+  const bertahan: TimPemain[] = []
 
-  for (const tim of PEMAIN) {
+  for (const tim of dunia.pemainAktif) {
     const k = dunia.tim[tim]
 
-    if (k.menyerah) {
-      kalah[tim] = true
-      continue
-    }
+    if (k.menyerah) continue
 
     // Selama masih punya castle, tim ini hidup.
     if (punyaCastle(dunia, tim)) {
       k.matiEkonomiDetik = 0
+      bertahan.push(tim)
       continue
     }
 
     // Castle habis. Tanpa pawn tidak ada yang bisa membangun lagi: langsung kalah.
-    if (!punyaPawn(dunia, tim)) {
-      kalah[tim] = true
-      continue
-    }
+    if (!punyaPawn(dunia, tim)) continue
 
     // Masih punya pawn: diberi kesempatan membangun castle baru. Kalah hanya
     // kalau gold-nya tetap di bawah biaya castle selama GRACE_MATI_EKONOMI detik.
     if (dunia.tim[tim].sumberDaya.gold < BANGUNAN.castle.gold) {
       k.matiEkonomiDetik += DT_TETAP
-      if (k.matiEkonomiDetik >= GRACE_MATI_EKONOMI) kalah[tim] = true
+      if (k.matiEkonomiDetik < GRACE_MATI_EKONOMI) bertahan.push(tim)
     } else {
       k.matiEkonomiDetik = 0
+      bertahan.push(tim)
     }
   }
 
-  const blueKalah = kalah['blue'] === true
-  const redKalah = kalah['red'] === true
-
-  if (blueKalah && redKalah) {
+  if (bertahan.length === 0) {
     // Saling menghabisi dalam langkah yang sama (PRD §13.2).
     dunia.hasil = { jenis: 'draw' }
-  } else if (blueKalah) {
-    dunia.hasil = { jenis: 'menang', tim: 'red' }
-  } else if (redKalah) {
-    dunia.hasil = { jenis: 'menang', tim: 'blue' }
   } else {
-    return
+    const aliansiHidup = new Set(bertahan.map((t) => dunia.aliansi[t]))
+    if (aliansiHidup.size > 1) return
+    dunia.hasil = {
+      jenis: 'menang',
+      tim: bertahan[0]!,
+    }
   }
 
   dunia.kejadian.push({ jenis: 'matchSelesai', hasil: dunia.hasil })

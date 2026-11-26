@@ -2,6 +2,7 @@ import { BONUS_TANAH_TINGGI, TILE, TINGGI, type Tim } from '@hftf/shared'
 import { BANGUNAN } from '../definisi/bangunan.js'
 import type { Dunia, Unit } from '../tipe.js'
 import { keTile, tinggiDi } from '../terrain.js'
+import { sekutu } from '../util.js'
 
 /**
  * Fog of war (PRD §12). Dihitung di `sim`, bukan di renderer — kalau hanya
@@ -86,16 +87,16 @@ export function langkahFog(dunia: Dunia): void {
  * Kalau fog hanya dihitung di dalam langkah(), layar guest tetap hitam total.
  */
 export function hitungFog(dunia: Dunia): void {
-  for (const tim of ['blue', 'red'] as const) {
+  for (const tim of dunia.pemainAktif) {
     const fog = dunia.fog[tim]
     fog.kini.fill(0)
 
     for (const u of dunia.unit) {
-      if (u.tim !== tim) continue
+      if (!sekutu(u.tim, tim, dunia)) continue
       tandai(dunia, fog, u.x, u.y, jarakPandangUnit(u))
     }
     for (const b of dunia.bangunan) {
-      if (b.tim !== tim || b.fase === 'hancur') continue
+      if (!sekutu(b.tim, tim, dunia) || b.fase === 'hancur') continue
       const r = b.jenis === 'castle' ? PANDANG.castle
         : b.jenis === 'tower' ? PANDANG.tower
         : PANDANG.bangunanLain
@@ -135,8 +136,8 @@ export function saringUntuk(dunia: Dunia, tim: Tim): {
   bangunan: typeof dunia.bangunan
 } {
   return {
-    unit: dunia.unit.filter((u) => u.tim === tim || terlihatDi(dunia, tim, u.x, u.y)),
+    unit: dunia.unit.filter((u) => sekutu(u.tim, tim, dunia) || terlihatDi(dunia, tim, u.x, u.y)),
     // Bangunan diingat bentuk terakhirnya, jadi cukup pernah dilihat.
-    bangunan: dunia.bangunan.filter((b) => b.tim === tim || pernahLihat(dunia, tim, b.x, b.y)),
+    bangunan: dunia.bangunan.filter((b) => sekutu(b.tim, tim, dunia) || pernahLihat(dunia, tim, b.x, b.y)),
   }
 }

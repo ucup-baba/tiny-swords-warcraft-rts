@@ -48,6 +48,10 @@ export class PeremajaTerrain {
   private readonly elevSx: Int16Array
   private readonly elevSy: Int16Array
   private readonly tebingSx: Int16Array
+  private readonly jembatanSx: Int16Array
+  private readonly jembatanSy: Int16Array
+  /** Bit posisi melintang jembatan 3-tile: 0=top/kiri tepi, 1=tengah tak bertepi, 2=bawah/kanan tepi, 3=1-tile penuh. */
+  private readonly jembatanSisi: Int8Array
   private readonly dekoIdx: Int8Array
   private readonly chunk = new Map<string, Chunk>()
   private urutanPakai = 0
@@ -64,6 +68,9 @@ export class PeremajaTerrain {
     this.elevSx = new Int16Array(total).fill(-1)
     this.elevSy = new Int16Array(total).fill(-1)
     this.tebingSx = new Int16Array(total).fill(-1)
+    this.jembatanSx = new Int16Array(total).fill(-1)
+    this.jembatanSy = new Int16Array(total).fill(-1)
+    this.jembatanSisi = new Int8Array(total).fill(-1)
     this.dekoIdx = new Int8Array(total).fill(-1)
     this.bangunTabel()
   }
@@ -84,7 +91,10 @@ export class PeremajaTerrain {
     }
     const ramp = (tx: number, ty: number): boolean =>
       tx >= 0 && ty >= 0 && tx < kol && ty < bar && t.ramp[ty * kol + tx] === 1
-    const darat = (tx: number, ty: number): boolean => h(tx, ty) !== TINGGI.air
+    const jemb = (tx: number, ty: number): number =>
+      tx >= 0 && ty >= 0 && tx < kol && ty < bar ? (t.jembatan[ty * kol + tx] ?? 0) : 0
+    // Jembatan berdiri di atas air, jadi rumput tepi tetap berbingkai pantai alami.
+    const darat = (tx: number, ty: number): boolean => h(tx, ty) !== TINGGI.air && jemb(tx, ty) === 0
     const atas = (tx: number, ty: number): boolean => h(tx, ty) === TINGGI.plateau
 
     this.butuhAir.fill(0)
@@ -93,6 +103,9 @@ export class PeremajaTerrain {
     this.elevSx.fill(-1)
     this.elevSy.fill(-1)
     this.tebingSx.fill(-1)
+    this.jembatanSx.fill(-1)
+    this.jembatanSy.fill(-1)
+    this.jembatanSisi.fill(-1)
     this.dekoIdx.fill(-1)
 
     for (let ty = 0; ty < bar; ty++) {
@@ -100,8 +113,30 @@ export class PeremajaTerrain {
       for (let tx = 0; tx < kol; tx++) {
         const i = barisOff + tx
         const hv = h(tx, ty)
+        const jv = jemb(tx, ty)
         if (hv === TINGGI.air) {
           this.butuhAir[i] = 1
+          continue
+        }
+        if (jv > 0) {
+          this.butuhAir[i] = 1
+          if (jv === 1) {
+            const kiri = jemb(tx - 1, ty) === 1
+            const kanan = jemb(tx + 1, ty) === 1
+            this.jembatanSx[i] = (!kiri ? 0 : !kanan ? 2 : 1) * TILE
+            this.jembatanSy[i] = 0
+            const atasJ = jemb(tx, ty - 1) === 1
+            const bawahJ = jemb(tx, ty + 1) === 1
+            this.jembatanSisi[i] = !atasJ && !bawahJ ? 3 : !atasJ ? 0 : !bawahJ ? 2 : 1
+          } else {
+            const atasJ = jemb(tx, ty - 1) === 2
+            const bawahJ = jemb(tx, ty + 1) === 2
+            this.jembatanSx[i] = 0
+            this.jembatanSy[i] = (!atasJ ? 1 : !bawahJ ? 3 : 2) * TILE
+            const kiri = jemb(tx - 1, ty) === 2
+            const kanan = jemb(tx + 1, ty) === 2
+            this.jembatanSisi[i] = !kiri && !kanan ? 3 : !kiri ? 0 : !kanan ? 2 : 1
+          }
           continue
         }
 
@@ -242,6 +277,49 @@ export class PeremajaTerrain {
           const sx = this.flatSx[off + tx]!
           if (sx >= 0) {
             ctx.drawImage(datar, sx, this.flatSy[off + tx]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
+          }
+        }
+      }
+    }
+
+    // Pass 1.5: Jembatan kayu utuh 1-dek lebar di atas kanal air (nol sekat hitam tengah).
+    const jembIm = gambarDari(TERRAIN.jembatan)
+    if (jembIm) {
+      for (let ty = ty0; ty <= ty2; ty++) {
+        const off = ty * kol
+        const py = asalPxY + (ty - ty0) * TILE
+        for (let tx = tx0; tx <= tx2; tx++) {
+          const i = off + tx
+          const jsx = this.jembatanSx[i]!
+          if (jsx < 0) continue
+          const jsy = this.jembatanSy[i]!
+          const px = asalPxX + (tx - tx0) * TILE
+          const sisi = this.jembatanSisi[i]!
+          const horiz = jsy === 0
+          if (sisi === 3) {
+            ctx.drawImage(jembIm, jsx, jsy, TILE, TILE, px, py, TILE, TILE)
+          } else if (horiz) {
+            if (sisi === 0) {
+              ctx.drawImage(jembIm, jsx, jsy, TILE, 48, px, py, TILE, 48)
+              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 16, px, py + 48, TILE, 16)
+            } else if (sisi === 1) {
+              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 32, px, py, TILE, 32)
+              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 32, px, py + 32, TILE, 32)
+            } else {
+              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 16, px, py, TILE, 16)
+              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 48, px, py + 16, TILE, 48)
+            }
+          } else {
+            if (sisi === 0) {
+              ctx.drawImage(jembIm, jsx, jsy, 48, TILE, px, py, 48, TILE)
+              ctx.drawImage(jembIm, jsx + 16, jsy, 16, TILE, px + 48, py, 16, TILE)
+            } else if (sisi === 1) {
+              ctx.drawImage(jembIm, jsx + 16, jsy, 32, TILE, px, py, 32, TILE)
+              ctx.drawImage(jembIm, jsx + 16, jsy, 32, TILE, px + 32, py, 32, TILE)
+            } else {
+              ctx.drawImage(jembIm, jsx + 16, jsy, 16, TILE, px, py, 16, TILE)
+              ctx.drawImage(jembIm, jsx + 16, jsy, 48, TILE, px + 16, py, 48, TILE)
+            }
           }
         }
       }

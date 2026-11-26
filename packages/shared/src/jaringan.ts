@@ -12,6 +12,8 @@ export const PAPAN = {
   panjangKode: 5,
   /** Grace period reconnect dalam detik (PRD §15.2). */
   graceDetik: 45,
+  /** Maksimal pemain per room multiplayer (gaya Warcraft III). */
+  maksPemain: 6,
 } as const
 
 /**

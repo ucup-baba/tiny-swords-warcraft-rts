@@ -2,7 +2,7 @@ import type { Tim } from '@hftf/shared'
 import type { JenisRiset } from './definisi/riset.js'
 import { segarkanHalangan } from './halangan.js'
 import { saringUntuk, terlihatDi } from './sistem/fog.js'
-import type { AksiUnit, AntreanLatih, Bangunan, Dunia, JenisBawaan, Kejadian, Unit } from './tipe.js'
+import type { AksiUnit, AntreanLatih, Bangunan, Dunia, JenisBawaan, Kejadian, TugasUnit, Unit } from './tipe.js'
 
 /**
  * Snapshot authoritative host -> guest (PRD §7).
@@ -12,6 +12,7 @@ import type { AksiUnit, AntreanLatih, Bangunan, Dunia, JenisBawaan, Kejadian, Un
  */
 export interface Snapshot {
   tick: number
+  untuk?: Tim
   hasil: Dunia['hasil']
   unit: SnapshotUnit[]
   bangunan: SnapshotBangunan[]
@@ -30,7 +31,7 @@ type SnapshotUnit = [
   id: number, tim: Tim, peran: string, x: number, y: number,
   hp: number, hpMaks: number, level: number, camp: number,
   arah?: 1 | -1, aksi?: AksiUnit, bawaan?: JenisBawaan | null,
-  sudutSerang?: number, skillJeda?: number,
+  sudutSerang?: number, skillJeda?: number, tugas?: TugasUnit,
 ]
 type SnapshotBangunan = [
   id: number, tim: Tim, jenis: string, x: number, y: number,
@@ -71,11 +72,12 @@ export function buatSnapshot(dunia: Dunia, untuk: Tim): Snapshot {
   const saring = saringUntuk(dunia, untuk)
   return {
     tick: dunia.tick,
+    untuk,
     hasil: dunia.hasil,
     unit: saring.unit.map((u): SnapshotUnit => [
       u.id, u.tim, u.peran, bulat(u.x), bulat(u.y),
       Math.round(u.hp), u.hpMaks, u.level, u.campId ?? -1,
-      u.arah, u.aksi, u.bawaanJenis, bulat(u.sudutSerang), bulat(u.skillJeda),
+      u.arah, u.aksi, u.bawaanJenis, bulat(u.sudutSerang), bulat(u.skillJeda), u.tugas,
     ]),
     bangunan: saring.bangunan.map((b): SnapshotBangunan => [
       b.id, b.tim, b.jenis, bulat(b.x), bulat(b.y), Math.round(b.hp), b.hpMaks, b.fase,
@@ -102,14 +104,14 @@ export function buatSnapshot(dunia: Dunia, untuk: Tim): Snapshot {
  * hanya menggambar apa yang dikirim host, lalu menghitung fog-nya sendiri dari
  * unit miliknya (yang selalu lengkap di snapshot).
  */
-export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number, Unit>): void {
+export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number, Unit>, untuk?: Tim): void {
   dunia.tick = s.tick
   dunia.hasil = s.hasil
 
   const unitBaru: Unit[] = []
   for (const [
     id, tim, peran, x, y, hp, hpMaks, level, camp,
-    arah, aksi, bawaan, sudutSerang, skillJeda,
+    arah, aksi, bawaan, sudutSerang, skillJeda, tugas,
   ] of s.unit) {
     const lama = lamaUnit.get(id)
     if (lama) {
@@ -123,13 +125,14 @@ export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number
       if (bawaan !== undefined) lama.bawaanJenis = bawaan
       if (sudutSerang !== undefined) lama.sudutSerang = sudutSerang
       if (skillJeda !== undefined) lama.skillJeda = skillJeda
+      if (tugas !== undefined) lama.tugas = tugas
       unitBaru.push(lama)
       continue
     }
     unitBaru.push({
       id, tim, peran: peran as Unit['peran'], x, y,
       hp, hpMaks, dmg: 0, jarak: 0, jeda: 1, kecepatan: 0, jedaTimer: 0,
-      tugas: 'diam', tx: x, ty: y, targetId: null,
+      tugas: tugas ?? 'diam', tx: x, ty: y, targetId: null,
       bawaanJenis: bawaan ?? null, bawaanJumlah: 0, tikPanen: 0,
       arah: arah ?? (tim === 'red' ? -1 : 1),
       aksi: aksi ?? 'diam',
@@ -173,8 +176,12 @@ export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number
     }
   })
 
+  const timTarget = untuk ?? s.untuk ?? 'red'
+  if (s.sumberDaya) {
+    dunia.tim[timTarget].sumberDaya = { ...s.sumberDaya }
+  }
   if (s.riset) {
-    dunia.tim.red.riset = { ...s.riset }
+    dunia.tim[timTarget].riset = { ...s.riset }
   }
 
   dunia.pohon = s.pohon.map((p) => ({ id: p.id, x: p.x, y: p.y, kayu: p.kayu ?? 120 }))

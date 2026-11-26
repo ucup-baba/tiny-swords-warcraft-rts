@@ -1,4 +1,4 @@
-import { DT_TETAP, type Tim } from '@hftf/shared'
+import { DT_TETAP, type KesulitanAi, type Tim } from '@hftf/shared'
 import { BANGUNAN, SUPPLY_MAKS, type JenisBangunan } from '../definisi/bangunan.js'
 import { RISET, SEMUA_RISET, TINGKAT_MAKS, risetDi, type JenisRiset } from '../definisi/riset.js'
 import { pengali, type JenisBaju } from '../definisi/tempur.js'
@@ -6,10 +6,10 @@ import { UNIT, type PeranUnit } from '../definisi/unit.js'
 import type { Perintah } from '../perintah.js'
 import { acakRentang, buatRng, type Rng } from '../rng.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
-import { jarak } from '../util.js'
+import { bermusuhan, jarak } from '../util.js'
 import { supplyMaks, supplyTerpakai } from './ekonomi.js'
 
-export type Kesulitan = 'normal' | 'sulit'
+export type Kesulitan = KesulitanAi | 'normal' | 'sulit'
 
 interface Setelan {
   /** Jeda antar keputusan, detik. */
@@ -24,24 +24,59 @@ interface Setelan {
   porsiJaga: number
   /** Konstruksi paralel yang diizinkan. */
   bangunParalel: number
+  maksCastle: number
+  maksBarracks: number
+  maksTower: number
+  maksAntre: number
+  pakaiRiset: boolean
+  pakaiPerbaiki: boolean
+  pakaiCounter: boolean
+  burucamp: boolean
 }
 
-const SETELAN: Record<Kesulitan, Setelan> = {
-  normal: { jeda: 1.4, pawn: 9, bantalanSupply: 8, ambangSerang: 11, porsiJaga: 0.35, bangunParalel: 2 },
-  sulit: { jeda: 0.9, pawn: 11, bantalanSupply: 10, ambangSerang: 9, porsiJaga: 0.28, bangunParalel: 3 },
+const SETELAN: Record<KesulitanAi, Setelan> = {
+  gampang: {
+    jeda: 2.5, pawn: 5, bantalanSupply: 4, ambangSerang: 14, porsiJaga: 0.45, bangunParalel: 1,
+    maksCastle: 1, maksBarracks: 1, maksTower: 1, maksAntre: 1,
+    pakaiRiset: false, pakaiPerbaiki: false, pakaiCounter: false, burucamp: false,
+  },
+  medium: {
+    jeda: 1.4, pawn: 9, bantalanSupply: 8, ambangSerang: 11, porsiJaga: 0.35, bangunParalel: 2,
+    maksCastle: 2, maksBarracks: 2, maksTower: 3, maksAntre: 2,
+    pakaiRiset: true, pakaiPerbaiki: true, pakaiCounter: true, burucamp: false,
+  },
+  susah: {
+    jeda: 0.85, pawn: 12, bantalanSupply: 10, ambangSerang: 8, porsiJaga: 0.25, bangunParalel: 3,
+    maksCastle: 2, maksBarracks: 3, maksTower: 4, maksAntre: 2,
+    pakaiRiset: true, pakaiPerbaiki: true, pakaiCounter: true, burucamp: true,
+  },
+  extreme: {
+    jeda: 0.45, pawn: 15, bantalanSupply: 12, ambangSerang: 7, porsiJaga: 0.20, bangunParalel: 4,
+    maksCastle: 3, maksBarracks: 4, maksTower: 5, maksAntre: 3,
+    pakaiRiset: true, pakaiPerbaiki: true, pakaiCounter: true, burucamp: true,
+  },
+}
+
+const SALT_TIM: Record<Tim, number> = {
+  blue: 0x5bf03635,
+  red: 0x27d4eb2f,
+  yellow: 0x9e3779b1,
+  purple: 0x85ebca77,
+  green: 0xc2b2ae3d,
+  black: 0x165667b1,
+  neutral: 0x7f4a7c15,
+}
+
+function normKesulitan(k: Kesulitan): KesulitanAi {
+  if (k === 'normal') return 'medium'
+  if (k === 'sulit') return 'susah'
+  return k
 }
 
 export interface KeadaanAi {
   tim: Tim
-  kesulitan: Kesulitan
+  kesulitan: KesulitanAi
   timer: number
-  /**
-   * RNG MILIK AI INI SENDIRI.
-   *
-   * Sebelumnya kedua AI menarik dari dunia.rng yang sama, jadi perilaku mereka
-   * terkopel dan hasil match bergantung pada urutan pemanggilan — merah menang
-   * 10-5 kalau dipanggil duluan, padahal petanya simetris sempurna.
-   */
   rng: Rng
   /** Pasukan yang sedang menyerang; sisanya menjaga basis. */
   penyerang: Set<number>
@@ -53,10 +88,9 @@ export interface KeadaanAi {
 export function buatAi(tim: Tim, kesulitan: Kesulitan, seed = 1): KeadaanAi {
   return {
     tim,
-    kesulitan,
+    kesulitan: normKesulitan(kesulitan),
     timer: 1.5,
-    // Seed dibedakan per tim supaya dua AI tidak pernah identik maupun terkopel.
-    rng: buatRng(seed ^ (tim === 'blue' ? 0x5bf03635 : 0x27d4eb2f)),
+    rng: buatRng(seed ^ (SALT_TIM[tim] ?? 0x27d4eb2f)),
     penyerang: new Set(),
     menyerang: false,
     puncakSerang: 0,
@@ -82,6 +116,7 @@ function terdekat<T extends { x: number; y: number }>(daftar: readonly T[], dari
  * (PRD §8.2 poin 5) — jadi bug tidak bisa bersembunyi di jalur AI saja.
  */
 export function langkahAi(dunia: Dunia, ai: KeadaanAi): Perintah[] {
+  if (dunia.hasil.jenis !== 'berlangsung' || dunia.tim[ai.tim].menyerah) return []
   ai.timer -= DT_TETAP
   if (ai.timer > 0) return []
   const set = SETELAN[ai.kesulitan]
@@ -110,9 +145,9 @@ export function langkahAi(dunia: Dunia, ai: KeadaanAi): Perintah[] {
   }
 
   aturPembangunan(dunia, ai, set, aktif, pawnKu, castle, sisaSupply, maks, perintah)
-  aturPerbaikan(dunia, ai, pawnKu, perintah)
-  aturPelatihan(dunia, ai, aktif, sisaSupply, perintah)
-  aturRiset(dunia, ai, aktif, perintah)
+  if (set.pakaiPerbaiki) aturPerbaikan(dunia, ai, pawnKu, perintah)
+  aturPelatihan(dunia, ai, set, aktif, sisaSupply, perintah)
+  if (set.pakaiRiset) aturRiset(dunia, ai, aktif, perintah)
 
   // --- Bangkitkan hero yang gugur (PRD §11.3).
   const altar = aktif.find((b) => b.jenis === 'altar')
@@ -256,14 +291,11 @@ function aturPembangunan(
     : punya('archery') === 0 ? 'archery'
     : punya('altar') === 0 ? 'altar'
     : punya('monastery') === 0 ? 'monastery'
-    // Menara di dekat castle: membuat serbuan tidak otomatis berhasil.
-    : punya('tower') < 2 ? 'tower'
-    // Castle KEDUA. Karena kalah berarti semua castle hancur (PRD §13.1),
-    // ekspansi membuat satu serbuan berhasil tidak langsung mengakhiri match -
-    // dan itu yang membedakan pertandingan panjang dari yang selesai 4 menit.
-    : (punya('castle') < 2 && sd.gold > BANGUNAN.castle.gold + 250) ? 'castle'
-    : punya('barracks') < 2 ? 'barracks'
-    : punya('tower') < 4 ? 'tower'
+    : punya('tower') < Math.min(2, set.maksTower) ? 'tower'
+    : (punya('castle') < set.maksCastle && sd.gold > BANGUNAN.castle.gold + 250) ? 'castle'
+    : punya('barracks') < set.maksBarracks ? 'barracks'
+    : (ai.kesulitan === 'extreme' && punya('archery') < 2) ? 'archery'
+    : punya('tower') < set.maksTower ? 'tower'
     : (belumMentok && sd.gold > 500) ? 'house'
     : null
 
@@ -274,9 +306,11 @@ function aturPembangunan(
   const pembangun = pawnKu.find((p) => p.tugas !== 'bangun') ?? pawnKu[0]
   if (!pembangun) return
 
-  // Menara ditaruh di antara castle dan musuh; sisanya di sekitar castle.
-  const lawan: Tim = ai.tim === 'red' ? 'blue' : 'red'
-  const musuh = dunia.bangunan.find((b) => b.tim === lawan && b.jenis === 'castle')
+  // Menara ditaruh di antara castle dan musuh terdekat; sisanya di sekitar castle.
+  const semuaCastleMusuh = dunia.bangunan.filter(
+    (b) => b.fase !== 'hancur' && b.jenis === 'castle' && b.tim !== 'neutral' && bermusuhan(ai.tim, b.tim, dunia),
+  )
+  const musuh = terdekat(semuaCastleMusuh, castle)
   let x = castle.x + acakRentang(ai.rng, -420, 420)
   let y = castle.y + acakRentang(ai.rng, -420, 420)
   if (perlu === 'castle') {
@@ -313,16 +347,15 @@ function aturPembangunan(
  * melatih Panah melawan pasukan berbaju berat yang justru menahan tusukan.
  */
 function aturPelatihan(
-  dunia: Dunia, ai: KeadaanAi, aktif: Bangunan[], sisaSupply: number, perintah: Perintah[],
+  dunia: Dunia, ai: KeadaanAi, set: Setelan, aktif: Bangunan[], sisaSupply: number, perintah: Perintah[],
 ): void {
   const sd = dunia.tim[ai.tim].sumberDaya
   let sisa = sisaSupply
-  const lawan: Tim = ai.tim === 'red' ? 'blue' : 'red'
 
-  // Baju apa yang paling banyak dipakai lawan?
+  // Baju apa yang paling banyak dipakai musuh yang aktif di peta?
   const hitungBaju: Record<JenisBaju, number> = { ringan: 0, berat: 0, pahlawan: 0, bangunan: 0 }
   for (const u of dunia.unit) {
-    if (u.tim !== lawan || u.peran === 'pawn') continue
+    if (u.tim === 'neutral' || !bermusuhan(ai.tim, u.tim, dunia) || u.peran === 'pawn') continue
     hitungBaju[UNIT[u.peran].baju]++
   }
   const adaMusuh = hitungBaju.ringan + hitungBaju.berat + hitungBaju.pahlawan > 0
@@ -330,17 +363,16 @@ function aturPelatihan(
   /** Seberapa baik sebuah unit melawan komposisi lawan sekarang. */
   const nilai = (peran: PeranUnit): number => {
     const def = UNIT[peran]
-    if (!adaMusuh) return 1
+    if (!set.pakaiCounter || !adaMusuh) return 1 + acakRentang(ai.rng, 0, 0.35)
     let skor = 0
     for (const b of ['ringan', 'berat', 'pahlawan'] as JenisBaju[]) {
       skor += hitungBaju[b] * pengali(def.serangan, b)
     }
-    // Sedikit keacakan supaya pasukan tetap beragam, bukan satu jenis saja.
     return skor / (hitungBaju.ringan + hitungBaju.berat + hitungBaju.pahlawan) + acakRentang(ai.rng, 0, 0.25)
   }
 
   for (const b of aktif) {
-    if (b.antrean.length >= 2) continue
+    if (b.antrean.length >= set.maksAntre) continue
     const bisa = BANGUNAN[b.jenis].melatih.filter((p) => p !== 'pawn') as PeranUnit[]
     if (bisa.length === 0) continue
 
@@ -403,8 +435,6 @@ function aturRiset(
 function aturMiliter(
   dunia: Dunia, ai: KeadaanAi, set: Setelan, tentaraKu: Unit[], castle: Bangunan, perintah: Perintah[],
 ): void {
-  const lawan: Tim = ai.tim === 'red' ? 'blue' : 'red'
-
   // Bersihkan id yang sudah gugur dari daftar penyerang.
   for (const id of [...ai.penyerang]) {
     if (!tentaraKu.some((u) => u.id === id)) ai.penyerang.delete(id)
@@ -416,7 +446,8 @@ function aturMiliter(
 
   // Musuh di dekat basis: semua pulang membela.
   const penyusup = dunia.unit.find(
-    (u) => u.tim === lawan && jarak(u.x, u.y, castle.x, castle.y) < 900)
+    (u) => u.tim !== 'neutral' && bermusuhan(ai.tim, u.tim, dunia) && jarak(u.x, u.y, castle.x, castle.y) < 900,
+  )
   if (penyusup) {
     ai.menyerang = false
     ai.penyerang.clear()
@@ -429,7 +460,7 @@ function aturMiliter(
     return
   }
 
-  // Mundur kalau pasukan penyerang sudah tinggal sepertiga dari puncaknya.
+  // Mundur kalau pasukan penyerang sudah tinggal seperempat dari puncaknya.
   if (ai.menyerang && penyerang.length > 0 && penyerang.length < ai.puncakSerang * 0.25) {
     ai.menyerang = false
     ai.penyerang.clear()
@@ -442,9 +473,7 @@ function aturMiliter(
   }
   if (ai.menyerang && penyerang.length === 0) ai.menyerang = false
 
-  // Eskalasi: makin lama match berjalan, makin berani AI menyerang dan makin
-  // sedikit yang ditinggal menjaga. Dua AI yang sama kuat akan saling menunggu
-  // selamanya tanpa ini — 7 dari 32 match mentok di batas waktu.
+  // Eskalasi seiring waktu
   const menit = dunia.tick / 3600
   const ambang = Math.max(3, Math.round(set.ambangSerang - Math.floor(menit / 4)))
   if (menit > 10) jagaDituju = Math.max(1, Math.round(jagaDituju * 0.5))
@@ -457,21 +486,36 @@ function aturMiliter(
     ai.menyerang = true
     ai.puncakSerang = berangkat.length
   } else if (ai.menyerang) {
-    // Kirim bala bantuan, tetap menyisakan penjaga.
     const bisaKirim = Math.max(0, cadangan.length - jagaDituju)
     for (const u of cadangan.slice(0, bisaKirim)) ai.penyerang.add(u.id)
     ai.puncakSerang = Math.max(ai.puncakSerang, ai.penyerang.size)
   }
 
   if (ai.menyerang && ai.penyerang.size > 0) {
-    const bangunanLawan = dunia.bangunan.filter((b) => b.tim === lawan && b.fase !== 'hancur')
-    const sasaran =
-      bangunanLawan.find((b) => b.jenis === 'castle') ?? terdekat(bangunanLawan, castle)
+    const bangunanLawan = dunia.bangunan.filter(
+      (b) => b.fase !== 'hancur' && b.tim !== 'neutral' && bermusuhan(ai.tim, b.tim, dunia),
+    )
+    const castleLawan = bangunanLawan.filter((b) => b.jenis === 'castle')
+    const sasaran = terdekat(castleLawan, castle) ?? terdekat(bangunanLawan, castle)
     if (sasaran) {
       const ids = [...ai.penyerang]
       perintah.push({ jenis: 'serangPindah', ids, x: sasaran.x, y: sasaran.y })
       const hero = tentaraKu.find((u) => u.hero && ai.penyerang.has(u.id))
       if (hero && hero.skillJeda <= 0) perintah.push({ jenis: 'skill', ids: [hero.id] })
+    }
+  } else if (set.burucamp && cadangan.length >= 6) {
+    // AI Susah / Extreme memburu camp goblin terdekat untuk leveling Hero & emas ekstra.
+    const campHidup = dunia.camp.filter((c) => dunia.unit.some((u) => u.campId === c.id))
+    const sasaranCamp = terdekat(campHidup, castle)
+    const hero = cadangan.find((u) => u.hero)
+    if (sasaranCamp && hero && cadangan.every((u) => u.tugas === 'diam')) {
+      perintah.push({
+        jenis: 'serangPindah',
+        ids: cadangan.slice(0, Math.min(6, cadangan.length)).map((u) => u.id),
+        x: sasaranCamp.x,
+        y: sasaranCamp.y,
+      })
+      return
     }
   }
 

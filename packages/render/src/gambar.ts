@@ -1,10 +1,115 @@
 import { SEMUA, frame, url, type Aset } from '@hftf/aset'
+import type { Tim } from '@hftf/shared'
 
 /** Cache gambar yang sudah dimuat, diindeks oleh url. */
 const cache = new Map<string, HTMLImageElement>()
+const cacheTim = new Map<string, HTMLCanvasElement>()
 
 export function gambarDari(a: Aset): HTMLImageElement | null {
   return cache.get(url(a)) ?? null
+}
+
+function rgbKeHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255
+  const gn = g / 255
+  const bn = b / 255
+  const maks = Math.max(rn, gn, bn)
+  const min = Math.min(rn, gn, bn)
+  const l = (maks + min) / 2
+  if (maks === min) return [0, 0, l]
+  const d = maks - min
+  const s = l > 0.5 ? d / (2 - maks - min) : d / (maks + min)
+  let h = 0
+  if (maks === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0)
+  else if (maks === gn) h = (bn - rn) / d + 2
+  else h = (rn - gn) / d + 4
+  return [h * 60, s, l]
+}
+
+function hslKeRgb(h: number, s: number, l: number): [number, number, number] {
+  const hn = ((h % 360) + 360) % 360 / 360
+  if (s === 0) {
+    const v = Math.round(l * 255)
+    return [v, v, v]
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  const hue = (t: number): number => {
+    let x = t
+    if (x < 0) x += 1
+    if (x > 1) x -= 1
+    if (x < 1 / 6) return p + (q - p) * 6 * x
+    if (x < 1 / 2) return q
+    if (x < 2 / 3) return p + (q - p) * (2 / 3 - x) * 6
+    return p
+  }
+  return [
+    Math.round(hue(hn + 1 / 3) * 255),
+    Math.round(hue(hn) * 255),
+    Math.round(hue(hn - 1 / 3) * 255),
+  ]
+}
+
+const TARGET_WARNA: Partial<Record<Tim, { hue: number; satMul: number; lumMul: number; desatBlack?: boolean }>> = {
+  red: { hue: 4, satMul: 1.15, lumMul: 1.0 },
+  yellow: { hue: 46, satMul: 1.25, lumMul: 1.14 },
+  purple: { hue: 278, satMul: 1.05, lumMul: 1.0 },
+  green: { hue: 132, satMul: 1.12, lumMul: 0.98 },
+  black: { hue: 215, satMul: 0.16, lumMul: 0.56, desatBlack: true },
+}
+
+/**
+ * Mengembalikan sprite yang sudah disesuaikan warna timnya (dengan cache kanvas 1x per aset+tim).
+ * Hanya piksel baju/bendera biru (`h ∈ [180..250], s ≥ 0.20, l ∈ [0.19..0.80]`) yang digeser,
+ * sehingga kulit, rambut, logam pisau/beliung, kayu, emas, daging, dan garis tepi tetap asli.
+ */
+export function gambarTim(a: Aset, tim: Tim): HTMLImageElement | HTMLCanvasElement | null {
+  const im = gambarDari(a)
+  if (!im || tim === 'blue' || tim === 'neutral') return im
+
+  const kunci = `${url(a)}#${tim}`
+  const ada = cacheTim.get(kunci)
+  if (ada) return ada
+
+  const target = TARGET_WARNA[tim]
+  if (!target) return im
+
+  const w = im.naturalWidth || im.width
+  const h = im.naturalHeight || im.height
+  if (w <= 0 || h <= 0) return im
+
+  const kanvas = document.createElement('canvas')
+  kanvas.width = w
+  kanvas.height = h
+  const c = kanvas.getContext('2d', { willReadFrequently: true })
+  if (!c) return im
+  c.drawImage(im, 0, 0)
+
+  let imgData: ImageData
+  try {
+    imgData = c.getImageData(0, 0, w, h)
+  } catch {
+    return im
+  }
+
+  const d = imgData.data
+  for (let i = 0; i < d.length; i += 4) {
+    const al = d[i + 3]!
+    if (al < 24) continue
+    const [hue, s, l] = rgbKeHsl(d[i]!, d[i + 1]!, d[i + 2]!)
+    if (hue < 180 || hue > 250 || s < 0.20 || l < 0.19 || l > 0.80) continue
+
+    const hueBaru = target.desatBlack ? hue : (hue - 208 + target.hue + 360) % 360
+    const satBaru = Math.max(0, Math.min(1, s * target.satMul))
+    const lumBaru = Math.max(0.08, Math.min(0.88, l * target.lumMul))
+    const [r2, g2, b2] = hslKeRgb(hueBaru, satBaru, lumBaru)
+    d[i] = r2
+    d[i + 1] = g2
+    d[i + 2] = b2
+  }
+  c.putImageData(imgData, 0, 0)
+  cacheTim.set(kunci, kanvas)
+  return kanvas
 }
 
 export interface KemajuanMuat {
@@ -68,12 +173,12 @@ const cachePotong = new Map<string, string>()
  * jauh lebih jelas daripada ikon generik, dan tidak bisa salah pasang.
  * Hasilnya di-cache karena kartu dibangun ulang tiap kali seleksi berubah.
  */
-export function potongSprite(a: Aset, indeks: number, ukuran = 64): string | null {
-  const kunci = `${url(a)}#${indeks}@${ukuran}`
+export function potongSprite(a: Aset, indeks: number, ukuran = 64, tim: Tim = 'blue'): string | null {
+  const kunci = `${url(a)}#${indeks}@${ukuran}:${tim}`
   const ada = cachePotong.get(kunci)
   if (ada) return ada
 
-  const im = gambarDari(a)
+  const im = gambarTim(a, tim)
   if (!im) return null
 
   const f = frame(a, indeks)
@@ -201,7 +306,7 @@ export function buatKursorAksi(
 
 /** Kotak piksel yang benar-benar berisi di dalam sebuah frame. */
 function kotakIsi(
-  im: HTMLImageElement, f: { sx: number; sy: number; sw: number; sh: number },
+  im: HTMLImageElement | HTMLCanvasElement, f: { sx: number; sy: number; sw: number; sh: number },
 ): { x: number; y: number; w: number; h: number } | null {
   const k = document.createElement('canvas')
   k.width = f.sw

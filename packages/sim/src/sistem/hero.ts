@@ -1,6 +1,6 @@
 import { SKILL, type PeranHero } from '../definisi/unit.js'
 import type { Dunia, Unit } from '../tipe.js'
-import { bermusuhan, jarak } from '../util.js'
+import { bermusuhan, jarak, sekutu } from '../util.js'
 import { dorong } from './gerak.js'
 import { lukaiUnit, sembuhkan } from './tempur.js'
 
@@ -24,7 +24,7 @@ export function pakaiSkill(dunia: Dunia, u: Unit): string | null {
   if (def.menyembuhkan) {
     // Royal Blessing: menyembuhkan semua sekutu di sekitar, termasuk diri sendiri.
     for (const s of dunia.unit) {
-      if (s.tim !== u.tim) continue
+      if (!sekutu(s.tim, u.tim, dunia)) continue
       if (jarak(u.x, u.y, s.x, s.y) > def.radius) continue
       sembuhkan(s, def.nilai, dunia)
     }
@@ -32,7 +32,7 @@ export function pakaiSkill(dunia: Dunia, u: Unit): string | null {
     // Iterasi mundur: lukaiUnit bisa menghapus unit dari array.
     for (let i = dunia.unit.length - 1; i >= 0; i--) {
       const t = dunia.unit[i]
-      if (!t || !bermusuhan(t.tim, u.tim)) continue
+      if (!t || !bermusuhan(t.tim, u.tim, dunia)) continue
       if (jarak(u.x, u.y, t.x, t.y) > def.radius) continue
       if (def.dorongan) dorong(t, u.x, u.y, def.dorongan, dunia)
       // Skill memakai tipe 'sihir': netral terhadap baju ringan maupun berat.

@@ -180,7 +180,15 @@ img, canvas { image-rendering: pixelated; }
   z-index: 12;
   contain: layout paint style;
 }
-#pita-status.red { ${tigaIris(UI.pitaRed, 18, basis)}; }
+#pita-status.red { ${tigaIris(UI.pitaRed, 18, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
+#pita-status.yellow { ${tigaIris(UI.pitaYellow, 18, basis)}; }
+#pita-status .titik-tim {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid #1b120b;
+  flex: none;
+}
 #pita-status .pisah { opacity: 0.45; }
 
 /* --- Sidebar kanan (304x720, pas tanpa scrollbar) --- */
@@ -507,5 +515,232 @@ img, canvas { image-rendering: pixelated; }
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 #toast.tampil { opacity: 1; }
+
+/* --- Lobi Warcraft III (pas di 1280x720, hingga 6 pemain + peta + custom gold) --- */
+.kotak.kotak-lobi {
+  width: min(1120px, 96%);
+  max-height: 688px;
+  padding: 12px 16px;
+}
+.lobi-kepala {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 7px;
+  border-bottom: 2px solid rgba(58, 36, 18, 0.35);
+}
+.lobi-alat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lobi-alat label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+}
+.lobi-input {
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 248, 232, 0.88);
+  border: 2px solid #6b4928;
+  border-radius: 4px;
+}
+.lobi-grid {
+  display: grid;
+  grid-template-columns: 1fr 336px;
+  gap: 12px;
+  margin-top: 8px;
+  align-items: start;
+}
+.lobi-kolom {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.lobi-subkotak {
+  padding: 8px 10px;
+  background: rgba(36, 22, 11, 0.14);
+  border: 2px solid rgba(74, 48, 24, 0.45);
+  border-radius: 6px;
+}
+.lobi-subjudul {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.lobi-subjudul h2 { margin: 0; font-size: 14px; color: #3d210a; }
+.lobi-preset-baris { display: flex; gap: 4px; flex-wrap: wrap; }
+.btn-kecil {
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 244, 214, 0.72);
+  border: 1.5px solid #6b4928;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-kecil.aktif, .btn-kecil:hover {
+  background: #ffd86b;
+  border-color: #2b1a0c;
+}
+.slot-tabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.slot-header, .slot-baris {
+  display: grid;
+  grid-template-columns: 24px 82px 1fr 78px 138px;
+  gap: 6px;
+  align-items: center;
+}
+.slot-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #4f2f12;
+  padding: 0 4px 2px;
+}
+.slot-baris {
+  padding: 4px 6px;
+  background: rgba(255, 248, 228, 0.48);
+  border: 1.5px solid rgba(74, 48, 24, 0.35);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.slot-baris.saya {
+  background: rgba(255, 232, 160, 0.65);
+  border-color: #b57b14;
+}
+.slot-baris.kosong {
+  opacity: 0.68;
+}
+.slot-nomor { text-align: center; font-size: 12px; color: #3a2310; }
+.btn-warna {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px #000, 0 0 2px #000;
+  border: 1.5px solid #1b120b;
+  border-radius: 4px;
+  cursor: pointer;
+  justify-content: center;
+}
+.btn-warna:disabled { cursor: default; opacity: 0.9; }
+.lobi-select {
+  width: 100%;
+  padding: 3px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 250, 236, 0.9);
+  border: 1.5px solid #6b4928;
+  border-radius: 4px;
+}
+.slot-nama {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-hero {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.slot-hero img {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: 1px solid #593b20;
+  border-radius: 3px;
+  background: #2b1d12;
+}
+.peta-pilihan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.peta-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 248, 228, 0.62);
+  border: 2px solid #6b4928;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+}
+.peta-btn.aktif {
+  background: #ffe38a;
+  border-color: #24160b;
+  outline: 2px solid #ffd86b;
+}
+.peta-btn .peta-sub { font-size: 10px; color: #52341b; }
+.peta-pratinjau-bingkai {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: #1d2a33;
+  border: 2px solid #4e341e;
+  border-radius: 5px;
+}
+#lobi-pratinjau-peta {
+  display: block;
+  width: 300px;
+  height: 150px;
+  border-radius: 3px;
+}
+.gold-baris {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.gold-input {
+  width: 78px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 250, 236, 0.95);
+  border: 1.5px solid #6b4928;
+  border-radius: 4px;
+}
+.cta-mulai {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 15px;
+}
 `
 }

@@ -1,4 +1,4 @@
-import type { Tim } from '@hftf/shared'
+import type { JenisPeta, Tim, TimPemain } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
 import type { JenisCamp } from './definisi/goblin.js'
 import type { JenisRiset } from './definisi/riset.js'
@@ -91,6 +91,7 @@ export type AksiUnit =
   | 'tebang'
   | 'tambang'
   | 'bangun'
+  | 'sembelih'
   | 'bawaDiam'
   | 'bawaLari'
 
@@ -268,6 +269,9 @@ export interface Dunia {
   rng: Rng
   idBerikut: number
   hasil: HasilMatch
+  peta: JenisPeta
+  pemainAktif: TimPemain[]
+  aliansi: Record<Tim, number>
 
   terrain: Terrain
   titik: TitikPenting

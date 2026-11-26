@@ -1,17 +1,40 @@
-import type { Tim } from '@hftf/shared'
+import type {
+  HeroId, JenisPeta, JenisSlot, KesulitanAi, KonfigMatch, KonfigSlot, Tim, TimPemain,
+} from '@hftf/shared'
+
+export interface SlotRoom {
+  indeks: number
+  tim: TimPemain
+  jenis: JenisSlot
+  aliansi: number
+  hero: HeroId
+  kesulitanAi: KesulitanAi
+  nama: string
+  terisi: boolean
+}
 
 export interface RingkasRoom {
   kode: string
   hostNama: string
   tamuNama: string | null
   jumlah: number
+  maksPemain: number
   mulai: boolean
+  peta: JenisPeta
+  goldAwal: number
+  slot: SlotRoom[]
+}
+
+export interface MulaiLanInfo {
+  peta: JenisPeta
+  goldAwal: number
+  slot: SlotRoom[]
 }
 
 export interface PendengarLan {
   daftar?(room: RingkasRoom[]): void
-  room?(kode: string, peran: 'host' | 'tamu', tim: Tim, ringkas: RingkasRoom): void
-  mulai?(seed: number, tim: Tim, heroBlue: string, heroRed: string): void
+  room?(kode: string, peran: 'host' | 'tamu', tim: TimPemain, ringkas: RingkasRoom): void
+  mulai?(seed: number, tim: TimPemain, heroBlue: string, heroRed: string, info?: MulaiLanInfo): void
   cmd?(tim: Tim, cmd: unknown): void
   snapshot?(state: unknown): void
   lawanPutus?(detik: number): void
@@ -75,11 +98,20 @@ export class KlienLan {
         case 'room':
           this.kodeRoom = String(m['kode'])
           this.pendengar.room?.(
-            this.kodeRoom, m['peran'] as 'host' | 'tamu', m['tim'] as Tim, m['ringkas'] as RingkasRoom)
+            this.kodeRoom, m['peran'] as 'host' | 'tamu', m['tim'] as TimPemain, m['ringkas'] as RingkasRoom)
           break
         case 'mulai':
           this.pendengar.mulai?.(
-            Number(m['seed']), m['tim'] as Tim, String(m['heroBlue']), String(m['heroRed']))
+            Number(m['seed']),
+            m['tim'] as TimPemain,
+            String(m['heroBlue']),
+            String(m['heroRed']),
+            {
+              peta: (m['peta'] as JenisPeta) ?? 'klasik2',
+              goldAwal: Number(m['goldAwal'] ?? 320),
+              slot: (m['slot'] as SlotRoom[]) ?? [],
+            },
+          )
           break
         case 'cmd':
           this.pendengar.cmd?.(m['tim'] as Tim, m['cmd'])
@@ -119,8 +151,22 @@ export class KlienLan {
     if (jenis !== 'snapshot' && jenis !== 'denyut') this.antrean.push(p)
   }
 
-  buatRoom(hero: string): void {
-    this.kirimMentah({ t: 'buat-room', hero })
+  buatRoom(hero: string, opsi?: Partial<KonfigMatch>): void {
+    this.kirimMentah({
+      t: 'buat-room',
+      hero,
+      ...(opsi?.peta ? { peta: opsi.peta } : {}),
+      ...(opsi?.goldAwal !== undefined ? { goldAwal: opsi.goldAwal } : {}),
+      ...(opsi?.slot ? { slot: opsi.slot } : {}),
+    })
+  }
+
+  aturRoom(opsi: { peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }): void {
+    this.kirimMentah({ t: 'atur-room', ...opsi })
+  }
+
+  ubahSlot(opsi: { hero?: string; aliansi?: number; tim?: TimPemain }): void {
+    this.kirimMentah({ t: 'ubah-slot', ...opsi })
   }
 
   gabung(kode: string, hero: string): void {
@@ -147,8 +193,8 @@ export class KlienLan {
     this.kirimMentah({ t: 'cmd', cmd })
   }
 
-  kirimSnapshot(state: unknown): void {
-    this.kirimMentah({ t: 'snapshot', state })
+  kirimSnapshot(state: unknown, untuk?: TimPemain): void {
+    this.kirimMentah(untuk ? { t: 'snapshot', state, untuk } : { t: 'snapshot', state })
   }
 
   tutup(): void {

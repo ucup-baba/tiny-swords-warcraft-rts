@@ -11,8 +11,8 @@ import { bolehLangkah, bisaDilewati, diDalam, indeks, keTile, keTengahPiksel, ty
 const BIAYA_LURUS = 10
 const BIAYA_DIAGONAL = 14
 
-/** Batas node yang diperiksa; jalur sangat jauh dipotong daripada membekukan simulasi. */
-const MAKS_NODE = 6000
+/** Batas node yang diperiksa; cukup besar untuk jalur memutar pulau/jembatan. */
+const MAKS_NODE = 9600
 
 const ARAH: readonly [number, number, number][] = [
   [1, 0, BIAYA_LURUS], [-1, 0, BIAYA_LURUS], [0, 1, BIAYA_LURUS], [0, -1, BIAYA_LURUS],

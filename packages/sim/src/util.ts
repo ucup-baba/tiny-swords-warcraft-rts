@@ -6,14 +6,25 @@ export const jepit = (v: number, lo: number, hi: number): number => (v < lo ? lo
 export const jarak = (ax: number, ay: number, bx: number, by: number): number =>
   Math.hypot(ax - bx, ay - by)
 
-/** Lawan sebuah tim. `neutral` memusuhi keduanya (PRD §10.1). */
-export function musuhDari(tim: Tim): readonly Tim[] {
-  if (tim === 'blue') return ['red', 'neutral']
-  if (tim === 'red') return ['blue', 'neutral']
-  return ['blue', 'red']
+/** Lawan sebuah tim. `neutral` memusuhi seluruh pemain aktif. */
+export function musuhDari(tim: Tim, dunia?: Dunia): readonly Tim[] {
+  const daftar: readonly Tim[] = dunia ? [...dunia.pemainAktif, 'neutral'] : ['blue', 'red', 'neutral']
+  return daftar.filter((t) => bermusuhan(tim, t, dunia))
 }
 
-export const bermusuhan = (a: Tim, b: Tim): boolean => a !== b
+export function sekutu(a: Tim, b: Tim, dunia?: Dunia): boolean {
+  if (a === b) return true
+  if (a === 'neutral' || b === 'neutral') return false
+  if (!dunia) return false
+  return dunia.aliansi[a] === dunia.aliansi[b]
+}
+
+export function bermusuhan(a: Tim, b: Tim, dunia?: Dunia): boolean {
+  if (a === b) return false
+  if (a === 'neutral' || b === 'neutral') return true
+  if (!dunia) return true
+  return dunia.aliansi[a] !== dunia.aliansi[b]
+}
 
 export function cariUnit(dunia: Dunia, id: number): Unit | undefined {
   return dunia.unit.find((u) => u.id === id)
@@ -32,7 +43,7 @@ export function musuhTerdekat(dunia: Dunia, tim: Tim, x: number, y: number, radi
   let terdekat = radius
 
   for (const u of dunia.unit) {
-    if (!bermusuhan(u.tim, tim)) continue
+    if (!bermusuhan(u.tim, tim, dunia)) continue
     const d = jarak(x, y, u.x, u.y)
     if (d < terdekat) {
       terdekat = d
@@ -40,7 +51,7 @@ export function musuhTerdekat(dunia: Dunia, tim: Tim, x: number, y: number, radi
     }
   }
   for (const b of dunia.bangunan) {
-    if (!bermusuhan(b.tim, tim) || b.fase === 'hancur') continue
+    if (!bermusuhan(b.tim, tim, dunia) || b.fase === 'hancur') continue
     const d = jarak(x, y, b.x, b.y)
     if (d < terdekat) {
       terdekat = d

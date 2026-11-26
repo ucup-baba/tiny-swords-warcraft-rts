@@ -1,6 +1,6 @@
 import { DT_TETAP, type Tim } from '@hftf/shared'
 import type { Bangunan, Dunia, Perintah, Unit } from '@hftf/sim'
-import { BANGUNAN, bolehTaruhBangunan } from '@hftf/sim'
+import { BANGUNAN, bermusuhan, bolehTaruhBangunan } from '@hftf/sim'
 import { keDuniaX, keDuniaY, pusatkan, type Kamera } from '@hftf/render'
 
 export interface SumberPilihan {
@@ -82,10 +82,10 @@ export function sasaranKlikKanan(
   dunia: Dunia, tim: Tim, x: number, y: number,
 ): { jenis: 'musuh' | 'kumpul' | 'perbaiki'; id: number } | null {
   const u = unitDiTitik(dunia, x, y)
-  if (u && u.tim !== tim) return { jenis: 'musuh', id: u.id }
+  if (u && bermusuhan(u.tim, tim, dunia)) return { jenis: 'musuh', id: u.id }
 
   const b = bangunanDiTitik(dunia, x, y)
-  if (b && b.tim !== tim) return { jenis: 'musuh', id: b.id }
+  if (b && bermusuhan(b.tim, tim, dunia)) return { jenis: 'musuh', id: b.id }
   if (b && b.tim === tim && (b.fase === 'konstruksi' || b.hp < b.hpMaks)) return { jenis: 'perbaiki', id: b.id }
 
   const dekat = <T extends { id: number; x: number; y: number }>(daftar: readonly T[], r: number): T | null => {
@@ -246,7 +246,7 @@ export function pilihKursorKonteks(
 
   const u = unitDiTitik(dunia, wx, wy)
   const b = bangunanDiTitik(dunia, wx, wy)
-  if ((u && u.tim !== timSaya) || (b && b.tim !== timSaya)) return 'kursor04'
+  if ((u && bermusuhan(u.tim, timSaya, dunia)) || (b && bermusuhan(b.tim, timSaya, dunia))) return 'kursor04'
 
   const adaPawn = unitTerpilih.some((x) => x.peran === 'pawn')
   if (!adaPawn) return 'kursor01'
