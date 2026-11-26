@@ -135,6 +135,70 @@ export function potongKursor(a: Aset, ukuran = 42, tengah = false): string | nul
   return hasil
 }
 
+/**
+ * Menggabungkan panah kursor (`Cursor_01`) di ujung klik kiri-atas dengan badge
+ * ikon resource/aksi (Kayu, Emas, Daging, Bangun) di kanan-bawah — tajam & presisi.
+ */
+export function buatKursorAksi(
+  dasar: Aset,
+  ikon: Aset,
+  warnaLingkar: string,
+  ukuran = 44,
+): string | null {
+  const kunci = `kursorAksi:${url(dasar)}+${url(ikon)}:${warnaLingkar}@${ukuran}`
+  const ada = cachePotong.get(kunci)
+  if (ada) return ada
+
+  const imDasar = gambarDari(dasar)
+  const imIkon = gambarDari(ikon)
+  if (!imDasar || !imIkon) return null
+
+  const isiDasar = kotakIsi(imDasar, frame(dasar, 0))
+  const isiIkon = kotakIsi(imIkon, frame(ikon, 0))
+  if (!isiDasar || !isiIkon) return null
+
+  const k = document.createElement('canvas')
+  k.width = ukuran
+  k.height = ukuran
+  const c = k.getContext('2d')
+  if (!c) return null
+  c.imageSmoothingEnabled = false
+
+  // 1. Lencana bulat gelap + cincin warna resource di sudut kanan-bawah
+  const r = Math.round(ukuran * 0.31)
+  const cx = ukuran - r - 2
+  const cy = ukuran - r - 2
+  c.fillStyle = 'rgba(20, 14, 9, 0.88)'
+  c.beginPath()
+  c.arc(cx, cy, r, 0, Math.PI * 2)
+  c.fill()
+  c.strokeStyle = warnaLingkar
+  c.lineWidth = 2
+  c.stroke()
+
+  // 2. Ikon resource (Kayu / Gold / Daging / Bangun) tajam di tengah lencana
+  const kotakIkon = Math.round(r * 1.48)
+  const sIkon = Math.min(kotakIkon / isiIkon.w, kotakIkon / isiIkon.h)
+  const iw = Math.round(isiIkon.w * sIkon)
+  const ih = Math.round(isiIkon.h * sIkon)
+  c.drawImage(
+    imIkon,
+    isiIkon.x, isiIkon.y, isiIkon.w, isiIkon.h,
+    Math.round(cx - iw / 2), Math.round(cy - ih / 2), iw, ih,
+  )
+
+  // 3. Panah pointer tajam di kiri-atas supaya titik klik tetap persis di ujung panah
+  const maksPanah = Math.round(ukuran * 0.56)
+  const sPanah = Math.min(maksPanah / isiDasar.w, maksPanah / isiDasar.h)
+  const pw = Math.round(isiDasar.w * sPanah)
+  const ph = Math.round(isiDasar.h * sPanah)
+  c.drawImage(imDasar, isiDasar.x, isiDasar.y, isiDasar.w, isiDasar.h, 1, 1, pw, ph)
+
+  const hasil = k.toDataURL('image/png')
+  cachePotong.set(kunci, hasil)
+  return hasil
+}
+
 /** Kotak piksel yang benar-benar berisi di dalam sebuah frame. */
 function kotakIsi(
   im: HTMLImageElement, f: { sx: number; sy: number; sw: number; sh: number },

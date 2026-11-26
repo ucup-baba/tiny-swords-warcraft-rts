@@ -485,8 +485,8 @@ img, canvas { image-rendering: pixelated; }
 
 #kursor {
   position: absolute;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   z-index: 40;
   display: none;

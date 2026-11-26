@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buatKamera } from '@hftf/render'
 import { buatBangunan, buatDunia, buatUnit } from '@hftf/sim'
-import { buatInput, pilihPawnBangun } from '../src/input.js'
+import { buatInput, pilihKursorKonteks, pilihPawnBangun } from '../src/input.js'
 import { PengendaliSentuh } from '../src/sentuh.js'
 
 describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)', () => {
@@ -113,5 +113,42 @@ describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)',
     pengendali.tanganiTap(pohon.x, pohon.y)
     expect(kirim).toHaveBeenCalledWith({ jenis: 'kumpul', ids: [pawn.id], targetId: pohon.id })
     expect(sorotSumber).toHaveBeenCalledWith(pohon.id)
+  })
+
+  it('pilihKursorKonteks menyesuaikan ikon resource khusus saat Pawn terpilih & memperbaiki kursor bangun sah vs terhalang', () => {
+    const { dunia, input } = buatFixture('tapPintar')
+    const pawn = dunia.unit.find((u) => u.tim === 'blue' && u.peran === 'pawn')!
+    const hero = dunia.unit.find((u) => u.tim === 'blue' && u.hero)!
+    const pohon = dunia.pohon[0]!
+    const tambang = dunia.tambang[0]!
+    const domba = dunia.domba[0]!
+    const pondasi = buatBangunan(dunia, 'blue', 'house', pawn.x + 140, pawn.y, 'konstruksi')
+
+    // Pawn hover pohon -> kursorKayu, tambang -> kursorGold, domba -> kursorDaging, pondasi -> kursorBangun
+    input.mouse.wx = pohon.x; input.mouse.wy = pohon.y
+    input.sumberHover = { jenis: 'pohon', id: pohon.id }
+    expect(pilihKursorKonteks(dunia, 'blue', input, [pawn])).toBe('kursorKayu')
+    // Non-pawn (Hero) hover pohon -> tetap panah biasa kursor01!
+    expect(pilihKursorKonteks(dunia, 'blue', input, [hero])).toBe('kursor01')
+
+    input.mouse.wx = tambang.x; input.mouse.wy = tambang.y
+    input.sumberHover = { jenis: 'tambang', id: tambang.id }
+    expect(pilihKursorKonteks(dunia, 'blue', input, [pawn])).toBe('kursorGold')
+    expect(pilihKursorKonteks(dunia, 'blue', input, [hero])).toBe('kursor01')
+
+    input.mouse.wx = domba.x; input.mouse.wy = domba.y
+    input.sumberHover = { jenis: 'domba', id: domba.id }
+    expect(pilihKursorKonteks(dunia, 'blue', input, [pawn])).toBe('kursorDaging')
+    expect(pilihKursorKonteks(dunia, 'blue', input, [hero])).toBe('kursor01')
+
+    input.mouse.wx = pondasi.x; input.mouse.wy = pondasi.y
+    input.sumberHover = null
+    expect(pilihKursorKonteks(dunia, 'blue', input, [pawn])).toBe('kursorBangun')
+    expect(pilihKursorKonteks(dunia, 'blue', input, [hero])).toBe('kursor01')
+
+    // Mode taruh bangunan: lokasi di atas bangunan lain (terhalang) -> kursor03 (larangan ⊘)
+    input.hantuBangun = 'house'
+    input.mouse.wx = pondasi.x; input.mouse.wy = pondasi.y
+    expect(pilihKursorKonteks(dunia, 'blue', input, [pawn])).toBe('kursor03')
   })
 })

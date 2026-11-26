@@ -1,6 +1,6 @@
-import { BANGUNAN_BLUE, BARIS, KURSOR, SUMBER, UNIT_BLUE, type PeranHeroAset } from '@hftf/aset'
+import { BANGUNAN_BLUE, BANGUNAN_FASE, BARIS, KURSOR, SUMBER, UNIT_BLUE, type Aset, type PeranHeroAset } from '@hftf/aset'
 import {
-  Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera,
+  Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, buatKursorAksi,
   gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongKursor, potongSprite, pusatkan,
 } from '@hftf/render'
 import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
@@ -13,7 +13,8 @@ import {
 import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type ModeSentuh, type PerintahKartu } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
-  perintahKlikKanan, pilihPawnBangun, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
+  perintahKlikKanan, pilihKursorKonteks, pilihPawnBangun, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
+  type JenisKursor,
 } from './input.js'
 import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
@@ -57,6 +58,7 @@ class Permainan {
   private klikTerakhir = { waktu: 0, id: -1 }
   private geserTengah = { aktif: false, x: 0, y: 0 }
   private kursorPotong = new Map<string, string>()
+  private kursorAktif: JenisKursor = 'kursor01'
   private sentuh: PengendaliSentuh
   private perangkatSentuh = deteksiPerangkatSentuh()
   private abaikanPutar = false
@@ -311,8 +313,19 @@ class Permainan {
       }
     })
     for (const nama of ['kursor01', 'kursor02', 'kursor03', 'kursor04'] as const) {
-      const hasilPotong = potongKursor(KURSOR[nama]!, 42, nama === 'kursor04')
+      const hasilPotong = potongKursor(KURSOR[nama]!, 42, nama === 'kursor03' || nama === 'kursor04')
       if (hasilPotong) this.kursorPotong.set(nama, hasilPotong)
+    }
+    const dasarPanah = KURSOR['kursor01']!
+    const kursorKhusus: readonly [JenisKursor, Aset, string][] = [
+      ['kursorKayu', SUMBER.kayuDiam, '#6ff088'],
+      ['kursorGold', SUMBER.goldDiam, '#ffd86b'],
+      ['kursorDaging', SUMBER.dagingDiam, '#ff9eb5'],
+      ['kursorBangun', BANGUNAN_FASE.houseKonstruksi, '#7fc4ff'],
+    ]
+    for (const [nama, ikonAset, warna] of kursorKhusus) {
+      const hasilAksi = buatKursorAksi(dasarPanah, ikonAset, warna, 44)
+      if (hasilAksi) this.kursorPotong.set(nama, hasilAksi)
     }
     const awalKursor = this.kursorPotong.get('kursor01')
     if (awalKursor) this.kursor.src = awalKursor
@@ -574,31 +587,12 @@ class Permainan {
     this.perbaruiHud()
   }
 
-  /** Kursor berganti sesuai konteks (PRD §5.10). */
+  /** Kursor berganti sesuai konteks — khusus Pawn menampilkan ikon resource (Kayu/Gold/Daging/Bangun). */
   private perbaruiKursor(): void {
     if (!this.dunia || this.fase !== 'main') return
-    const { wx, wy } = this.input.mouse
-    let nama = 'kursor01'
-
-    if (this.input.hantuBangun) {
-      nama = bolehTaruh(this.dunia, this.input.hantuBangun as keyof typeof BANGUNAN, wx, wy)
-        ? 'kursor03' : 'kursor04'
-    } else if (this.input.modeSerang) {
-      nama = 'kursor02'
-    } else if (this.input.unitTerpilih.size > 0) {
-      const u = unitDiTitik(this.dunia, wx, wy)
-      const b = bangunanDiTitik(this.dunia, wx, wy)
-      const lawan = (u && u.tim !== this.timSaya) || (b && b.tim !== this.timSaya)
-      if (lawan) nama = 'kursor02'
-      else if (
-        this.input.sumberHover &&
-        this.input.sumberHover.jenis !== 'tunggul' &&
-        this.unitTerpilih().some((x) => x.peran === 'pawn')
-      ) {
-        nama = 'kursor03'
-      }
-    }
-    const baru = this.kursorPotong.get(nama) ?? urlAset(KURSOR[nama]!, BASIS)
+    const nama = pilihKursorKonteks(this.dunia, this.timSaya, this.input, this.unitTerpilih())
+    this.kursorAktif = nama
+    const baru = this.kursorPotong.get(nama) ?? this.kursorPotong.get('kursor01') ?? urlAset(KURSOR['kursor01']!, BASIS)
     if (this.kursor.getAttribute('src') !== baru) this.kursor.src = baru
   }
 
@@ -666,9 +660,11 @@ class Permainan {
       this.input.sumberHover = this.dunia && this.fase === 'main'
         ? sumberDiTitik(this.dunia, this.input.mouse.wx, this.input.mouse.wy)
         : null
-      this.kursor.style.left = `${sx - 3}px`
-      this.kursor.style.top = `${sy - 3}px`
       this.perbaruiKursor()
+      const tengahKursor = this.kursorAktif === 'kursor03' || this.kursorAktif === 'kursor04'
+      const geser = tengahKursor ? 21 : 3
+      this.kursor.style.left = `${sx - geser}px`
+      this.kursor.style.top = `${sy - geser}px`
       if (this.input.seret.aktif) {
         this.input.seret.x2 = this.input.mouse.wx
         this.input.seret.y2 = this.input.mouse.wy

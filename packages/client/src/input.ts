@@ -209,3 +209,54 @@ export function pilihPawnBangun(
 
   return { pawn: terdekat(bebas), adaPawn: true, semuaSibuk: false }
 }
+
+export type JenisKursor =
+  | 'kursor01'
+  | 'kursor02'
+  | 'kursor03'
+  | 'kursor04'
+  | 'kursorKayu'
+  | 'kursorGold'
+  | 'kursorDaging'
+  | 'kursorBangun'
+
+/**
+ * Menentukan ikon kursor sesuai konteks RTS:
+ * - Hantu bangun: `[ ]` (kursor04) saat lokasi sah, `⊘` (kursor03) saat terhalang
+ * - Mode serang / hover musuh: target `[ ]` (kursor04)
+ * - KHUSUS bila ada Pawn terpilih:
+ *     pohon -> Kayu, tambang -> Gold, domba/daging -> Daging,
+ *     pondasi konstruksi / bangunan rusak milik sendiri -> Bangun/Perbaiki.
+ * - Bila hanya unit tempur (Warrior/Archer/Hero) yang dipilih -> panah biasa (kursor01).
+ */
+export function pilihKursorKonteks(
+  dunia: Dunia,
+  timSaya: Tim,
+  input: KeadaanInput,
+  unitTerpilih: readonly Unit[],
+): JenisKursor {
+  const { wx, wy } = input.mouse
+  if (input.hantuBangun) {
+    return bolehTaruh(dunia, input.hantuBangun as keyof typeof BANGUNAN, wx, wy)
+      ? 'kursor04'
+      : 'kursor03'
+  }
+  if (input.modeSerang) return 'kursor04'
+  if (unitTerpilih.length === 0) return 'kursor01'
+
+  const u = unitDiTitik(dunia, wx, wy)
+  const b = bangunanDiTitik(dunia, wx, wy)
+  if ((u && u.tim !== timSaya) || (b && b.tim !== timSaya)) return 'kursor04'
+
+  const adaPawn = unitTerpilih.some((x) => x.peran === 'pawn')
+  if (!adaPawn) return 'kursor01'
+
+  if (b && b.tim === timSaya && (b.fase === 'konstruksi' || b.hp < b.hpMaks)) {
+    return 'kursorBangun'
+  }
+  const s = input.sumberHover
+  if (!s || s.jenis === 'tunggul') return 'kursor01'
+  if (s.jenis === 'pohon') return 'kursorKayu'
+  if (s.jenis === 'tambang') return 'kursorGold'
+  return 'kursorDaging'
+}
