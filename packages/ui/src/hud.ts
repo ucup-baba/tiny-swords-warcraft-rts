@@ -1,43 +1,53 @@
-import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, SUMBER, UNIT_BLUE } from '@hftf/aset'
+import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, SUMBER } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
 import {
-  BANGUNAN, UNIT, URUTAN_BANGUN, UNIT_HERO, UNIT_REGULER,
-  supplyMaks, supplyTerpakai, type Bangunan, type Dunia, type Unit,
+  BANGUNAN, NAMA_BAJU, NAMA_SERANGAN, REVIVE, RISET, SKILL, TINGKAT_MAKS, UNIT,
+  UNIT_REGULER, URUTAN_BANGUN, ringkasCounter, risetDi, supplyMaks, supplyTerpakai,
+  type Bangunan, type Dunia, type JenisRiset, type PeranUnit, type Unit,
 } from '@hftf/sim'
 import { urlAset } from './sembilan.js'
 
 export type Tab = 'bangun' | 'pasukan' | 'hero'
+export type FilterUnit = 'semua' | 'pawn' | 'warrior' | 'archer' | 'lancer' | 'monk' | 'mage' | 'hero'
+export type PerintahKartu = 'serang' | 'stop' | 'tahan' | 'skill'
+export type KunciSumber = 'gold' | 'kayu' | 'daging' | 'supply'
 
 /**
- * Penyedia gambar kecil untuk kartu produksi.
- *
- * `ui` tidak boleh mengimpor `render` (arah dependensi PRD §8.2), jadi client
- * yang menyuntikkan fungsi ini: ia memotong frame idle sprite unit yang
- * sebenarnya jadi data URL.
+ * Penyedia gambar kecil (crop bounding-box) untuk kartu produksi & ikon sumber.
+ * `ui` tidak boleh mengimpor `render` (PRD §8.2), jadi client yang menyuntikkannya.
  */
 export type PenyediaPotret = (peran: string) => string | null
+export type PenyediaIkonSumber = (kunci: KunciSumber) => string | null
 
 export interface AksiHud {
   pilihTab(t: Tab): void
   mulaiBangun(jenis: string): void
   latih(jenis: string): void
+  batalLatih?(bangunanId: number, indeks: number): void
+  riset?(bangunanId: number, jenis: JenisRiset): void
   bangkitkanHero(): void
+  pilihFilterUnit?(filter: FilterUnit): void
+  perintahUnit?(perintah: PerintahKartu): void
+  fokusUnit?(unitId: number): void
 }
 
-/**
- * Ikon sumber daya memakai sprite sumber daya ASLI dari Update 010.
- *
- * Sebelumnya di sini dipakai UI/Icons/Regular_01..10, yang ternyata BUKAN ikon
- * unit atau sumber daya melainkan ikon menu generik: silang, gir, speaker,
- * angka 1/2/3, keranjang, plus, minus, gembok. Itu sebabnya panel sumber daya
- * menampilkan simbol yang tidak nyambung sama sekali.
- */
-const IKON_SUMBER = {
+const IKON_SUMBER_ASAL = {
   gold: SUMBER.goldDiam,
   kayu: SUMBER.kayuDiam,
   daging: SUMBER.dagingDiam,
   supply: BANGUNAN_BLUE.house,
 } as const
+
+const URUTAN_FILTER: readonly { kunci: FilterUnit; label: string; peranPotret: string }[] = [
+  { kunci: 'semua', label: 'Semua', peranPotret: 'warrior' },
+  { kunci: 'pawn', label: 'Pawn', peranPotret: 'pawn' },
+  { kunci: 'warrior', label: 'Pedang', peranPotret: 'warrior' },
+  { kunci: 'archer', label: 'Panah', peranPotret: 'archer' },
+  { kunci: 'lancer', label: 'Tombak', peranPotret: 'lancer' },
+  { kunci: 'monk', label: 'Monk', peranPotret: 'monk' },
+  { kunci: 'mage', label: 'Mage', peranPotret: 'mage' },
+  { kunci: 'hero', label: 'Hero', peranPotret: 'hero' },
+]
 
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K, kelas?: string, isi?: string,
@@ -48,30 +58,86 @@ const el = <K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
+function hitungFilter(dunia: Dunia, tim: Tim): Record<FilterUnit, number> {
+  const c: Record<FilterUnit, number> = {
+    semua: 0, pawn: 0, warrior: 0, archer: 0, lancer: 0, monk: 0, mage: 0, hero: 0,
+  }
+  for (const u of dunia.unit) {
+    if (u.tim !== tim) continue
+    if (u.hero) {
+      c.hero++
+      c.semua++
+    } else if (u.peran === 'pawn') {
+      c.pawn++
+    } else {
+      c[u.peran as Exclude<FilterUnit, 'semua' | 'hero' | 'pawn'>]++
+      c.semua++
+    }
+  }
+  return c
+}
+
 export class Hud {
+  readonly bingkai: HTMLElement
   readonly akar: HTMLElement
   readonly kanvas: HTMLCanvasElement
   readonly petaMini: HTMLCanvasElement
   private pita: HTMLElement
   private sumberEl: Record<string, HTMLElement> = {}
+  private sumberImgEl: Record<string, HTMLImageElement> = {}
   private kisi: HTMLElement
   private tabEl: HTMLElement
+  private tabUnitEl: HTMLElement
+  private seleksiPotret: HTMLImageElement
   private seleksiJudul: HTMLElement
   private seleksiDetail: HTMLElement
-  private seleksiDaftar: HTMLElement
-  private seleksiPotret: HTMLImageElement
+  private seleksiHpBar: HTMLElement
+  private seleksiHpIsi: HTMLElement
+  private seleksiHpTeks: HTMLElement
+  private seleksiTengah: HTMLElement
+  private seleksiAksi: HTMLElement
   private toast: HTMLElement
   private toastTimer = 0
   private tab: Tab = 'bangun'
 
   private potret: PenyediaPotret = () => null
+  private kunciTabUnit = ''
+  private kunciTengah = ''
+  private kunciAksi = ''
+  private kunciKisi = ''
+
+  // Referensi dinamis untuk pembaruan 60fps tanpa menghancurkan DOM tombol
+  private progresSapuan: HTMLElement | null = null
+  private progresPersenEl: HTMLElement | null = null
+  private progresIsiEl: HTMLElement | null = null
+  private progresDetikEl: HTMLElement | null = null
+  private skillSapuan: HTMLElement | null = null
+  private skillLabelEl: HTMLElement | null = null
+  private kartuSapuan = new Map<string, { sapuan: HTMLElement; badge: HTMLElement }>()
+  private risetSapuan = new Map<string, { sapuan: HTMLElement; badge: HTMLElement }>()
 
   /** Dipasang client setelah aset selesai dimuat. */
   pasangPotret(p: PenyediaPotret): void {
     this.potret = p
+    this.kunciKisi = ''
+    this.kunciTabUnit = ''
+    this.kunciTengah = ''
+  }
+
+  /** Memasang ikon sumber daya hasil crop bounding-box agar tajam 26x26px. */
+  pasangIkonSumber(p: PenyediaIkonSumber): void {
+    for (const kunci of Object.keys(IKON_SUMBER_ASAL) as KunciSumber[]) {
+      const dataUrl = p(kunci)
+      if (dataUrl && this.sumberImgEl[kunci]) {
+        this.sumberImgEl[kunci]!.src = dataUrl
+      }
+    }
   }
 
   constructor(private basis: string, private aksi: AksiHud) {
+    this.bingkai = el('div')
+    this.bingkai.id = 'bingkai-layar'
+
     this.akar = el('div')
     this.akar.id = 'akar'
 
@@ -79,6 +145,8 @@ export class Hud {
     panggung.id = 'panggung'
     this.kanvas = el('canvas')
     this.kanvas.id = 'kanvas'
+    this.kanvas.width = 976
+    this.kanvas.height = 720
     panggung.append(this.kanvas)
 
     this.pita = el('div')
@@ -89,24 +157,45 @@ export class Hud {
     this.toast.id = 'toast'
     panggung.append(this.toast)
 
+    // Tab Per Unit dinamis di atas panel seleksi
+    this.tabUnitEl = el('div')
+    this.tabUnitEl.id = 'tab-unit'
+    panggung.append(this.tabUnitEl)
+
+    // Panel seleksi bawah 3 zona Warcraft III
     const seleksi = el('div')
     seleksi.id = 'seleksi'
+
+    const kiri = el('div')
+    kiri.id = 'seleksi-kiri'
     const potretKotak = el('div')
     potretKotak.id = 'seleksi-potret'
     this.seleksiPotret = el('img')
     potretKotak.append(this.seleksiPotret)
-    const isi = el('div')
-    isi.id = 'seleksi-isi'
+
+    const info = el('div')
+    info.id = 'seleksi-info'
     this.seleksiJudul = el('div')
     this.seleksiJudul.id = 'seleksi-judul'
+    this.seleksiHpBar = el('div', 'hp-bar')
+    this.seleksiHpIsi = el('div', 'hp-isi')
+    this.seleksiHpTeks = el('span', 'hp-teks', '')
+    this.seleksiHpBar.append(this.seleksiHpIsi, this.seleksiHpTeks)
     this.seleksiDetail = el('div')
     this.seleksiDetail.id = 'seleksi-detail'
-    this.seleksiDaftar = el('div')
-    this.seleksiDaftar.id = 'seleksi-daftar'
-    isi.append(this.seleksiJudul, this.seleksiDetail, this.seleksiDaftar)
-    seleksi.append(potretKotak, isi)
+    info.append(this.seleksiJudul, this.seleksiHpBar, this.seleksiDetail)
+    kiri.append(potretKotak, info)
+
+    this.seleksiTengah = el('div')
+    this.seleksiTengah.id = 'seleksi-tengah'
+
+    this.seleksiAksi = el('div')
+    this.seleksiAksi.id = 'seleksi-aksi'
+
+    seleksi.append(kiri, this.seleksiTengah, this.seleksiAksi)
     panggung.append(seleksi)
 
+    // Sidebar kanan 304x720
     const sisi = el('aside')
     sisi.id = 'sisi'
 
@@ -114,16 +203,17 @@ export class Hud {
     miniBingkai.id = 'peta-mini-bingkai'
     this.petaMini = el('canvas')
     this.petaMini.id = 'peta-mini'
-    this.petaMini.width = 240
-    this.petaMini.height = 212
+    this.petaMini.width = 256
+    this.petaMini.height = 172
     miniBingkai.append(this.petaMini)
 
     const sd = el('div')
     sd.id = 'sumber-daya'
-    for (const [kunci, aset] of Object.entries(IKON_SUMBER)) {
+    for (const [kunci, aset] of Object.entries(IKON_SUMBER_ASAL)) {
       const kotak = el('div', 'sumber')
       const im = el('img')
       im.src = urlAset(aset, basis)
+      this.sumberImgEl[kunci] = im
       const teks = el('span', undefined, '0')
       this.sumberEl[kunci] = teks
       kotak.append(im, teks)
@@ -138,6 +228,7 @@ export class Hud {
       b.dataset['tab'] = kunci
       b.addEventListener('click', () => {
         this.tab = kunci
+        this.kunciKisi = ''
         this.aksi.pilihTab(kunci)
         this.perbaruiTab()
       })
@@ -149,6 +240,7 @@ export class Hud {
 
     sisi.append(miniBingkai, sd, this.tabEl, this.kisi)
     this.akar.append(panggung, sisi)
+    this.bingkai.append(this.akar)
     this.perbaruiTab()
   }
 
@@ -195,125 +287,534 @@ export class Hud {
     this.sumberEl['supply']!.textContent = `${supplyTerpakai(dunia, tim)}/${supplyMaks(dunia, tim)}`
   }
 
-  /** Kartu produksi untuk tab yang sedang aktif. */
-  perbaruiKisi(dunia: Dunia, tim: Tim, bangunanTerpilih: Bangunan | null): void {
-    this.kisi.textContent = ''
-    const s = dunia.tim[tim].sumberDaya
-
-    if (this.tab === 'bangun') {
-      for (const jenis of URUTAN_BANGUN) {
-        const def = BANGUNAN[jenis]
-        const mampu = s.gold >= def.gold && s.kayu >= def.kayu
-        this.kisi.append(this.kartu({
-          ikon: urlAset(BANGUNAN_BLUE[jenis]!, this.basis),
-          nama: def.nama,
-          biaya: `${def.gold}g ${def.kayu}k`,
-          mati: !mampu,
-          klik: () => this.aksi.mulaiBangun(jenis),
-        }))
+  /**
+   * Barisan tab per jenis unit tepat di atas panel bawah.
+   * Jenis unit dengan jumlah 0 TIDAK ditampilkan sama sekali.
+   */
+  perbaruiTabUnit(dunia: Dunia, tim: Tim, unitTerpilih: Unit[]): void {
+    const hit = hitungFilter(dunia, tim)
+    let aktif: FilterUnit | null = null
+    if (unitTerpilih.length > 0) {
+      const semuaHero = unitTerpilih.every((u) => u.hero)
+      const peranUnik = new Set(unitTerpilih.map((u) => u.peran))
+      if (semuaHero && unitTerpilih.length === hit.hero) aktif = 'hero'
+      else if (peranUnik.size === 1) {
+        const p = unitTerpilih[0]!.peran as FilterUnit
+        if (unitTerpilih.length === hit[p]) aktif = p
+      } else if (unitTerpilih.every((u) => u.peran !== 'pawn') && unitTerpilih.length === hit.semua) {
+        aktif = 'semua'
       }
-      return
     }
 
-    if (this.tab === 'pasukan') {
-      for (const peran of UNIT_REGULER) {
-        const def = UNIT[peran]
-        const dari = bangunanTerpilih?.jenis === def.dariBangunan
-        const mampu = s.gold >= def.gold && s.kayu >= def.kayu && s.daging >= def.daging
-        this.kisi.append(this.kartu({
-          ikon: this.potret(peran) ?? urlAset(AVATAR['avatar01']!, this.basis),
-          nama: def.nama,
-          biaya: `${def.gold}g ${def.daging}d`,
-          mati: !mampu || !dari,
-          klik: () => this.aksi.latih(peran),
-        }))
+    const kunci = URUTAN_FILTER.map((f) => `${f.kunci}:${hit[f.kunci]}`).join('|') + `@${aktif ?? ''}`
+    if (kunci === this.kunciTabUnit) return
+    this.kunciTabUnit = kunci
+    this.tabUnitEl.textContent = ''
+
+    const heroHidup = dunia.unit.find((u) => u.tim === tim && u.hero)
+    for (const item of URUTAN_FILTER) {
+      const n = hit[item.kunci]
+      if (n <= 0) continue
+      const btn = el('button', 'tab-unit-btn')
+      btn.type = 'button'
+      btn.dataset['filter'] = item.kunci
+      if (item.kunci === 'hero') btn.classList.add('hero')
+      if (aktif === item.kunci) btn.classList.add('aktif')
+
+      const im = el('img')
+      if (item.kunci === 'hero' && heroHidup) {
+        im.src = urlAset(HERO_BLUE[heroHidup.peran as keyof typeof HERO_BLUE].potret, this.basis)
+      } else {
+        im.src = this.potret(item.peranPotret) ?? urlAset(AVATAR['avatar01']!, this.basis)
       }
-      return
+      btn.append(im, el('span', undefined, `${item.label} ${n}`))
+      btn.addEventListener('click', () => this.aksi.pilihFilterUnit?.(item.kunci))
+      this.tabUnitEl.append(btn)
     }
-
-    // Tab hero: satu kartu "Bangkitkan" kalau hero sedang gugur (PRD §11.3).
-    const k = dunia.tim[tim]
-    if (k.heroGugur) {
-      const biayaGold = 80 * k.heroGugur.level
-      const punyaAltar = dunia.bangunan.some((b) => b.tim === tim && b.jenis === 'altar' && b.fase === 'aktif')
-      this.kisi.append(this.kartu({
-        ikon: urlAset(HERO_BLUE[k.heroGugur.peran].potret, this.basis),
-        nama: punyaAltar ? 'Bangkitkan' : 'Perlu Altar',
-        biaya: `${biayaGold}g 40d`,
-        mati: !punyaAltar || s.gold < biayaGold || s.daging < 40,
-        klik: () => this.aksi.bangkitkanHero(),
-      }))
-      const catatan = el('div', 'cip', punyaAltar
-        ? `Hero Lv${k.heroGugur.level} menunggu di Altar`
-        : 'Hero gugur. Bangun Altar of Heroes dulu!')
-      catatan.style.gridColumn = '1 / -1'
-      this.kisi.append(catatan)
-      return
-    }
-
-    const hidup = dunia.unit.find((u) => u.tim === tim && u.hero)
-    const info = el('div', 'cip', hidup
-      ? `${UNIT[hidup.peran].nama} — Lv${hidup.level} (${hidup.xp} XP)`
-      : 'Tidak ada hero')
-    info.style.gridColumn = '1 / -1'
-    this.kisi.append(info)
-    void UNIT_HERO
   }
 
-  private kartu(o: { ikon: string; nama: string; biaya: string; mati: boolean; klik: () => void }): HTMLElement {
-    const b = el('button', 'kartu')
+  /** Kartu produksi sidebar (tanpa scrollbar, dengan info counter & progres pelatihan %). */
+  perbaruiKisi(dunia: Dunia, tim: Tim, bangunanTerpilih: Bangunan | null): void {
+    const s = dunia.tim[tim].sumberDaya
+    const aktif = dunia.bangunan.filter((b) => b.tim === tim && b.fase === 'aktif')
+
+    // Hitung kunci struktural supaya DOM kartu tidak dihancurkan 60x/detik.
+    let kunci = `${this.tab}|`
+    if (this.tab === 'bangun') {
+      kunci += URUTAN_BANGUN.map((j) => {
+        const d = BANGUNAN[j]
+        return `${j}:${s.gold >= d.gold && s.kayu >= d.kayu ? 1 : 0}`
+      }).join(',')
+    } else if (this.tab === 'pasukan') {
+      kunci += UNIT_REGULER.map((p) => {
+        const d = UNIT[p]
+        const punya = bangunanTerpilih?.jenis === d.dariBangunan || aktif.some((b) => b.jenis === d.dariBangunan)
+        const mampu = s.gold >= d.gold && s.kayu >= d.kayu && s.daging >= d.daging
+        return `${p}:${punya && mampu ? 1 : 0}`
+      }).join(',')
+    } else {
+      const k = dunia.tim[tim]
+      const punyaAltar = aktif.some((b) => b.jenis === 'altar')
+      const hidup = dunia.unit.find((u) => u.tim === tim && u.hero)
+      kunci += k.heroGugur
+        ? `gugur:${k.heroGugur.level}:${punyaAltar ? 1 : 0}:${s.gold >= REVIVE.goldPerLevel * k.heroGugur.level && s.daging >= REVIVE.daging ? 1 : 0}`
+        : `hidup:${hidup?.peran ?? ''}:${hidup?.level ?? 0}:${hidup?.xp ?? 0}`
+    }
+
+    if (kunci !== this.kunciKisi) {
+      this.kunciKisi = kunci
+      this.kisi.textContent = ''
+      this.kartuSapuan.clear()
+
+      if (this.tab === 'bangun') {
+        for (const jenis of URUTAN_BANGUN) {
+          const def = BANGUNAN[jenis]
+          const mampu = s.gold >= def.gold && s.kayu >= def.kayu
+          this.kisi.append(this.kartu({
+            ikon: urlAset(BANGUNAN_BLUE[jenis]!, this.basis),
+            nama: def.nama,
+            biaya: `${def.gold}g ${def.kayu}k`,
+            mati: !mampu,
+            klik: () => this.aksi.mulaiBangun(jenis),
+          }))
+        }
+      } else if (this.tab === 'pasukan') {
+        for (const peran of UNIT_REGULER) {
+          const def = UNIT[peran]
+          const punya = bangunanTerpilih?.jenis === def.dariBangunan || aktif.some((b) => b.jenis === def.dariBangunan)
+          const mampu = s.gold >= def.gold && s.kayu >= def.kayu && s.daging >= def.daging
+          const rc = ringkasCounter(def.serangan)
+          const kartu = this.kartu({
+            ikon: this.potret(peran) ?? urlAset(AVATAR['avatar01']!, this.basis),
+            nama: def.nama,
+            biaya: `${def.gold}g ${def.daging}d${def.kayu > 0 ? ` ${def.kayu}k` : ''}`,
+            counter: `${NAMA_SERANGAN[def.serangan]} · vs ${rc.kuat}`,
+            mati: !mampu || !punya,
+            unit: true,
+            klik: () => this.aksi.latih(peran),
+          })
+          const sapuan = el('div', 'sapuan-gelap')
+          sapuan.style.display = 'none'
+          const badge = el('span', 'badge-persen', '')
+          badge.style.display = 'none'
+          kartu.append(sapuan, badge)
+          this.kartuSapuan.set(peran, { sapuan, badge })
+          this.kisi.append(kartu)
+        }
+      } else {
+        const k = dunia.tim[tim]
+        if (k.heroGugur) {
+          const biayaGold = REVIVE.goldPerLevel * k.heroGugur.level
+          const punyaAltar = aktif.some((b) => b.jenis === 'altar')
+          this.kisi.append(this.kartu({
+            ikon: urlAset(HERO_BLUE[k.heroGugur.peran].potret, this.basis),
+            nama: punyaAltar ? 'Bangkitkan' : 'Perlu Altar',
+            biaya: `${biayaGold}g ${REVIVE.daging}d`,
+            mati: !punyaAltar || s.gold < biayaGold || s.daging < REVIVE.daging,
+            klik: () => this.aksi.bangkitkanHero(),
+          }))
+          const catatan = el('div', 'cip', punyaAltar
+            ? `Hero Lv${k.heroGugur.level} siap dibangkitkan di Altar`
+            : 'Hero gugur. Bangun Altar of Heroes dulu!')
+          catatan.style.gridColumn = '1 / -1'
+          this.kisi.append(catatan)
+        } else {
+          const hidup = dunia.unit.find((u) => u.tim === tim && u.hero)
+          const info = el('div', 'cip', hidup
+            ? `${UNIT[hidup.peran].nama} — Lv${hidup.level} (${hidup.xp} XP)`
+            : 'Tidak ada hero')
+          info.style.gridColumn = '1 / -1'
+          this.kisi.append(info)
+        }
+      }
+    }
+
+    // Perbarui sapuan gelap->cerah + % pada kartu pasukan yang sedang dilatih (ringan, tanpa rebuild DOM).
+    if (this.tab === 'pasukan') {
+      for (const [peran, ref] of this.kartuSapuan) {
+        const sedang = aktif.find((b) => b.antrean[0]?.peran === peran)
+        if (!sedang || !sedang.antrean[0]) {
+          ref.sapuan.style.display = 'none'
+          ref.badge.style.display = 'none'
+          continue
+        }
+        const total = UNIT[peran as PeranUnit].waktuLatih
+        const porsi = Math.max(0, Math.min(1, 1 - sedang.antrean[0].sisaDetik / total))
+        ref.sapuan.style.display = 'block'
+        ref.sapuan.style.height = `calc(${((1 - porsi) * 100).toFixed(1)}% - 8px)`
+        ref.badge.style.display = 'block'
+        ref.badge.textContent = `${Math.round(porsi * 100)}%`
+      }
+    }
+  }
+
+  private kartu(o: {
+    ikon: string; nama: string; biaya: string; counter?: string;
+    mati: boolean; unit?: boolean; klik: () => void
+  }): HTMLElement {
+    const b = el('button', o.unit ? 'kartu unit' : 'kartu')
     b.type = 'button'
     b.disabled = o.mati
     const im = el('img')
     im.src = o.ikon
     b.append(im, el('span', 'nama', o.nama), el('span', 'biaya', o.biaya))
+    if (o.counter) b.append(el('span', 'counter', o.counter))
     b.addEventListener('click', o.klik)
     return b
   }
 
-  perbaruiSeleksi(dunia: Dunia, unitTerpilih: Unit[], bangunanTerpilih: Bangunan | null): void {
-    this.seleksiDaftar.textContent = ''
-
+  perbaruiSeleksi(
+    dunia: Dunia, tim: Tim, unitTerpilih: Unit[], bangunanTerpilih: Bangunan | null, modeSerang = false,
+  ): void {
+    // 1. Mode bangunan terpilih (termasuk Riset Kontekstual & Progres Pelatihan ala Warcraft!)
     if (bangunanTerpilih) {
       const def = BANGUNAN[bangunanTerpilih.jenis]
       this.seleksiPotret.src = urlAset(BANGUNAN_BLUE[bangunanTerpilih.jenis]!, this.basis)
       this.seleksiJudul.textContent = def.nama
-      this.seleksiDetail.textContent =
-        `HP ${Math.round(bangunanTerpilih.hp)}/${bangunanTerpilih.hpMaks}` +
-        (bangunanTerpilih.fase === 'konstruksi' ? ` • membangun ${Math.ceil(bangunanTerpilih.sisaBangun)}s` : '')
-      for (const a of bangunanTerpilih.antrean) {
-        this.seleksiDaftar.append(el('span', 'cip', `${UNIT[a.peran].nama} ${Math.ceil(a.sisaDetik)}s`))
+      const porsiHp = Math.max(0, Math.min(1, bangunanTerpilih.hp / bangunanTerpilih.hpMaks))
+      this.seleksiHpBar.style.display = 'block'
+      this.seleksiHpIsi.style.width = `${(porsiHp * 100).toFixed(1)}%`
+      this.seleksiHpIsi.style.background = porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f'
+      this.seleksiHpTeks.textContent = `${Math.round(bangunanTerpilih.hp)} / ${bangunanTerpilih.hpMaks}`
+
+      if (bangunanTerpilih.fase === 'konstruksi') {
+        const porsiBangun = Math.round((1 - Math.max(0, bangunanTerpilih.sisaBangun) / def.waktuBangun) * 100)
+        this.seleksiDetail.textContent = `Membangun ${porsiBangun}% (${Math.ceil(bangunanTerpilih.sisaBangun)}s)`
+      } else {
+        this.seleksiDetail.textContent = def.melatih.length > 0
+          ? `Aktif • Klik kanan peta: Rally`
+          : def.supply > 0 ? `Aktif • +${def.supply} Populasi` : 'Aktif'
       }
-      if (bangunanTerpilih.revive) {
-        this.seleksiDaftar.append(el('span', 'cip', `Bangkit ${Math.ceil(bangunanTerpilih.revive.sisaDetik)}s`))
-      }
+
+      this.perbaruiTengahBangunan(dunia, bangunanTerpilih)
+      this.perbaruiAksiBangunan(dunia, tim, bangunanTerpilih)
       return
     }
 
+    // 2. Mode tidak ada seleksi
     if (unitTerpilih.length === 0) {
       this.seleksiPotret.removeAttribute('src')
-      this.seleksiJudul.textContent = '—'
-      this.seleksiDetail.textContent = 'Klik unit, atau tarik kotak untuk memilih banyak'
+      this.seleksiJudul.textContent = 'Siap Perintah'
+      this.seleksiHpBar.style.display = 'none'
+      this.seleksiDetail.textContent = 'Klik unit/bangunan atau seret kotak seleksi'
+      if (this.kunciTengah !== 'kosong') {
+        this.kunciTengah = 'kosong'
+        this.seleksiTengah.textContent = ''
+        this.progresSapuan = null
+        this.seleksiTengah.append(el('div', 'petunjuk-tengah',
+          'Panah / tepi layar / klik tengah: geser kamera • Klik kanan: perintah pintar • [F2] Semua Pasukan'))
+      }
+      if (this.kunciAksi !== 'kosong') {
+        this.kunciAksi = 'kosong'
+        this.seleksiAksi.textContent = ''
+        this.skillSapuan = null
+      }
       return
     }
 
+    // 3. Mode unit terpilih (Command Card + grid mini unit)
     const utama = unitTerpilih.find((u) => u.hero) ?? unitTerpilih[0]!
+    const defUtama = UNIT[utama.peran]
     this.seleksiPotret.src = utama.hero
       ? urlAset(HERO_BLUE[utama.peran as keyof typeof HERO_BLUE].potret, this.basis)
-      : urlAset(AVATAR['avatar01']!, this.basis)
+      : (this.potret(utama.peran) ?? urlAset(AVATAR['avatar01']!, this.basis))
     this.seleksiJudul.textContent = unitTerpilih.length > 1
-      ? `${unitTerpilih.length} unit terpilih`
-      : UNIT[utama.peran].nama
-    this.seleksiDetail.textContent = utama.hero
-      ? `HP ${Math.round(utama.hp)}/${utama.hpMaks} • Lv${utama.level} • ${utama.xp} XP` +
-        (utama.skillJeda > 0 ? ` • skill ${Math.ceil(utama.skillJeda)}s` : ' • skill SIAP [Q]')
-      : `HP ${Math.round(utama.hp)}/${utama.hpMaks} • DMG ${utama.dmg}`
+      ? `${unitTerpilih.length} Pasukan Terpilih`
+      : defUtama.nama
 
-    const per: Record<string, number> = {}
-    for (const u of unitTerpilih) per[u.peran] = (per[u.peran] ?? 0) + 1
-    for (const [peran, n] of Object.entries(per)) {
-      this.seleksiDaftar.append(el('span', 'cip', `${UNIT[peran as keyof typeof UNIT].nama} ×${n}`))
+    const porsiHp = Math.max(0, Math.min(1, utama.hp / utama.hpMaks))
+    this.seleksiHpBar.style.display = 'block'
+    this.seleksiHpIsi.style.width = `${(porsiHp * 100).toFixed(1)}%`
+    this.seleksiHpIsi.style.background = porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f'
+    this.seleksiHpTeks.textContent = `${Math.round(utama.hp)} / ${utama.hpMaks}`
+
+    this.seleksiDetail.textContent = utama.hero
+      ? `Lv${utama.level} (${utama.xp} XP) • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`
+      : `DMG ${utama.dmg} • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`
+
+    // Tengah: mini-grid unit terpilih (klik untuk fokus unit tunggal)
+    const kunciT = 'u:' + unitTerpilih.slice(0, 12).map((u) => u.id).join(',')
+    if (kunciT !== this.kunciTengah) {
+      this.kunciTengah = kunciT
+      this.progresSapuan = null
+      this.seleksiTengah.textContent = ''
+      const grid = el('div', 'unit-grid')
+      for (const u of unitTerpilih.slice(0, 12)) {
+        const m = el('button', 'mini-unit')
+        m.type = 'button'
+        m.dataset['unitId'] = String(u.id)
+        const im = el('img')
+        im.src = u.hero
+          ? urlAset(HERO_BLUE[u.peran as keyof typeof HERO_BLUE].potret, this.basis)
+          : (this.potret(u.peran) ?? urlAset(AVATAR['avatar01']!, this.basis))
+        const bar = el('div', 'mini-hp')
+        const isi = el('div')
+        isi.style.width = `${Math.round((u.hp / u.hpMaks) * 100)}%`
+        bar.append(isi)
+        m.append(im, bar)
+        m.addEventListener('click', () => this.aksi.fokusUnit?.(u.id))
+        grid.append(m)
+      }
+      this.seleksiTengah.append(grid)
+    } else {
+      // Update lebar mini HP bar tanpa rebuild DOM
+      const tombolMini = this.seleksiTengah.querySelectorAll<HTMLElement>('.mini-unit')
+      for (let i = 0; i < tombolMini.length && i < unitTerpilih.length; i++) {
+        const u = unitTerpilih[i]!
+        const isi = tombolMini[i]!.querySelector<HTMLElement>('.mini-hp > div')
+        if (isi) isi.style.width = `${Math.max(0, Math.min(100, Math.round((u.hp / u.hpMaks) * 100)))}%`
+      }
     }
-    void UNIT_BLUE
+
+    // Kanan: Command Card 2x2 [A] Serang, [S] Stop, [H] Tahan, [Q] Skill
+    const hero = unitTerpilih.find((u) => u.hero)
+    const kunciA = `cmd:${hero ? hero.peran : 'none'}:${hero && hero.skillJeda <= 0 ? 1 : 0}:${modeSerang ? 1 : 0}`
+    if (kunciA !== this.kunciAksi) {
+      this.kunciAksi = kunciA
+      this.seleksiAksi.textContent = ''
+      this.risetSapuan.clear()
+      this.skillSapuan = null
+      this.skillLabelEl = null
+
+      const buatCmd = (label: string, sub: string, aksi: PerintahKartu, opts?: { aktif?: boolean; mati?: boolean; merah?: boolean }) => {
+        const b = el('button', 'cmd-btn')
+        b.type = 'button'
+        b.dataset['cmd'] = aksi
+        if (opts?.aktif) b.classList.add('aktif')
+        if (opts?.merah) b.classList.add('merah')
+        b.disabled = opts?.mati === true
+        const l = el('span', undefined, label)
+        const s = el('span', 'cmd-sub', sub)
+        b.append(l, s)
+        b.addEventListener('click', () => this.aksi.perintahUnit?.(aksi))
+        return { b, s }
+      }
+
+      this.seleksiAksi.append(
+        buatCmd('[A] Serang', 'Attack-Move', 'serang', { aktif: modeSerang }).b,
+        buatCmd('[S] Stop', 'Hentikan', 'stop').b,
+        buatCmd('[H] Tahan', 'Jaga Posisi', 'tahan').b,
+      )
+
+      const namaSkill = hero ? SKILL[hero.peran as keyof typeof SKILL].nama : 'Khusus Hero'
+      const skill = buatCmd(
+        '[Q] Skill',
+        hero ? (hero.skillJeda > 0 ? `${Math.ceil(hero.skillJeda)}s` : namaSkill) : 'Khusus Hero',
+        'skill',
+        { mati: !hero || hero.skillJeda > 0, merah: Boolean(hero) },
+      )
+      if (hero) {
+        const sapuan = el('div', 'sapuan-gelap')
+        sapuan.style.display = hero.skillJeda > 0 ? 'block' : 'none'
+        skill.b.append(sapuan)
+        this.skillSapuan = sapuan
+        this.skillLabelEl = skill.s
+      }
+      this.seleksiAksi.append(skill.b)
+    }
+
+    if (hero && this.skillSapuan && this.skillLabelEl) {
+      const defS = SKILL[hero.peran as keyof typeof SKILL]
+      if (hero.skillJeda > 0) {
+        const sisaPorsi = Math.max(0, Math.min(1, hero.skillJeda / defS.jeda))
+        this.skillSapuan.style.display = 'block'
+        this.skillSapuan.style.height = `calc(${(sisaPorsi * 100).toFixed(1)}% - 8px)`
+        this.skillLabelEl.textContent = `Cooldown ${Math.ceil(hero.skillJeda)}s`
+      } else {
+        this.skillSapuan.style.display = 'none'
+        this.skillLabelEl.textContent = defS.nama
+      }
+    }
+  }
+
+  private perbaruiTengahBangunan(dunia: Dunia, b: Bangunan): void {
+    const sedangLatih = b.antrean[0] ?? null
+    const sedangRiset = b.riset
+    const sedangRevive = b.revive
+    const mode = sedangLatih
+      ? `latih:${b.id}:${b.antrean.map((a) => a.peran).join(',')}`
+      : sedangRiset
+        ? `riset:${b.id}:${sedangRiset.jenis}`
+        : sedangRevive
+          ? `revive:${b.id}:${sedangRevive.peran}`
+          : `diam:${b.id}:${b.fase}`
+
+    if (mode !== this.kunciTengah) {
+      this.kunciTengah = mode
+      this.seleksiTengah.textContent = ''
+      this.progresSapuan = null
+      this.progresPersenEl = null
+      this.progresIsiEl = null
+      this.progresDetikEl = null
+
+      if (!sedangLatih && !sedangRiset && !sedangRevive) {
+        const teks = b.fase === 'konstruksi'
+          ? 'Pawn sedang membangun bangunan ini…'
+          : BANGUNAN[b.jenis].melatih.length > 0
+            ? 'Klik kanan di peta untuk memindahkan Bendera Rally Point.'
+            : 'Bangunan aktif.'
+        this.seleksiTengah.append(el('div', 'petunjuk-tengah', teks))
+        return
+      }
+
+      const box = el('div', 'progres-box')
+      const ikonKotak = el('div', 'progres-ikon')
+      const im = el('img')
+      let judul = ''
+      if (sedangLatih) {
+        im.src = this.potret(sedangLatih.peran) ?? urlAset(AVATAR['avatar01']!, this.basis)
+        judul = `Melatih ${UNIT[sedangLatih.peran].nama}`
+      } else if (sedangRiset) {
+        im.src = urlAset(BANGUNAN_BLUE[b.jenis]!, this.basis)
+        judul = `Riset ${RISET[sedangRiset.jenis].nama}`
+      } else if (sedangRevive) {
+        im.src = urlAset(HERO_BLUE[sedangRevive.peran].potret, this.basis)
+        judul = `Bangkit ${UNIT[sedangRevive.peran].nama}`
+      }
+      const sapuan = el('div', 'sapuan-gelap')
+      ikonKotak.append(im, sapuan)
+
+      const info = el('div', 'progres-info')
+      const atas = el('div', 'progres-atas')
+      const labelEl = el('span', undefined, judul)
+      const persenEl = el('span', 'progres-persen', '0%')
+      atas.append(labelEl, persenEl)
+
+      const bar = el('div', 'progres-bar')
+      const isi = el('div', 'progres-isi')
+      bar.append(isi)
+
+      const detikEl = el('div', 'cmd-sub', '')
+      info.append(atas, bar, detikEl)
+
+      // Antrean klik-batal (seperti Warcraft III)
+      if (b.antrean.length > 0) {
+        const antreanEl = el('div', 'antrean-baris')
+        for (let i = 0; i < b.antrean.length; i++) {
+          const item = b.antrean[i]!
+          const slot = el('button', 'antrean-slot', `${i + 1}. ${UNIT[item.peran].nama} ×`)
+          slot.type = 'button'
+          slot.title = 'Klik untuk membatalkan pelatihan (refund penuh)'
+          const idx = i
+          slot.addEventListener('click', () => this.aksi.batalLatih?.(b.id, idx))
+          antreanEl.append(slot)
+        }
+        info.append(antreanEl)
+      }
+
+      box.append(ikonKotak, info)
+      this.seleksiTengah.append(box)
+      this.progresSapuan = sapuan
+      this.progresPersenEl = persenEl
+      this.progresIsiEl = isi
+      this.progresDetikEl = detikEl
+    }
+
+    // Perbarui persentase & sapuan gelap -> cerah setiap frame
+    if (this.progresSapuan && this.progresPersenEl && this.progresIsiEl && this.progresDetikEl) {
+      let sisa = 0
+      let total = 1
+      if (sedangLatih) {
+        sisa = sedangLatih.sisaDetik
+        total = UNIT[sedangLatih.peran].waktuLatih
+      } else if (sedangRiset) {
+        sisa = sedangRiset.sisaDetik
+        const lv = dunia.tim[b.tim].riset[sedangRiset.jenis]
+        total = RISET[sedangRiset.jenis].tingkat[lv]?.detik ?? 30
+      } else if (sedangRevive) {
+        sisa = sedangRevive.sisaDetik
+        total = REVIVE.detikDasar + REVIVE.detikPerLevel * sedangRevive.level
+      }
+      const porsi = Math.max(0, Math.min(1, 1 - sisa / Math.max(0.1, total)))
+      const persen = Math.round(porsi * 100)
+      this.progresSapuan.style.height = `calc(${((1 - porsi) * 100).toFixed(1)}% - 8px)`
+      this.progresPersenEl.textContent = `${persen}%`
+      this.progresIsiEl.style.width = `${(porsi * 100).toFixed(1)}%`
+      this.progresDetikEl.textContent = `Sisa ${Math.max(1, Math.ceil(sisa))} detik`
+    }
+  }
+
+  /** Tombol Riset Kontekstual (Pilihan 2) atau Bangkitkan Hero di sisi kanan panel bawah. */
+  private perbaruiAksiBangunan(dunia: Dunia, tim: Tim, b: Bangunan): void {
+    const daftarRiset = b.fase === 'aktif' ? risetDi(b.jenis) : []
+    const s = dunia.tim[tim].sumberDaya
+    const k = dunia.tim[tim]
+
+    let kunci = `b:${b.id}:${b.fase}:${b.riset?.jenis ?? ''}:`
+    kunci += daftarRiset.map((r) => {
+      const lv = k.riset[r]
+      const biaya = RISET[r].tingkat[lv]
+      const mampu = biaya ? s.gold >= biaya.gold && s.kayu >= biaya.kayu : false
+      const sibuk = dunia.bangunan.some((x) => x.tim === tim && x.riset?.jenis === r)
+      return `${r}:${lv}:${mampu ? 1 : 0}:${sibuk ? 1 : 0}`
+    }).join(',')
+    if (b.jenis === 'altar') {
+      kunci += `altar:${k.heroGugur?.level ?? 0}:${b.revive ? 1 : 0}:${s.gold >= REVIVE.goldPerLevel * (k.heroGugur?.level ?? 1) && s.daging >= REVIVE.daging ? 1 : 0}`
+    }
+
+    if (kunci !== this.kunciAksi) {
+      this.kunciAksi = kunci
+      this.seleksiAksi.textContent = ''
+      this.skillSapuan = null
+      this.risetSapuan.clear()
+
+      if (daftarRiset.length > 0) {
+        for (const r of daftarRiset) {
+          const def = RISET[r]
+          const lv = k.riset[r]
+          const maks = lv >= TINGKAT_MAKS
+          const biaya = def.tingkat[lv]
+          const sedangIni = b.riset?.jenis === r
+          const sibukLain = !sedangIni && (b.riset !== null || dunia.bangunan.some((x) => x.tim === tim && x.riset?.jenis === r))
+          const mampu = biaya ? s.gold >= biaya.gold && s.kayu >= biaya.kayu : false
+
+          const btn = el('button', 'cmd-btn riset')
+          btn.type = 'button'
+          btn.dataset['riset'] = r
+          btn.disabled = maks || sedangIni || sibukLain || !mampu
+          btn.append(
+            el('span', undefined, def.nama),
+            el('span', 'cmd-sub', maks ? `MAKS (${lv}/${TINGKAT_MAKS})` : `${def.singkat} • Lv ${lv}/${TINGKAT_MAKS}`),
+            el('span', 'cmd-sub', maks ? 'Selesai' : `${biaya!.gold}g ${biaya!.kayu}k`),
+          )
+          const sapuan = el('div', 'sapuan-gelap')
+          sapuan.style.display = sedangIni ? 'block' : 'none'
+          const badge = el('span', 'badge-persen', '')
+          badge.style.display = sedangIni ? 'block' : 'none'
+          btn.append(sapuan, badge)
+          btn.addEventListener('click', () => this.aksi.riset?.(b.id, r))
+          this.risetSapuan.set(r, { sapuan, badge })
+          this.seleksiAksi.append(btn)
+        }
+      } else if (b.jenis === 'altar' && b.fase === 'aktif' && k.heroGugur && !b.revive) {
+        const biayaGold = REVIVE.goldPerLevel * k.heroGugur.level
+        const btn = el('button', 'cmd-btn riset merah')
+        btn.type = 'button'
+        btn.style.gridColumn = '1 / -1'
+        btn.disabled = s.gold < biayaGold || s.daging < REVIVE.daging
+        btn.append(
+          el('span', undefined, `Bangkitkan ${UNIT[k.heroGugur.peran].nama}`),
+          el('span', 'cmd-sub', `Lv ${k.heroGugur.level} • ${biayaGold}g ${REVIVE.daging}d`),
+        )
+        btn.addEventListener('click', () => this.aksi.bangkitkanHero())
+        this.seleksiAksi.append(btn)
+      }
+    }
+
+    // Update sapuan % tombol riset yang sedang aktif
+    for (const [r, ref] of this.risetSapuan) {
+      if (b.riset?.jenis === r) {
+        const lv = k.riset[r as JenisRiset]
+        const total = RISET[r as JenisRiset].tingkat[lv]?.detik ?? 30
+        const porsi = Math.max(0, Math.min(1, 1 - b.riset.sisaDetik / total))
+        ref.sapuan.style.display = 'block'
+        ref.sapuan.style.height = `calc(${((1 - porsi) * 100).toFixed(1)}% - 8px)`
+        ref.badge.style.display = 'block'
+        ref.badge.textContent = `${Math.round(porsi * 100)}%`
+      } else {
+        ref.sapuan.style.display = 'none'
+        ref.badge.style.display = 'none'
+      }
+    }
   }
 }

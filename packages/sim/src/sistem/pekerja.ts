@@ -1,19 +1,28 @@
 import { DT_TETAP } from '@hftf/shared'
 import { BANGUNAN } from '../definisi/bangunan.js'
+import { segarkanHalangan } from '../halangan.js'
 import type { Dunia, Unit } from '../tipe.js'
 import { castleTerdekat, jarak } from '../util.js'
 import { PANEN, terima } from './ekonomi.js'
 import { langkahMenuju } from './gerak.js'
 import { langkahUnitTempur } from './tempur.js'
 
-const JANGKAUAN_PANEN = 56
-const JANGKAUAN_ANTAR = 110
+const JANGKAUAN_PANEN = 58
+const JANGKAUAN_POHON = 90
+const JANGKAUAN_TAMBANG_MINE = 112
+const JANGKAUAN_TAMBANG_STONE = 86
+const JANGKAUAN_ANTAR = BANGUNAN.castle.radius + 64
 
 /** Kayu yang dihabiskan untuk memperbaiki 1 HP bangunan (PRD §3 poin 3). */
 const KAYU_PER_HP = 0.06
 const HP_PERBAIKI_PER_DETIK = 34
 /** Kecepatan konstruksi satu pawn, relatif terhadap waktuBangun. */
 const LAJU_BANGUN = 1
+
+function hadapKe(u: Unit, tx: number): void {
+  if (tx < u.x - 1) u.arah = -1
+  else if (tx > u.x + 1) u.arah = 1
+}
 
 export function langkahPawn(dunia: Dunia, u: Unit): void {
   switch (u.tugas) {
@@ -83,10 +92,12 @@ function panenPohon(dunia: Dunia, u: Unit): void {
     u.targetId = null
     return
   }
-  if (jarak(u.x, u.y, pohon.x, pohon.y) > JANGKAUAN_PANEN) {
+  if (jarak(u.x, u.y, pohon.x, pohon.y) > JANGKAUAN_POHON) {
     langkahMenuju(dunia, u, pohon.x, pohon.y)
     return
   }
+  hadapKe(u, pohon.x)
+  u.aksi = 'tebang'
   u.tikPanen += DT_TETAP
   if (u.tikPanen < PANEN.detikPerPanen) return
   u.tikPanen = 0
@@ -98,6 +109,7 @@ function panenPohon(dunia: Dunia, u: Unit): void {
   if (pohon.kayu <= 0) {
     const i = dunia.pohon.indexOf(pohon)
     if (i >= 0) dunia.pohon.splice(i, 1)
+    segarkanHalangan(dunia)
   }
   mulaiPulang(dunia, u)
 }
@@ -109,10 +121,13 @@ function panenTambang(dunia: Dunia, u: Unit): void {
     u.targetId = null
     return
   }
-  if (jarak(u.x, u.y, tambang.x, tambang.y) > JANGKAUAN_PANEN) {
+  const jangkauan = tambang.jenis === 'mine' ? JANGKAUAN_TAMBANG_MINE : JANGKAUAN_TAMBANG_STONE
+  if (jarak(u.x, u.y, tambang.x, tambang.y) > jangkauan) {
     langkahMenuju(dunia, u, tambang.x, tambang.y)
     return
   }
+  hadapKe(u, tambang.x)
+  u.aksi = 'tambang'
   u.tikPanen += DT_TETAP
   if (u.tikPanen < PANEN.detikPerPanen) return
   u.tikPanen = 0
@@ -124,6 +139,7 @@ function panenTambang(dunia: Dunia, u: Unit): void {
   if (tambang.gold <= 0) {
     const i = dunia.tambang.indexOf(tambang)
     if (i >= 0) dunia.tambang.splice(i, 1)
+    segarkanHalangan(dunia)
   }
   mulaiPulang(dunia, u)
 }
@@ -139,6 +155,8 @@ function panenDomba(dunia: Dunia, u: Unit): void {
     langkahMenuju(dunia, u, domba.x, domba.y)
     return
   }
+  hadapKe(u, domba.x)
+  u.aksi = 'tebang'
   u.tikPanen += DT_TETAP
   if (u.tikPanen < PANEN.detikPerPanen) return
   u.tikPanen = 0
@@ -162,6 +180,8 @@ function pungutDaging(dunia: Dunia, u: Unit): void {
     langkahMenuju(dunia, u, daging.x, daging.y)
     return
   }
+  hadapKe(u, daging.x)
+  u.aksi = 'bangun'
   u.bawaanJenis = 'daging'
   u.bawaanJumlah = daging.jumlah
   const i = dunia.daging.indexOf(daging)
@@ -177,11 +197,13 @@ function bangunBangunan(dunia: Dunia, u: Unit): void {
     u.targetId = null
     return
   }
-  const jangkauan = BANGUNAN[b.jenis].radius + 40
+  const jangkauan = BANGUNAN[b.jenis].radius + 58
   if (jarak(u.x, u.y, b.x, b.y) > jangkauan) {
     langkahMenuju(dunia, u, b.x, b.y)
     return
   }
+  hadapKe(u, b.x)
+  u.aksi = 'bangun'
   b.sisaBangun -= DT_TETAP * LAJU_BANGUN
   const total = BANGUNAN[b.jenis].waktuBangun
   const porsi = 1 - Math.max(0, b.sisaBangun) / total
@@ -195,11 +217,13 @@ function perbaikiBangunan(dunia: Dunia, u: Unit): void {
     u.targetId = null
     return
   }
-  const jangkauan = BANGUNAN[b.jenis].radius + 40
+  const jangkauan = BANGUNAN[b.jenis].radius + 58
   if (jarak(u.x, u.y, b.x, b.y) > jangkauan) {
     langkahMenuju(dunia, u, b.x, b.y)
     return
   }
+  hadapKe(u, b.x)
+  u.aksi = 'bangun'
   const naik = HP_PERBAIKI_PER_DETIK * DT_TETAP
   const biaya = naik * KAYU_PER_HP
   const s = dunia.tim[u.tim].sumberDaya

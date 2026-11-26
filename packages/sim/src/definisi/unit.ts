@@ -5,6 +5,7 @@
 // spesifikasi, jadi angka PRD yang dipakai di sini.
 
 import type { JenisBangunan } from './bangunan.js'
+import type { JenisBaju, JenisSerangan } from './tempur.js'
 
 export type PeranUnit =
   | 'pawn' | 'warrior' | 'archer' | 'lancer' | 'monk' | 'mage'
@@ -29,6 +30,10 @@ export interface DefUnit {
   jeda: number
   kecepatan: number
   waktuLatih: number
+  /** Tipe serangan — menentukan apa yang dikalahkannya (PRD §20). */
+  serangan: JenisSerangan
+  /** Tipe baju — menentukan apa yang mengalahkannya. */
+  baju: JenisBaju
   /** Monk menyembuhkan alih-alih melukai. */
   penyembuh?: boolean
   /** Mage memberi damage area. */
@@ -40,58 +45,58 @@ export const UNIT: Record<PeranUnit, DefUnit> = {
   pawn: {
     nama: 'Pawn', kategori: 'pawn', dariBangunan: 'castle',
     gold: 40, kayu: 0, daging: 10, pop: 1,
-    hp: 85, dmg: 6, jarak: 42, jeda: 1.0, kecepatan: 132, waktuLatih: 4.5,
+    hp: 85, dmg: 6, jarak: 42, jeda: 1.0, kecepatan: 132, waktuLatih: 4.5, serangan: 'tebas', baju: 'ringan',
   },
   warrior: {
     nama: 'Pedang', kategori: 'warrior', dariBangunan: 'barracks',
     gold: 55, kayu: 0, daging: 20, pop: 1,
-    hp: 150, dmg: 20, jarak: 54, jeda: 0.82, kecepatan: 126, waktuLatih: 5.5,
+    hp: 150, dmg: 20, jarak: 54, jeda: 0.82, kecepatan: 126, waktuLatih: 5.5, serangan: 'tebas', baju: 'berat',
   },
   archer: {
     nama: 'Panah', kategori: 'archer', dariBangunan: 'archery',
     gold: 50, kayu: 25, daging: 15, pop: 1,
-    hp: 95, dmg: 17, jarak: 285, jeda: 1.25, kecepatan: 120, waktuLatih: 5.5,
+    hp: 95, dmg: 17, jarak: 285, jeda: 1.25, kecepatan: 120, waktuLatih: 5.5, serangan: 'tusuk', baju: 'ringan',
   },
   lancer: {
     nama: 'Tombak', kategori: 'lancer', dariBangunan: 'barracks',
     gold: 85, kayu: 20, daging: 25, pop: 2,
-    hp: 220, dmg: 32, jarak: 80, jeda: 1.02, kecepatan: 112, waktuLatih: 7.0,
+    hp: 220, dmg: 32, jarak: 80, jeda: 1.02, kecepatan: 112, waktuLatih: 7.0, serangan: 'tusuk', baju: 'berat',
   },
   monk: {
     nama: 'Monk', kategori: 'caster', dariBangunan: 'monastery',
     gold: 80, kayu: 15, daging: 20, pop: 1,
-    hp: 110, dmg: 26, jarak: 195, jeda: 1.85, kecepatan: 115, waktuLatih: 6.5,
+    hp: 110, dmg: 26, jarak: 195, jeda: 1.85, kecepatan: 115, waktuLatih: 6.5, serangan: 'sihir', baju: 'ringan',
     penyembuh: true,
   },
   mage: {
     nama: 'Mage', kategori: 'caster', dariBangunan: 'monastery',
     gold: 95, kayu: 20, daging: 25, pop: 2,
-    hp: 105, dmg: 28, jarak: 265, jeda: 1.65, kecepatan: 114, waktuLatih: 7.5,
+    hp: 105, dmg: 28, jarak: 265, jeda: 1.65, kecepatan: 114, waktuLatih: 7.5, serangan: 'sihir', baju: 'ringan',
     area: true,
   },
 
   berserker: {
     nama: 'Kael Kapak Ganda', kategori: 'hero', dariBangunan: 'altar',
     gold: 140, kayu: 30, daging: 45, pop: 3,
-    hp: 420, dmg: 38, jarak: 64, jeda: 0.72, kecepatan: 155, waktuLatih: 9.0,
+    hp: 420, dmg: 38, jarak: 64, jeda: 0.72, kecepatan: 155, waktuLatih: 9.0, serangan: 'tebas', baju: 'pahlawan',
     hero: true,
   },
   king: {
     nama: 'Raja Aldric', kategori: 'hero', dariBangunan: 'altar',
     gold: 160, kayu: 40, daging: 50, pop: 3,
-    hp: 560, dmg: 32, jarak: 66, jeda: 0.88, kecepatan: 122, waktuLatih: 10,
+    hp: 560, dmg: 32, jarak: 66, jeda: 0.88, kecepatan: 122, waktuLatih: 10, serangan: 'tebas', baju: 'pahlawan',
     hero: true,
   },
   knight: {
     nama: 'Sir Gareth Berkuda', kategori: 'hero', dariBangunan: 'altar',
     gold: 175, kayu: 45, daging: 55, pop: 3,
-    hp: 480, dmg: 44, jarak: 86, jeda: 0.82, kecepatan: 195, waktuLatih: 10,
+    hp: 480, dmg: 44, jarak: 86, jeda: 0.82, kecepatan: 195, waktuLatih: 10, serangan: 'tusuk', baju: 'pahlawan',
     hero: true,
   },
   champion: {
     nama: 'Torin Pedang Raksasa', kategori: 'hero', dariBangunan: 'altar',
     gold: 165, kayu: 35, daging: 50, pop: 3,
-    hp: 520, dmg: 48, jarak: 76, jeda: 0.90, kecepatan: 128, waktuLatih: 10,
+    hp: 520, dmg: 48, jarak: 76, jeda: 0.90, kecepatan: 128, waktuLatih: 10, serangan: 'tebas', baju: 'pahlawan',
     hero: true,
   },
 }

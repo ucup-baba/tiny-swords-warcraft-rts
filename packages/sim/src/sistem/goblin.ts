@@ -23,6 +23,7 @@ export function buatGoblin(dunia: Dunia, camp: Camp, peran: PeranGoblin, x: numb
     tx: x, ty: y,
     targetId: null,
     bawaanJenis: null, bawaanJumlah: 0, tikPanen: 0,
+    arah: 1, aksi: 'diam', tikAksi: 0, sudutSerang: 0,
     jalur: null, jalurKeX: x, jalurKeY: y,
     campId: camp.id,
     hero: false, level: 1, xp: 0, skillJeda: 0,
@@ -121,6 +122,8 @@ function musuhDekat(dunia: Dunia, x: number, y: number, radius: number): Unit | 
 
 function langkahGoblin(dunia: Dunia, camp: Camp, g: Unit): void {
   if (g.jedaTimer > 0) g.jedaTimer -= DT_TETAP
+  if (g.tikAksi > 0) g.tikAksi = Math.max(0, g.tikAksi - DT_TETAP)
+  if (g.tikAksi <= 0) g.aksi = 'diam'
 
   const dariCamp = jarak(g.x, g.y, camp.x, camp.y)
 
@@ -146,7 +149,13 @@ function langkahGoblin(dunia: Dunia, camp: Camp, g: Unit): void {
     langkahMenuju(dunia, g, target.x, target.y)
     return
   }
+  if (target.x < g.x - 1) g.arah = -1
+  else if (target.x > g.x + 1) g.arah = 1
   if (g.jedaTimer > 0) return
+
+  g.aksi = 'serang'
+  g.tikAksi = 0.5
+  g.sudutSerang = Math.atan2(target.y - g.y, target.x - g.x)
 
   if (def.bomDiri) {
     // Barrel meledak di tempat lalu mati (PRD §10.2).

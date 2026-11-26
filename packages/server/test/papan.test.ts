@@ -204,6 +204,13 @@ describe('AC-15.8 / 15.9 — pengerasan', () => {
     expect(pesanSah({ t: 'gabung-room', kode: 'x'.repeat(20), hero: 'king' })).toBeNull()
   })
 
+  it('validasi cmd menerima riset/rally/stop dan menolak jenis perintah tak dikenal', () => {
+    expect(pesanSah({ t: 'cmd', cmd: { jenis: 'riset', bangunanId: 1, riset: 'senjataTajam' } })).not.toBeNull()
+    expect(pesanSah({ t: 'cmd', cmd: { jenis: 'rally', bangunanId: 1, x: 500, y: 500 } })).not.toBeNull()
+    expect(pesanSah({ t: 'cmd', cmd: { jenis: 'batalLatih', bangunanId: 1, indeks: 0 } })).not.toBeNull()
+    expect(pesanSah({ t: 'cmd', cmd: { jenis: 'curangGold' } })).toBeNull()
+  })
+
   it('cmd dari pihak yang bukan tamu tidak diteruskan', () => {
     const p = papanBaru()
     const a = sambung(p, 'a')

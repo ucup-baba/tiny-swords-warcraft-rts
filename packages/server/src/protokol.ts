@@ -36,6 +36,17 @@ export interface RingkasRoom {
 const teks = (v: unknown, maks: number): v is string =>
   typeof v === 'string' && v.length > 0 && v.length <= maks
 
+const JENIS_PERINTAH_SAH = new Set([
+  'pindah', 'serangPindah', 'serang', 'stop', 'tahan', 'kumpul', 'perbaiki',
+  'bangun', 'skill', 'latih', 'batalLatih', 'rally', 'riset', 'bangkitkanHero', 'menyerah',
+])
+
+const cmdSah = (v: unknown): boolean => {
+  if (!v || typeof v !== 'object') return false
+  const jenis = (v as Record<string, unknown>)['jenis']
+  return typeof jenis === 'string' && JENIS_PERINTAH_SAH.has(jenis)
+}
+
 /**
  * Validasi skema KETAT untuk setiap pesan masuk (PRD §15.3 poin 5).
  *
@@ -66,8 +77,8 @@ export function pesanSah(x: unknown): KePapan | null {
     case 'denyut':
       return { t: 'denyut' }
     case 'cmd':
-      // Isi cmd divalidasi lagi oleh sim; di sini cukup dipastikan ada & kecil.
-      return m['cmd'] && typeof m['cmd'] === 'object' ? { t: 'cmd', cmd: m['cmd'] } : null
+      // Jenis perintah divalidasi ketat (termasuk riset & rally); detail divalidasi lagi oleh sim.
+      return cmdSah(m['cmd']) ? { t: 'cmd', cmd: m['cmd'] } : null
     case 'snapshot':
       return m['state'] && typeof m['state'] === 'object' ? { t: 'snapshot', state: m['state'] } : null
     default:

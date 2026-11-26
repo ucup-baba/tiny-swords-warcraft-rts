@@ -1,5 +1,6 @@
 import type { Tim } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
+import type { JenisRiset } from './definisi/riset.js'
 import type { PeranUnit } from './definisi/unit.js'
 
 /**
@@ -20,6 +21,7 @@ export type Perintah =
   | { jenis: 'latih'; bangunanId: number; peran: PeranUnit }
   | { jenis: 'batalLatih'; bangunanId: number; indeks: number }
   | { jenis: 'rally'; bangunanId: number; x: number; y: number }
+  | { jenis: 'riset'; bangunanId: number; riset: JenisRiset }
   | { jenis: 'bangkitkanHero'; bangunanId: number }
   | { jenis: 'menyerah' }
 

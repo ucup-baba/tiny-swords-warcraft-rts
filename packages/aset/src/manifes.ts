@@ -101,26 +101,45 @@ export const BANGUNAN_FASE = {
   houseHancur: { file: 'Factions/Knights/Buildings/House/House_Destroyed.png', pack: 'u010', fw: 128, fh: 192, kolom: 1, baris: 1, fps: 0 },
   towerKonstruksi: { file: 'Factions/Knights/Buildings/Tower/Tower_Construction.png', pack: 'u010', fw: 128, fh: 256, kolom: 1, baris: 1, fps: 0 },
   towerHancur: { file: 'Factions/Knights/Buildings/Tower/Tower_Destroyed.png', pack: 'u010', fw: 128, fh: 256, kolom: 1, baris: 1, fps: 0 },
+  barracksKonstruksi: { file: 'Buildings/Barracks_Construction.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase konstruksi Barracks' },
+  barracksHancur: { file: 'Buildings/Barracks_Destroyed.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase hancur Barracks' },
+  archeryKonstruksi: { file: 'Buildings/Archery_Construction.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase konstruksi Archery' },
+  archeryHancur: { file: 'Buildings/Archery_Destroyed.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase hancur Archery' },
+  monasteryKonstruksi: { file: 'Buildings/Monastery_Construction.png', pack: 'custom', fw: 192, fh: 320, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase konstruksi Monastery' },
+  monasteryHancur: { file: 'Buildings/Monastery_Destroyed.png', pack: 'custom', fw: 192, fh: 320, kolom: 1, baris: 1, fps: 0, alasan: 'Pack resmi tidak menyertakan fase hancur Monastery' },
+  altarKonstruksi: { file: 'Buildings/Altar_Construction.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Altar of Heroes tidak ada di pack resmi' },
+  altarHancur: { file: 'Buildings/Altar_Destroyed.png', pack: 'custom', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: 'Altar of Heroes tidak ada di pack resmi' },
 } as const satisfies Record<string, Aset>
 
 // --- Unit --------------------------------------------------------------------
-//
-// CATATAN: sheet Update 010 tidak menyertakan dokumentasi arti tiap baris.
-// Dari contact sheet, baris 0 tampak idle dan baris 1 tampak run. Indeks baris
-// dikumpulkan di BARIS di bawah supaya mudah dikoreksi SETELAH dilihat langsung
-// di browser pada M4 — jangan sebar angka baris ke kode renderer.
+// Baris sheet Update 010 terverifikasi langsung dari contact sheet:
+//   Pawn    (6x6): r0 idle, r1 lari, r2 palu (bangun/tambang), r3 kapak (tebang), r4 bawa diam, r5 bawa lari
+//   Warrior (6x8): r0 idle, r1 lari, r2..r3 serang samping, r4..r5 bawah, r6..r7 atas
+//   Archer  (8x7): r0 idle (6f), r1 lari (6f), r2 atas, r3 serong atas, r4 samping, r5 serong bawah, r6 bawah
 export const BARIS = {
   idle: 0,
   lari: 1,
   serang: 2,
 } as const
 
+export const BARIS_PAWN = {
+  diam: 0,
+  lari: 1,
+  palu: 2,
+  kapak: 3,
+  bawaDiam: 4,
+  bawaLari: 5,
+} as const
+
 function unitTim(warna: WarnaTim) {
   const W = WARNA[warna]
   return {
     pawn: { file: `Factions/Knights/Troops/Pawn/${W}/Pawn_${W}.png`, pack: 'u010', fw: 192, fh: 192, kolom: 6, baris: 6, fps: 10 },
-    warrior: { file: `Factions/Knights/Troops/Warrior/${W}/Warrior_${W}.png`, pack: 'u010', fw: 192, fh: 192, kolom: 6, baris: 8, fps: 10 },
-    archer: { file: `Factions/Knights/Troops/Archer/${W}/Archer_${W}.png`, pack: 'u010', fw: 192, fh: 192, kolom: 8, baris: 7, fps: 10 },
+    warrior: { file: `Factions/Knights/Troops/Warrior/${W}/Warrior_${W}.png`, pack: 'u010', fw: 192, fh: 192, kolom: 6, baris: 8, fps: 12 },
+    archer: {
+      file: `Factions/Knights/Troops/Archer/${W}/Archer_${W}.png`, pack: 'u010', fw: 192, fh: 192, kolom: 8, baris: 7,
+      frameBaris: [6, 6, 8, 8, 8, 8, 8], fps: 12,
+    },
 
     lancerIdle: {
       file: `Units/${W} Units/Lancer/Lancer_Idle.png`, pack: 'free', fw: 320, fh: 320, kolom: 12, baris: 1, fps: 10,
@@ -196,9 +215,18 @@ export const HERO_RED = heroTim('red')
 // --- Goblin netral (PRD §10) -------------------------------------------------
 
 export const GOBLIN = {
-  torch: { file: 'Factions/Goblins/Troops/Torch/Red/Torch_Red.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 5, fps: 10 },
-  tnt: { file: 'Factions/Goblins/Troops/TNT/Red/TNT_Red.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 3, fps: 10 },
-  barrel: { file: 'Factions/Goblins/Troops/Barrel/Red/Barrel_Red.png', pack: 'u010', fw: 192, fh: 192, kolom: 4, baris: 4, fps: 10 },
+  torch: {
+    file: 'Factions/Goblins/Troops/Torch/Red/Torch_Red.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 5,
+    frameBaris: [7, 6, 6, 6, 6], fps: 11,
+  },
+  tnt: {
+    file: 'Factions/Goblins/Troops/TNT/Red/TNT_Red.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 3,
+    frameBaris: [6, 6, 7], fps: 11,
+  },
+  barrel: {
+    file: 'Factions/Goblins/Troops/Barrel/Red/Barrel_Red.png', pack: 'u010', fw: 128, fh: 128, kolom: 6, baris: 6,
+    frameBaris: [1, 6, 1, 6, 3, 3], fps: 10,
+  },
   dinamit: { file: 'Factions/Goblins/Troops/TNT/Dynamite/Dynamite.png', pack: 'u010', fw: 64, fh: 64, kolom: 6, baris: 1, fps: 12 },
   rumah: { file: 'Factions/Goblins/Buildings/Wood_House/Goblin_House.png', pack: 'u010', fw: 128, fh: 192, kolom: 1, baris: 1, fps: 0 },
   rumahHancur: { file: 'Factions/Goblins/Buildings/Wood_House/Goblin_House_Destroyed.png', pack: 'u010', fw: 128, fh: 192, kolom: 1, baris: 1, fps: 0 },

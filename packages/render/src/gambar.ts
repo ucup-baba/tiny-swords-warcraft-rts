@@ -91,6 +91,40 @@ export function potongSprite(a: Aset, indeks: number, ukuran = 64): string | nul
   return hasil
 }
 
+/**
+ * Memotong margin transparan dari aset kursor (`Cursor_01..04`) lalu
+ * menskalakannya tajam agar kursor terlihat jelas (tidak mengecil ~15px).
+ */
+export function potongKursor(a: Aset, ukuran = 42, tengah = false): string | null {
+  const kunci = `kursor:${url(a)}@${ukuran}:${tengah ? 1 : 0}`
+  const ada = cachePotong.get(kunci)
+  if (ada) return ada
+
+  const im = gambarDari(a)
+  if (!im) return null
+  const f = frame(a, 0)
+  const isi = kotakIsi(im, f)
+  if (!isi) return null
+
+  const k = document.createElement('canvas')
+  k.width = ukuran
+  k.height = ukuran
+  const c = k.getContext('2d')
+  if (!c) return null
+  c.imageSmoothingEnabled = false
+
+  const skala = Math.min((ukuran - 4) / isi.w, (ukuran - 4) / isi.h)
+  const w = Math.round(isi.w * skala)
+  const h = Math.round(isi.h * skala)
+  const dx = tengah ? Math.round((ukuran - w) / 2) : 2
+  const dy = tengah ? Math.round((ukuran - h) / 2) : 2
+  c.drawImage(im, isi.x, isi.y, isi.w, isi.h, dx, dy, w, h)
+
+  const hasil = k.toDataURL('image/png')
+  cachePotong.set(kunci, hasil)
+  return hasil
+}
+
 /** Kotak piksel yang benar-benar berisi di dalam sebuah frame. */
 function kotakIsi(
   im: HTMLImageElement, f: { sx: number; sy: number; sw: number; sh: number },

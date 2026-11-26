@@ -1,6 +1,8 @@
 import type { Tim } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
 import type { JenisCamp } from './definisi/goblin.js'
+import type { JenisRiset } from './definisi/riset.js'
+import type { JenisSerangan } from './definisi/tempur.js'
 import type { PeranHero, PeranUnit } from './definisi/unit.js'
 import type { Jalur } from './jalur.js'
 import type { Fog } from './sistem/fog.js'
@@ -61,6 +63,8 @@ export interface Bangunan {
   revive: { peran: PeranHero; level: number; sisaDetik: number } | null
   /** Hitung mundur memunculkan domba berikutnya (khusus house, PRD §3). */
   jedaDomba: number
+  /** Riset yang sedang dikerjakan di bangunan ini (PRD §20). */
+  riset: { jenis: JenisRiset; sisaDetik: number } | null
 }
 
 export type TugasUnit =
@@ -78,6 +82,17 @@ export type TugasUnit =
   | 'perbaiki'
 
 export type JenisBawaan = 'kayu' | 'gold' | 'daging'
+
+/** State animasi deterministik yang dibaca renderer & disinkronkan lewat snapshot LAN. */
+export type AksiUnit =
+  | 'diam'
+  | 'lari'
+  | 'serang'
+  | 'tebang'
+  | 'tambang'
+  | 'bangun'
+  | 'bawaDiam'
+  | 'bawaLari'
 
 export interface Unit {
   id: number
@@ -105,6 +120,15 @@ export interface Unit {
   bawaanJumlah: number
   /** Akumulator waktu untuk satu kali panen. */
   tikPanen: number
+
+  /** Arah hadap horizontal (1 = kanan, -1 = kiri). */
+  arah: 1 | -1
+  /** State animasi aktif. */
+  aksi: AksiUnit
+  /** Sisa detik mengunci animasi serang/aksi agar ayunan selesai utuh. */
+  tikAksi: number
+  /** Sudut radian ke target serangan terakhir (untuk arah bidik Archer). */
+  sudutSerang: number
 
   /**
    * Jalur hasil A* yang sedang diikuti. Turunan dari terrain + posisi, jadi
@@ -146,6 +170,13 @@ export interface Domba {
   x: number
   y: number
   daging: number
+  asalX: number
+  asalY: number
+  tx: number
+  ty: number
+  jedaJalan: number
+  arah: 1 | -1
+  bergerak: boolean
 }
 
 export interface DagingJatuh {
@@ -161,6 +192,8 @@ export interface Proyektil {
   id: number
   tim: Tim
   jenis: 'panah' | 'orb'
+  /** Tipe serangan yang dibawa, menentukan pengali vs baju target. */
+  serangan: JenisSerangan
   x: number
   y: number
   tx: number
@@ -214,6 +247,8 @@ export interface KeadaanTim {
   heroGugur: HeroGugur | null
   /** Hero pilihan pemain dari lobi (PRD §11.1). */
   heroPilihan: PeranHero
+  /** Tingkat tiap riset, 0 sampai TINGKAT_MAKS (PRD §20). */
+  riset: Record<JenisRiset, number>
   /** Detik sejak kondisi mati-ekonomi terpenuhi (PRD §13.1 poin 2). */
   matiEkonomiDetik: number
   menyerah: boolean
@@ -227,6 +262,8 @@ export interface Dunia {
 
   terrain: Terrain
   titik: TitikPenting
+  /** Grid halangan dinamis (bangunan, tambang, pohon), turunan dari entitas. */
+  halangan: Uint8Array
 
   bangunan: Bangunan[]
   unit: Unit[]
@@ -251,6 +288,9 @@ export interface Dunia {
  * partikel — lapisan di atasnya yang menerjemahkan ini.
  */
 export type Kejadian =
+  | { jenis: 'unitLuka'; id: number; tim: Tim; x: number; y: number; jumlah: number }
+  | { jenis: 'unitSembuh'; id: number; tim: Tim; x: number; y: number; jumlah: number }
+  | { jenis: 'bangunanLuka'; id: number; tim: Tim; x: number; y: number; jumlah: number }
   | { jenis: 'unitMati'; id: number; tim: Tim; peran: PeranUnit; x: number; y: number }
   | { jenis: 'bangunanHancur'; id: number; tim: Tim; bangunan: JenisBangunan; x: number; y: number }
   | { jenis: 'bangunanSelesai'; id: number; tim: Tim; bangunan: JenisBangunan }
@@ -260,6 +300,7 @@ export type Kejadian =
   | { jenis: 'heroGugur'; tim: Tim; x: number; y: number }
   | { jenis: 'heroBangkit'; id: number; tim: Tim; level: number }
   | { jenis: 'sumberDayaMasuk'; tim: Tim; jenis2: JenisBawaan; jumlah: number; x: number; y: number }
+  | { jenis: 'risetSelesai'; tim: Tim; riset: JenisRiset; tingkat: number }
   | { jenis: 'campDibersihkan'; campId: number; x: number; y: number }
   | { jenis: 'campRespawn'; campId: number; x: number; y: number }
   | { jenis: 'matchSelesai'; hasil: HasilMatch }

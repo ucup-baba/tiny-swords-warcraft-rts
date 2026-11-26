@@ -1,4 +1,5 @@
-import { bolehLangkah, bisaDilewati, diDalam, indeks, keTile, keTengahPiksel, tileLewatTerdekat, type Terrain } from './terrain.js'
+import { terhalangTile, tileBebasTerdekat } from './halangan.js'
+import { bolehLangkah, bisaDilewati, diDalam, indeks, keTile, keTengahPiksel, type Terrain } from './terrain.js'
 
 /**
  * Pencarian jalur A* di grid tile yang menghormati tebing (PRD §9.2 / AC-9.3).
@@ -76,6 +77,7 @@ export function cariJalur(
   t: Terrain,
   dariPxX: number, dariPxY: number,
   kePxX: number, kePxY: number,
+  halangan?: Uint8Array,
 ): Jalur | null {
   const ax = keTile(dariPxX)
   const ay = keTile(dariPxY)
@@ -84,14 +86,20 @@ export function cariJalur(
 
   if (!diDalam(t, ax, ay) || !diDalam(t, bx, by)) return null
 
-  // Tujuan di air atau di dalam tebing: pakai tile berjalan terdekat.
-  if (!bisaDilewati(t, bx, by)) {
-    const ganti = tileLewatTerdekat(t, bx, by)
+  const tujuanBebasAsli = bisaDilewati(t, bx, by) && !terhalangTile(t, halangan, bx, by)
+
+  // Tujuan di air, tebing, atau dalam tapak bangunan/pohon: pakai tile bebas terdekat di sisi asal.
+  if (!tujuanBebasAsli) {
+    const ganti = tileBebasTerdekat(t, halangan, bx, by, ax, ay)
     if (!ganti) return null
     bx = ganti.tx
     by = ganti.ty
   }
-  if (ax === bx && ay === by) return { titik: [{ x: kePxX, y: kePxY }], ke: 0 }
+  if (ax === bx && ay === by) {
+    return tujuanBebasAsli
+      ? { titik: [{ x: kePxX, y: kePxY }], ke: 0 }
+      : { titik: [{ x: keTengahPiksel(bx), y: keTengahPiksel(by) }], ke: 0 }
+  }
 
   const total = t.kolom * t.baris
   const g = new Float64Array(total).fill(Infinity)
@@ -121,10 +129,13 @@ export function cariJalur(
       const my = ny + dy
       if (!diDalam(t, mx, my)) continue
       if (!bolehLangkah(t, nx, ny, mx, my)) continue
-      // Diagonal tidak boleh memotong sudut tebing.
+      if (terhalangTile(t, halangan, mx, my)) continue
+      // Diagonal tidak boleh memotong sudut tebing maupun sudut bangunan.
       if (dx !== 0 && dy !== 0) {
         if (!bolehLangkah(t, nx, ny, nx + dx, ny)) continue
         if (!bolehLangkah(t, nx, ny, nx, ny + dy)) continue
+        if (terhalangTile(t, halangan, nx + dx, ny)) continue
+        if (terhalangTile(t, halangan, nx, ny + dy)) continue
       }
       const m = indeks(t, mx, my)
       if (sudah[m]) continue
@@ -149,9 +160,9 @@ export function cariJalur(
     const ty = (n - tx) / t.kolom
     return { x: keTengahPiksel(tx), y: keTengahPiksel(ty) }
   })
-  // Titik terakhir pakai tujuan asli supaya unit berhenti persis di klik.
+  // Titik terakhir pakai tujuan asli hanya jika tile tujuan bebas.
   const akhir = titik[titik.length - 1]
-  if (akhir && bisaDilewati(t, keTile(kePxX), keTile(kePxY))) {
+  if (akhir && tujuanBebasAsli) {
     akhir.x = kePxX
     akhir.y = kePxY
   }

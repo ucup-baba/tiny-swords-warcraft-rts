@@ -20,6 +20,11 @@ export interface Aset {
   /** Jumlah kolom & baris frame dalam sheet. */
   kolom: number
   baris: number
+  /**
+   * Jumlah frame terisi per baris bila sebagian baris punya frame kosong di
+   * ujung kanan (mis. Archer r0/r1 hanya 6/8 frame, Torch r1..r4 hanya 6/7).
+   */
+  frameBaris?: readonly number[]
   /** Frame per detik saat dianimasikan. 0 = sprite diam. */
   fps: number
   /**
@@ -42,6 +47,11 @@ export function frame(a: Aset, indeks: number): { sx: number; sy: number; sw: nu
     sw: a.fw,
     sh: a.fh,
   }
+}
+
+/** Jumlah frame terisi pada satu baris sheet (menghindari frame kosong berkedip). */
+export function jumlahFrameBaris(a: Aset, baris: number): number {
+  return a.frameBaris?.[baris] ?? a.kolom
 }
 
 /** Frame yang sedang tampil untuk animasi pada waktu tertentu. */

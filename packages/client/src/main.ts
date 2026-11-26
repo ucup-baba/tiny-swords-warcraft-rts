@@ -1,16 +1,16 @@
-import { BARIS, KURSOR, UNIT_BLUE, type PeranHeroAset } from '@hftf/aset'
+import { BANGUNAN_BLUE, BARIS, KURSOR, SUMBER, UNIT_BLUE, type PeranHeroAset } from '@hftf/aset'
 import {
   Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera,
-  gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongSprite, pusatkan,
+  gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongKursor, potongSprite, pusatkan,
 } from '@hftf/render'
 import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
 import {
-  BANGUNAN, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
+  BANGUNAN, UNIT, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
   hitungFog, terapkanPerintah, terapkanSnapshot,
-  type Bangunan, type Dunia, type KeadaanAi, type Perintah, type Snapshot, type Unit,
+  type Bangunan, type Dunia, type JenisRiset, type KeadaanAi, type PeranUnit, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
-import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset } from '@hftf/ui'
+import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type PerintahKartu } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
   perintahKlikKanan, seleksiKotak, unitDiTitik, bolehTaruh,
@@ -46,6 +46,8 @@ class Permainan {
   private akumulator = 0
   private waktuTerakhir = 0
   private klikTerakhir = { waktu: 0, id: -1 }
+  private geserTengah = { aktif: false, x: 0, y: 0 }
+  private kursorPotong = new Map<string, string>()
 
   constructor() {
     const gaya = document.createElement('style')
@@ -59,15 +61,41 @@ class Permainan {
         this.hud.tampilkanToast(`Pilih lokasi untuk ${BANGUNAN[jenis as keyof typeof BANGUNAN].nama}`)
       },
       latih: (peran) => {
-        const b = this.bangunanTerpilih()
-        if (!b) return this.hud.tampilkanToast('Pilih bangunan dulu')
-        this.kirim({ jenis: 'latih', bangunanId: b.id, peran: peran as never })
+        if (!this.dunia) return
+        const def = UNIT[peran as PeranUnit]
+        let b = this.bangunanTerpilih()
+        if (!b || b.fase !== 'aktif' || b.jenis !== def.dariBangunan) {
+          // Otomatis pilih bangunan produksi aktif yang cocok dengan antrean terpendek.
+          b = this.dunia.bangunan
+            .filter((x) => x.tim === this.timSaya && x.fase === 'aktif' && x.jenis === def.dariBangunan)
+            .sort((a, c) => a.antrean.length - c.antrean.length)[0] ?? null
+        }
+        if (!b) return this.hud.tampilkanToast(`Bangun ${BANGUNAN[def.dariBangunan!].nama} dulu!`)
+        this.kirim({ jenis: 'latih', bangunanId: b.id, peran: peran as PeranUnit })
+        this.input.unitTerpilih.clear()
+        this.input.bangunanTerpilih = b.id
+        this.perbaruiHud()
+      },
+      batalLatih: (bangunanId, indeks) => {
+        this.kirim({ jenis: 'batalLatih', bangunanId, indeks })
+        this.perbaruiHud()
+      },
+      riset: (bangunanId, jenis: JenisRiset) => {
+        this.kirim({ jenis: 'riset', bangunanId, riset: jenis })
+        this.perbaruiHud()
       },
       bangkitkanHero: () => {
         const altar = this.dunia?.bangunan.find(
           (b) => b.tim === this.timSaya && b.jenis === 'altar' && b.fase === 'aktif')
         if (!altar) return this.hud.tampilkanToast('Bangun Altar of Heroes dulu!')
         this.kirim({ jenis: 'bangkitkanHero', bangunanId: altar.id })
+      },
+      pilihFilterUnit: (filter) => this.pilihFilter(filter),
+      perintahUnit: (cmd) => this.jalankanPerintahKartu(cmd),
+      fokusUnit: (unitId) => {
+        this.input.unitTerpilih = new Set([unitId])
+        this.input.bangunanTerpilih = null
+        this.perbaruiHud()
       },
     })
 
@@ -93,8 +121,9 @@ class Permainan {
     this.kursor.id = 'kursor'
     this.kursor.src = urlAset(KURSOR['kursor01']!, BASIS)
 
-    document.body.append(this.hud.akar)
-    this.hud.akar.querySelector('#panggung')!.append(this.lobi.akar, this.kursor)
+    document.body.append(this.hud.bingkai)
+    this.hud.akar.append(this.lobi.akar)
+    this.hud.akar.querySelector('#panggung')!.append(this.kursor)
 
     this.ctx = this.hud.kanvas.getContext('2d')
     // Kait debug: memeriksa state dari console tanpa membongkar bundel.
@@ -145,6 +174,23 @@ class Permainan {
       }
     })
 
+    // Ikon sumber daya (gold, kayu, daging, supply) & kursor di-crop ke kotak isi
+    // supaya tajam dan berukuran proporsional, bukan menyusut di dalam padding 128x128.
+    this.hud.pasangIkonSumber((kunci) => {
+      switch (kunci) {
+        case 'gold': return potongSprite(SUMBER.goldDiam, 0, 48)
+        case 'kayu': return potongSprite(SUMBER.kayuDiam, 0, 48)
+        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 48)
+        case 'supply': return potongSprite(BANGUNAN_BLUE.house, 0, 48)
+      }
+    })
+    for (const nama of ['kursor01', 'kursor02', 'kursor03', 'kursor04'] as const) {
+      const hasilPotong = potongKursor(KURSOR[nama]!, 42, nama === 'kursor04')
+      if (hasilPotong) this.kursorPotong.set(nama, hasilPotong)
+    }
+    const awalKursor = this.kursorPotong.get('kursor01')
+    if (awalKursor) this.kursor.src = awalKursor
+
     this.fase = 'lobi'
     this.lobi.tampil(true)
     this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
@@ -190,6 +236,10 @@ class Permainan {
         if (this.peran !== 'tamu' || !this.dunia) return
         const lama = new Map(this.dunia.unit.map((u) => [u.id, u]))
         terapkanSnapshot(this.dunia, state as Snapshot, lama)
+        if (this.dunia.kejadian.length > 0) {
+          this.efek.serap(this.dunia.kejadian, this.timSaya)
+          this.dunia.kejadian.length = 0
+        }
         // Guest menghitung fog-nya sendiri dari unit miliknya, yang selalu
         // lengkap di snapshot. Tanpa ini layarnya hitam total.
         hitungFog(this.dunia)
@@ -303,6 +353,35 @@ class Permainan {
     return this.dunia.unit.filter((u) => this.input.unitTerpilih.has(u.id))
   }
 
+  private pilihFilter(filter: FilterUnit): void {
+    if (!this.dunia) return
+    const cocok = this.dunia.unit.filter((u) => {
+      if (u.tim !== this.timSaya) return false
+      if (filter === 'semua') return u.peran !== 'pawn'
+      if (filter === 'hero') return u.hero
+      return !u.hero && u.peran === filter
+    })
+    this.input.unitTerpilih = new Set(cocok.map((u) => u.id))
+    this.input.bangunanTerpilih = null
+    this.perbaruiHud()
+  }
+
+  private jalankanPerintahKartu(cmd: PerintahKartu): void {
+    const ids = [...this.input.unitTerpilih]
+    if (ids.length === 0) return
+    if (cmd === 'serang') {
+      this.input.modeSerang = true
+      this.hud.tampilkanToast('Mode Serang [A]: klik kanan target atau tanah')
+      this.perbaruiHud()
+      return
+    }
+    this.input.modeSerang = false
+    if (cmd === 'stop') this.kirim({ jenis: 'stop', ids })
+    else if (cmd === 'tahan') this.kirim({ jenis: 'tahan', ids })
+    else if (cmd === 'skill') this.kirim({ jenis: 'skill', ids })
+    this.perbaruiHud()
+  }
+
   /** Kursor berganti sesuai konteks (PRD §5.10). */
   private perbaruiKursor(): void {
     if (!this.dunia || this.fase !== 'main') return
@@ -320,17 +399,22 @@ class Permainan {
       const lawan = (u && u.tim !== this.timSaya) || (b && b.tim !== this.timSaya)
       if (lawan) nama = 'kursor02'
     }
-    const baru = urlAset(KURSOR[nama]!, BASIS)
+    const baru = this.kursorPotong.get(nama) ?? urlAset(KURSOR[nama]!, BASIS)
     if (this.kursor.getAttribute('src') !== baru) this.kursor.src = baru
   }
 
+  /**
+   * Resolusi stage tetap 1280x720 (kanvas 976x720 + sidebar 304x720) yang
+   * diskalakan otomatis mengikuti jendela browser — nol scrollbar di layar mana pun.
+   */
   private ukurUlang(): void {
+    const skala = Math.max(0.25, Math.min(window.innerWidth / 1280, window.innerHeight / 720))
+    this.hud.akar.style.transform = `scale(${skala})`
     const k = this.hud.kanvas
-    const r = k.getBoundingClientRect()
-    k.width = Math.max(320, Math.floor(r.width))
-    k.height = Math.max(240, Math.floor(r.height))
-    this.kam.lebar = k.width
-    this.kam.tinggi = k.height
+    k.width = 976
+    k.height = 720
+    this.kam.lebar = 976
+    this.kam.tinggi = 720
     batasiKamera(this.kam)
     if (this.ctx) this.ctx.imageSmoothingEnabled = false
   }
@@ -355,12 +439,23 @@ class Permainan {
 
     k.addEventListener('mousemove', (e) => {
       const r = k.getBoundingClientRect()
-      this.input.mouse.sx = e.clientX - r.left
-      this.input.mouse.sy = e.clientY - r.top
+      const sx = (e.clientX - r.left) * (k.width / Math.max(1, r.width))
+      const sy = (e.clientY - r.top) * (k.height / Math.max(1, r.height))
+      if (this.geserTengah.aktif) {
+        const dx = sx - this.geserTengah.x
+        const dy = sy - this.geserTengah.y
+        this.geserTengah.x = sx
+        this.geserTengah.y = sy
+        this.kam.x -= dx / this.kam.zoom
+        this.kam.y -= dy / this.kam.zoom
+        batasiKamera(this.kam)
+      }
+      this.input.mouse.sx = sx
+      this.input.mouse.sy = sy
       this.input.mousePernahMasuk = true
       perbaruiMouseDunia(this.input, this.kam)
-      this.kursor.style.left = `${this.input.mouse.sx - 4}px`
-      this.kursor.style.top = `${this.input.mouse.sy - 2}px`
+      this.kursor.style.left = `${sx - 3}px`
+      this.kursor.style.top = `${sy - 3}px`
       this.perbaruiKursor()
       if (this.input.seret.aktif) {
         this.input.seret.x2 = this.input.mouse.wx
@@ -370,8 +465,17 @@ class Permainan {
 
     k.addEventListener('mousedown', (e) => {
       if (this.fase !== 'main' || !this.dunia) return
+      const r = k.getBoundingClientRect()
+      this.input.mouse.sx = (e.clientX - r.left) * (k.width / Math.max(1, r.width))
+      this.input.mouse.sy = (e.clientY - r.top) * (k.height / Math.max(1, r.height))
       perbaruiMouseDunia(this.input, this.kam)
       const { wx, wy } = this.input.mouse
+
+      if (e.button === 1) {
+        e.preventDefault()
+        this.geserTengah = { aktif: true, x: this.input.mouse.sx, y: this.input.mouse.sy }
+        return
+      }
 
       if (e.button === 0) {
         if (this.input.hantuBangun) {
@@ -389,17 +493,45 @@ class Permainan {
           this.input.hantuBangun = null
           return
         }
+        if (this.input.modeSerang && this.input.unitTerpilih.size > 0) {
+          const ids = [...this.input.unitTerpilih]
+          this.kirim({ jenis: 'serangPindah', ids, x: wx, y: wy })
+          this.efek.tandaiPerintah(wx, wy, 'serang')
+          this.input.modeSerang = false
+          this.perbaruiHud()
+          return
+        }
         this.input.seret = { aktif: true, x1: wx, y1: wy, x2: wx, y2: wy }
         return
       }
 
       if (e.button === 2) {
         const ids = [...this.input.unitTerpilih]
-        const p = perintahKlikKanan(this.dunia, this.timSaya, ids, wx, wy, this.input.modeSerang)
-        if (p) this.kirim(p)
+        if (ids.length > 0) {
+          const p = perintahKlikKanan(this.dunia, this.timSaya, ids, wx, wy, this.input.modeSerang)
+          if (p) {
+            this.kirim(p)
+            const jenisFlag = p.jenis === 'serang' || p.jenis === 'serangPindah' ? 'serang' : 'pindah'
+            this.efek.tandaiPerintah(wx, wy, jenisFlag)
+          }
+        } else {
+          const b = this.bangunanTerpilih()
+          if (
+            b && b.tim === this.timSaya && b.fase === 'aktif' &&
+            (BANGUNAN[b.jenis].melatih.length > 0 || b.jenis === 'altar')
+          ) {
+            this.kirim({ jenis: 'rally', bangunanId: b.id, x: wx, y: wy })
+            this.efek.tandaiPerintah(wx, wy, 'rally')
+            this.hud.tampilkanToast(`Bendera Rally Point ${BANGUNAN[b.jenis].nama} dipindahkan`)
+          }
+        }
         this.input.modeSerang = false
         this.input.hantuBangun = null
       }
+    })
+
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 1) this.geserTengah.aktif = false
     })
 
     k.addEventListener('mouseup', (e) => {
@@ -456,7 +588,16 @@ class Permainan {
         pusatkan(this.kam, wx, wy)
       } else {
         const ids = [...this.input.unitTerpilih]
-        if (ids.length > 0) this.kirim({ jenis: 'serangPindah', ids, x: wx, y: wy })
+        if (ids.length > 0) {
+          this.kirim({ jenis: 'serangPindah', ids, x: wx, y: wy })
+          this.efek.tandaiPerintah(wx, wy, 'serang')
+        } else {
+          const b = this.bangunanTerpilih()
+          if (b && b.tim === this.timSaya && b.fase === 'aktif' && (BANGUNAN[b.jenis].melatih.length > 0 || b.jenis === 'altar')) {
+            this.kirim({ jenis: 'rally', bangunanId: b.id, x: wx, y: wy })
+            this.efek.tandaiPerintah(wx, wy, 'rally')
+          }
+        }
       }
     })
     this.hud.petaMini.addEventListener('contextmenu', (e) => e.preventDefault())
@@ -466,18 +607,27 @@ class Permainan {
       if (this.fase !== 'main' || !this.dunia) return
       const ids = [...this.input.unitTerpilih]
 
-      if (e.code === 'KeyA' && !e.repeat && ids.length > 0) { this.input.modeSerang = true; return }
+      if (e.code === 'KeyA' && !e.repeat && ids.length > 0) {
+        this.input.modeSerang = true
+        this.perbaruiHud()
+        return
+      }
       if (e.code === 'Escape') {
         if (this.input.hantuBangun || this.input.modeSerang) {
           this.input.hantuBangun = null
           this.input.modeSerang = false
+          this.perbaruiHud()
           return
         }
         this.bukaMenuJeda()
         return
       }
       if (e.code === 'KeyQ' && ids.length > 0) { this.kirim({ jenis: 'skill', ids }); return }
-      if (e.code === 'KeyS' && e.ctrlKey) return
+      if (e.code === 'KeyS' && !e.ctrlKey && ids.length > 0) {
+        this.input.modeSerang = false
+        this.kirim({ jenis: 'stop', ids })
+        return
+      }
       if (e.code === 'KeyH' && ids.length > 0) { this.kirim({ jenis: 'tahan', ids }); return }
       if (e.code === 'Home') { fokusKeCastle(this.dunia, this.timSaya, this.kam); return }
 
@@ -537,7 +687,7 @@ class Permainan {
             for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
           }
           langkahBanyak(this.dunia, 1)
-          this.efek.serap(this.dunia.kejadian)
+          this.efek.serap(this.dunia.kejadian, this.timSaya)
           this.akumulator -= DT_TETAP
           langkah++
         }
@@ -626,16 +776,18 @@ class Permainan {
 
   private perbaruiHudRingan(): void {
     if (!this.dunia) return
+    const unit = this.unitTerpilih()
+    const bg = this.bangunanTerpilih()
     this.hud.perbaruiPita(this.dunia, this.timSaya,
       this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)')
     this.hud.perbaruiSumberDaya(this.dunia, this.timSaya)
-    this.hud.perbaruiSeleksi(this.dunia, this.unitTerpilih(), this.bangunanTerpilih())
+    this.hud.perbaruiTabUnit(this.dunia, this.timSaya, unit)
+    this.hud.perbaruiSeleksi(this.dunia, this.timSaya, unit, bg, this.input.modeSerang)
+    this.hud.perbaruiKisi(this.dunia, this.timSaya, bg)
   }
 
   private perbaruiHud(): void {
-    if (!this.dunia) return
     this.perbaruiHudRingan()
-    this.hud.perbaruiKisi(this.dunia, this.timSaya, this.bangunanTerpilih())
   }
 
   /**

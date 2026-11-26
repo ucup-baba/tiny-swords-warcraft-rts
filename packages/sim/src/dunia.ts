@@ -1,9 +1,12 @@
 import { DT_TETAP, PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type Tim } from '@hftf/shared'
 import { BANGUNAN } from './definisi/bangunan.js'
+import { SEMUA_RISET, type JenisRiset } from './definisi/riset.js'
 import type { PeranHero } from './definisi/unit.js'
+import { buatHalangan, segarkanHalangan } from './halangan.js'
 import type { Perintah } from './perintah.js'
 import { buatRng } from './rng.js'
-import { antreLatih, batalLatih, langkahBangunan, mulaiRevive } from './sistem/bangunan.js'
+import { antreLatih, batalLatih, langkahBangunan, mulaiRevive, mulaiRiset } from './sistem/bangunan.js'
+import { buatDomba, langkahDombaJalan } from './sistem/domba.js'
 import { bayar } from './sistem/ekonomi.js'
 import { pakaiSkill } from './sistem/hero.js'
 import { langkahPawn } from './sistem/pekerja.js'
@@ -15,7 +18,7 @@ import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
 import { buatTerrain, keTengahPiksel, keTile, tinggiDi, type Terrain } from './terrain.js'
-import { batalkanJalur } from './sistem/gerak.js'
+import { batalkanJalur, pisahUnit } from './sistem/gerak.js'
 
 export interface OpsiDunia {
   seed: number
@@ -37,6 +40,7 @@ function keadaanTim(hero: PeranHero): KeadaanTim {
     heroHidup: null,
     heroGugur: null,
     heroPilihan: hero,
+    riset: Object.fromEntries(SEMUA_RISET.map((r) => [r, 0])) as Record<JenisRiset, number>,
     matiEkonomiDetik: 0,
     menyerah: false,
   }
@@ -52,6 +56,7 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     hasil: { jenis: 'berlangsung' },
     terrain,
     titik,
+    halangan: buatHalangan(terrain.kolom, terrain.baris),
     bangunan: [],
     unit: [],
     pohon: [],
@@ -131,7 +136,11 @@ function isiPeta(dunia: Dunia): void {
     ]
     for (const [rx, ry] of rumpun) {
       for (let i = 0; i < 9; i++) {
-        const [tx2, ty2] = dataranDekat(rx + (i % 3) * 2, ry + Math.floor(i / 3) * 2)
+        // Offset DI DALAM rumpun juga harus dicerminkan dengan `arah`.
+        // Tanpa itu kedua rumpun menjulur ke arah absolut yang sama dan biru
+        // berakhir dengan 457 kayu lebih banyak dalam radius 20 tile — 22%
+        // keunggulan ekonomi yang tidak disengaja.
+        const [tx2, ty2] = dataranDekat(rx + (i % 3) * 2 * arah, ry + Math.floor(i / 3) * 2 * arah)
         const [wx, wy] = P(tx2, ty2)
         dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
       }
@@ -140,7 +149,7 @@ function isiPeta(dunia: Dunia): void {
     // Domba di padang dekat basis.
     for (let i = 0; i < 4; i++) {
       const [sx, sy] = P(...dataranDekat(btx + (i - 2) * 2 * arah, bty + 6 * arah))
-      dunia.domba.push({ id: dunia.idBerikut++, x: sx, y: sy, daging: 45 })
+      dunia.domba.push(buatDomba(dunia.idBerikut++, sx, sy, 45, 1.2 + i * 0.8))
     }
 
     // Hero hidup sejak detik pertama, gratis, tanpa supply (PRD §11.1).
@@ -163,11 +172,13 @@ function isiPeta(dunia: Dunia): void {
 
   // Camp goblin penjaga harta (PRD §10.5): satu camp kecil per tambang
   // ekspansi, dan satu camp besar menjaga tambang pusat di atas plateau.
+  // Camp ditaruh TEPAT di tambang yang dijaganya. Offset absolut membuat
+  // jaraknya ke tiap basis berbeda dan merusak simetri rotasi.
   for (const tb of dunia.tambang) {
     if (tb.jenis !== 'stone') continue
-    tambahCamp(dunia, 'kecil', tb.x + 70, tb.y + 50)
+    tambahCamp(dunia, 'kecil', tb.x, tb.y)
   }
-  tambahCamp(dunia, 'besar', keTengahPiksel(pusat.tx) + 90, keTengahPiksel(pusat.ty) + 70)
+  tambahCamp(dunia, 'besar', keTengahPiksel(pusat.tx), keTengahPiksel(pusat.ty))
   for (const p of dunia.titik.plateauSamping) {
     tambahCamp(dunia, 'kecil', keTengahPiksel(p.tx), keTengahPiksel(p.ty))
   }
@@ -183,6 +194,7 @@ function isiPeta(dunia: Dunia): void {
       }
     }
   }
+  segarkanHalangan(dunia)
 }
 
 /**
@@ -332,6 +344,12 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
       b.rallyY = p.y
       return
     }
+    case 'riset': {
+      const b = cariBangunan(dunia, p.bangunanId)
+      if (!b || b.tim !== tim) return
+      mulaiRiset(dunia, b, p.riset)
+      return
+    }
     case 'bangkitkanHero': {
       const b = cariBangunan(dunia, p.bangunanId)
       if (!b || b.tim !== tim) return
@@ -359,15 +377,28 @@ export function langkah(dunia: Dunia): void {
   // Goblin dijalankan oleh sistem camp, bukan AI unit biasa (PRD §10.3).
   langkahCamp(dunia)
 
-  // Iterasi mundur: unit bisa dihapus di tengah langkah.
-  for (let i = dunia.unit.length - 1; i >= 0; i--) {
+  // Giliran eksekusi DIBALIK setiap tick genap.
+  //
+  // Unit biru selalu dibuat lebih dulu di isiPeta, jadi dengan satu arah tetap
+  // mereka selalu menyerang lebih dulu di tiap tick — pada pertukaran yang
+  // saling mematikan, biru menang. Efeknya terukur: 58-60% kemenangan biru di
+  // matchup hero yang sama persis. Membalik arah bergantian meratakannya,
+  // dan tetap deterministik karena hanya bergantung pada nomor tick.
+  const mundur = dunia.tick % 2 === 0
+  const n = dunia.unit.length
+  for (let k = 0; k < n; k++) {
+    const i = mundur ? n - 1 - k : k
     const u = dunia.unit[i]
     if (!u || u.campId !== null) continue
     if (u.skillJeda > 0) u.skillJeda -= DT_TETAP
+    if (u.tikAksi > 0) u.tikAksi = Math.max(0, u.tikAksi - DT_TETAP)
+    if (u.tikAksi <= 0) u.aksi = u.bawaanJenis ? 'bawaDiam' : 'diam'
     if (u.peran === 'pawn') langkahPawn(dunia, u)
     else langkahUnitTempur(dunia, u)
   }
 
+  langkahDombaJalan(dunia)
+  pisahUnit(dunia)
   langkahProyektil(dunia)
 
   // Daging yang tergeletak membusuk supaya peta tidak penuh.

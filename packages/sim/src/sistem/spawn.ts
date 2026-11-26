@@ -1,6 +1,7 @@
 import type { Tim } from '@hftf/shared'
 import { BANGUNAN, HP_AWAL_KONSTRUKSI, type JenisBangunan } from '../definisi/bangunan.js'
 import { UNIT, type PeranUnit } from '../definisi/unit.js'
+import { segarkanHalangan } from '../halangan.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
 
 export function buatUnit(dunia: Dunia, tim: Tim, peran: PeranUnit, x: number, y: number): Unit {
@@ -25,6 +26,10 @@ export function buatUnit(dunia: Dunia, tim: Tim, peran: PeranUnit, x: number, y:
     bawaanJenis: null,
     bawaanJumlah: 0,
     tikPanen: 0,
+    arah: tim === 'red' ? -1 : 1,
+    aksi: 'diam',
+    tikAksi: 0,
+    sudutSerang: 0,
     jalur: null,
     jalurKeX: x,
     jalurKeY: y,
@@ -59,8 +64,10 @@ export function buatBangunan(
     rallyY: y + 60,
     revive: null,
     jedaDomba: 0,
+    riset: null,
   }
   dunia.bangunan.push(b)
   if (fase === 'aktif') dunia.tim[tim].statistik.bangunanDibangun++
+  segarkanHalangan(dunia)
   return b
 }

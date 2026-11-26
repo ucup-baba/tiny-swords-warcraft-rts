@@ -1,7 +1,12 @@
 import { DT_TETAP, type Tim } from '@hftf/shared'
 import { BANGUNAN } from '../definisi/bangunan.js'
 import { GOBLIN } from '../definisi/goblin.js'
+import {
+  BONUS_BAJU_PER_TINGKAT, BONUS_SERANG_PER_TINGKAT, RISET, SEMUA_RISET,
+} from '../definisi/riset.js'
+import { pengali, type JenisBaju, type JenisSerangan } from '../definisi/tempur.js'
 import { REVIVE, UNIT, type KategoriUnit } from '../definisi/unit.js'
+import { segarkanHalangan } from '../halangan.js'
 import type { Bangunan, Dunia, Unit } from '../tipe.js'
 import { adalahUnit, bermusuhan, cariUnit, jarak, musuhTerdekat } from '../util.js'
 import { peranGoblin } from './goblin.js'
@@ -37,12 +42,26 @@ export function dmgHero(peran: Unit['peran'], level: number): number {
 // ---------------------------------------------------------------------------
 
 export function lukaiUnit(
-  dunia: Dunia, target: Unit, dmg: number, penyerang: Unit | null, timSumber?: Tim,
+  dunia: Dunia, target: Unit, dmg: number, penyerang: Unit | null,
+  timSumber?: Tim, jenisSerangan?: JenisSerangan,
 ): void {
-  target.hp -= dmg
+  const pembunuh: Tim | null = penyerang?.tim ?? timSumber ?? null
+  // Tipe serangan diambil dari penyerang kalau tidak disebut. Pemanggil yang
+  // sengaja tidak memberi tipe (tes, bunuh paksa) mendapat kerusakan mentah.
+  const serangan: JenisSerangan | null =
+    jenisSerangan ?? (penyerang ? UNIT[penyerang.peran].serangan : null)
+  const baju: JenisBaju = UNIT[target.peran].baju
+
+  const besar = kerusakanAkhir(dunia, dmg, serangan, pembunuh, baju, target.tim)
+  target.hp -= besar
+  if (besar >= 0.5) {
+    dunia.kejadian.push({
+      jenis: 'unitLuka', id: target.id, tim: target.tim, x: target.x, y: target.y,
+      jumlah: Math.max(1, Math.round(besar)),
+    })
+  }
   if (target.hp > 0) return
 
-  const pembunuh: Tim | null = penyerang?.tim ?? timSumber ?? null
   const k = dunia.tim[target.tim]
   k.statistik.gugur++
   if (pembunuh && pembunuh !== target.tim) dunia.tim[pembunuh].statistik.bunuh++
@@ -111,33 +130,88 @@ export function tambahXp(dunia: Dunia, hero: Unit, xp: number): void {
     hero.level++
     const hpBaru = hpMaksHero(hero.peran, hero.level)
     // Naik level menyembuhkan sebesar tambahan HP maksimumnya.
-    hero.hp += hpBaru - hero.hpMaks
+    const tambah = hpBaru - hero.hpMaks
+    hero.hp += tambah
     hero.hpMaks = hpBaru
     hero.dmg = dmgHero(hero.peran, hero.level)
+    if (tambah > 0) {
+      dunia.kejadian.push({
+        jenis: 'unitSembuh', id: hero.id, tim: hero.tim, x: hero.x, y: hero.y, jumlah: Math.round(tambah),
+      })
+    }
     dunia.kejadian.push({ jenis: 'heroNaikLevel', id: hero.id, tim: hero.tim, level: hero.level })
   }
 }
 
 /**
- * Porsi kerusakan yang benar-benar diterima bangunan dari unit biasa.
- *
- * Tanpa ini pasukan 15 orang merobohkan Castle 1.500 HP dalam ~4 detik, dan
- * satu serbuan yang berhasil langsung mengakhiri match. Nilai ini bukan dari
- * tabel PRD §3 (HP-nya tetap seperti di sana); ini aturan pelemahan terpisah
- * supaya menyerbu basis butuh waktu dan bisa dilawan.
+ * Ketahanan bangunan terhadap serangan yang tipe-nya tidak diketahui
+ * (mis. skill hero, ledakan). Serangan bertipe memakai tabel PENGALI yang
+ * baris 'bangunan'-nya sudah mencakup pelemahan ini.
  */
 export const KETAHANAN_BANGUNAN = 0.45
 
-export function lukaiBangunan(dunia: Dunia, b: Bangunan, dmg: number, penyerang: Tim | null): void {
+/** Tambahan kerusakan dari riset serangan tim penyerang (PRD §20). */
+export function bonusSerang(dunia: Dunia, tim: Tim | null, serangan: JenisSerangan): number {
+  if (!tim) return 1
+  const riset = dunia.tim[tim].riset
+  let tingkat = 0
+  for (const r of SEMUA_RISET) {
+    if (RISET[r].memperkuat === serangan) tingkat += riset[r]
+  }
+  return 1 + tingkat * BONUS_SERANG_PER_TINGKAT
+}
+
+/** Pengurangan kerusakan dari riset Baju Zirah tim yang diserang (PRD §20). */
+export function faktorBaju(dunia: Dunia, tim: Tim): number {
+  return Math.max(0.3, 1 - dunia.tim[tim].riset.bajuZirah * BONUS_BAJU_PER_TINGKAT)
+}
+
+/**
+ * Kerusakan akhir: tipe serangan vs tipe baju, lalu riset kedua belah pihak.
+ *
+ * Dipusatkan di sini supaya tidak ada jalur serangan yang lupa menerapkannya.
+ */
+function kerusakanAkhir(
+  dunia: Dunia, mentah: number, serangan: JenisSerangan | null,
+  timPenyerang: Tim | null, baju: JenisBaju, timTarget: Tim,
+): number {
+  if (!serangan) return mentah
+  return mentah * pengali(serangan, baju) * bonusSerang(dunia, timPenyerang, serangan) * faktorBaju(dunia, timTarget)
+}
+
+export function lukaiBangunan(
+  dunia: Dunia, b: Bangunan, dmg: number, penyerang: Tim | null, jenisSerangan?: JenisSerangan,
+): void {
   if (b.fase === 'hancur') return
-  b.hp -= dmg * KETAHANAN_BANGUNAN
+  const besar = jenisSerangan
+    ? kerusakanAkhir(dunia, dmg, jenisSerangan, penyerang, 'bangunan', b.tim)
+    : dmg * KETAHANAN_BANGUNAN
+  b.hp -= besar
+  if (besar >= 0.5) {
+    dunia.kejadian.push({
+      jenis: 'bangunanLuka', id: b.id, tim: b.tim, x: b.x, y: b.y,
+      jumlah: Math.max(1, Math.round(besar)),
+    })
+  }
   if (b.hp > 0) return
 
   b.hp = 0
   b.fase = 'hancur'
+  segarkanHalangan(dunia)
 
   // Antrean latih hangus; biayanya tidak dikembalikan.
   b.antrean.length = 0
+
+  // Riset yang sedang berjalan dikembalikan penuh, sama seperti revive.
+  if (b.riset) {
+    const tingkat = dunia.tim[b.tim].riset[b.riset.jenis]
+    const biaya = RISET[b.riset.jenis].tingkat[tingkat]
+    if (biaya) {
+      dunia.tim[b.tim].sumberDaya.gold += biaya.gold
+      dunia.tim[b.tim].sumberDaya.kayu += biaya.kayu
+    }
+    b.riset = null
+  }
 
   // Tapi revive yang sedang berjalan DIKEMBALIKAN PENUH (PRD §11.3).
   if (b.revive) {
@@ -153,8 +227,16 @@ export function lukaiBangunan(dunia: Dunia, b: Bangunan, dmg: number, penyerang:
   })
 }
 
-export function sembuhkan(target: Unit, jumlah: number): void {
+export function sembuhkan(target: Unit, jumlah: number, dunia?: Dunia): void {
+  const sebelum = target.hp
   target.hp = Math.min(target.hpMaks, target.hp + jumlah)
+  const naik = target.hp - sebelum
+  if (dunia && naik >= 0.5) {
+    dunia.kejadian.push({
+      jenis: 'unitSembuh', id: target.id, tim: target.tim, x: target.x, y: target.y,
+      jumlah: Math.max(1, Math.round(naik)),
+    })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +251,12 @@ export function tembak(
   dunia: Dunia, tim: Tim, jenis: 'panah' | 'orb',
   x: number, y: number, tx: number, ty: number,
   dmg: number, area: boolean, targetId: number | null,
+  serangan: JenisSerangan = jenis === 'panah' ? 'tusuk' : 'sihir',
 ): void {
   dunia.proyektil.push({
     id: dunia.idBerikut++, tim, jenis, x, y, tx, ty,
     kecepatan: jenis === 'panah' ? KECEPATAN_PANAH : KECEPATAN_ORB,
-    dmg, area, targetId,
+    dmg, area, targetId, serangan,
   })
 }
 
@@ -210,11 +293,11 @@ export function langkahProyektil(dunia: Dunia): void {
       for (let j = dunia.unit.length - 1; j >= 0; j--) {
         const u = dunia.unit[j]
         if (!u || !bermusuhan(u.tim, p.tim)) continue
-        if (jarak(p.x, p.y, u.x, u.y) <= RADIUS_SPLASH) lukaiUnit(dunia, u, p.dmg, null, p.tim)
+        if (jarak(p.x, p.y, u.x, u.y) <= RADIUS_SPLASH) lukaiUnit(dunia, u, p.dmg, null, p.tim, p.serangan)
       }
     } else if (p.targetId !== null) {
       const t = cariUnit(dunia, p.targetId)
-      if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null, p.tim)
+      if (t && bermusuhan(t.tim, p.tim)) lukaiUnit(dunia, t, p.dmg, null, p.tim, p.serangan)
     }
 
     // Bangunan di titik jatuh juga terkena. Tanpa ini archer dan mage sama
@@ -223,7 +306,7 @@ export function langkahProyektil(dunia: Dunia): void {
     const bangunanKena = dunia.bangunan.find(
       (b) => b.fase !== 'hancur' && bermusuhan(b.tim, p.tim) &&
         jarak(p.x, p.y, b.x, b.y) <= BANGUNAN[b.jenis].radius)
-    if (bangunanKena) lukaiBangunan(dunia, bangunanKena, p.dmg, p.tim)
+    if (bangunanKena) lukaiBangunan(dunia, bangunanKena, p.dmg, p.tim, p.serangan)
 
     dunia.proyektil.splice(i, 1)
   }
@@ -235,18 +318,24 @@ export function langkahProyektil(dunia: Dunia): void {
 
 function seranganKena(dunia: Dunia, u: Unit, target: Unit | Bangunan): void {
   const def = UNIT[u.peran]
+  if (target.x < u.x - 1) u.arah = -1
+  else if (target.x > u.x + 1) u.arah = 1
+  u.aksi = 'serang'
+  u.tikAksi = 0.48
+  u.sudutSerang = Math.atan2(target.y - u.y, target.x - u.x)
+
   if (def.area) {
     tembak(dunia, u.tim, 'orb', u.x, u.y - 30, target.x, target.y, u.dmg, true,
-      adalahUnit(target) ? target.id : null)
+      adalahUnit(target) ? target.id : null, def.serangan)
     return
   }
   if (def.jarak > 150) {
     tembak(dunia, u.tim, 'panah', u.x, u.y - 24, target.x, target.y, u.dmg, false,
-      adalahUnit(target) ? target.id : null)
+      adalahUnit(target) ? target.id : null, def.serangan)
     return
   }
   if (adalahUnit(target)) lukaiUnit(dunia, target, u.dmg, u)
-  else lukaiBangunan(dunia, target, u.dmg, u.tim)
+  else lukaiBangunan(dunia, target, u.dmg, u.tim, def.serangan)
 }
 
 /**
@@ -255,7 +344,7 @@ function seranganKena(dunia: Dunia, u: Unit, target: Unit | Bangunan): void {
  */
 function jangkauanKe(dunia: Dunia, u: Unit, target: Unit | Bangunan): number {
   const dasar = jangkauanEfektif(dunia, u, target.x, target.y)
-  return adalahUnit(target) ? dasar : dasar + BANGUNAN[target.jenis].radius
+  return adalahUnit(target) ? dasar : dasar + BANGUNAN[target.jenis].radius + 16
 }
 
 export function langkahUnitTempur(dunia: Dunia, u: Unit): void {
@@ -326,8 +415,12 @@ function langkahMonk(dunia: Dunia, u: Unit): void {
 
   if (pasien) {
     if (jarak(u.x, u.y, pasien.x, pasien.y) <= u.jarak) {
+      if (pasien.x < u.x - 1) u.arah = -1
+      else if (pasien.x > u.x + 1) u.arah = 1
       if (u.jedaTimer <= 0) {
-        sembuhkan(pasien, u.dmg)
+        u.aksi = 'serang'
+        u.tikAksi = 0.65
+        sembuhkan(pasien, u.dmg, dunia)
         u.jedaTimer = u.jeda
       }
     } else if (u.tugas !== 'tahan') {

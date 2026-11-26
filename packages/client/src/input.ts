@@ -104,17 +104,21 @@ export function seleksiKotak(dunia: Dunia, tim: Tim, k: KeadaanInput): number[] 
   return hasil
 }
 
-/** Gulir kamera dengan WASD / panah / tepi layar. */
+/**
+ * Gulir kamera dengan tombol Panah atau tepi layar.
+ * WASD sengaja TIDAK menggeser kamera supaya [A] (Attack-Move) dan [S] (Stop)
+ * tidak bentrok saat memberi perintah pasukan ala Warcraft III.
+ */
 export function gulirKamera(
   kam: Kamera, tombol: ReadonlySet<string>, k: KeadaanInput,
 ): void {
   const laju = 900 * DT_TETAP * (tombol.has('ShiftLeft') ? 2 : 1)
   let dx = 0
   let dy = 0
-  if (tombol.has('KeyA') || tombol.has('ArrowLeft')) dx -= laju
-  if (tombol.has('KeyD') || tombol.has('ArrowRight')) dx += laju
-  if (tombol.has('KeyW') || tombol.has('ArrowUp')) dy -= laju
-  if (tombol.has('KeyS') || tombol.has('ArrowDown')) dy += laju
+  if (tombol.has('ArrowLeft')) dx -= laju
+  if (tombol.has('ArrowRight')) dx += laju
+  if (tombol.has('ArrowUp')) dy -= laju
+  if (tombol.has('ArrowDown')) dy += laju
 
   // Gulir tepi hanya setelah mouse benar-benar pernah ada di atas kanvas.
   if (k.mousePernahMasuk) {

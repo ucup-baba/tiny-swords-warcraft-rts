@@ -1,5 +1,7 @@
 import { DT_TETAP, type Tim } from '@hftf/shared'
 import { BANGUNAN, SUPPLY_MAKS, type JenisBangunan } from '../definisi/bangunan.js'
+import { RISET, SEMUA_RISET, TINGKAT_MAKS, risetDi, type JenisRiset } from '../definisi/riset.js'
+import { pengali, type JenisBaju } from '../definisi/tempur.js'
 import { UNIT, type PeranUnit } from '../definisi/unit.js'
 import type { Perintah } from '../perintah.js'
 import { acakRentang, buatRng, type Rng } from '../rng.js'
@@ -110,6 +112,7 @@ export function langkahAi(dunia: Dunia, ai: KeadaanAi): Perintah[] {
   aturPembangunan(dunia, ai, set, aktif, pawnKu, castle, sisaSupply, maks, perintah)
   aturPerbaikan(dunia, ai, pawnKu, perintah)
   aturPelatihan(dunia, ai, aktif, sisaSupply, perintah)
+  aturRiset(dunia, ai, aktif, perintah)
 
   // --- Bangkitkan hero yang gugur (PRD §11.3).
   const altar = aktif.find((b) => b.jenis === 'altar')
@@ -303,19 +306,45 @@ function aturPembangunan(
   perintah.push({ jenis: 'bangun', ids: [pembangun.id], bangunan: perlu, x, y })
 }
 
-/** Melatih terus-menerus selama supply dan sumber daya mengizinkan. */
+/**
+ * Melatih unit yang MENGALAHKAN komposisi lawan (PRD §20).
+ *
+ * Memilih acak membuat segitiga counter tidak berarti apa-apa: AI akan
+ * melatih Panah melawan pasukan berbaju berat yang justru menahan tusukan.
+ */
 function aturPelatihan(
   dunia: Dunia, ai: KeadaanAi, aktif: Bangunan[], sisaSupply: number, perintah: Perintah[],
 ): void {
   const sd = dunia.tim[ai.tim].sumberDaya
   let sisa = sisaSupply
+  const lawan: Tim = ai.tim === 'red' ? 'blue' : 'red'
+
+  // Baju apa yang paling banyak dipakai lawan?
+  const hitungBaju: Record<JenisBaju, number> = { ringan: 0, berat: 0, pahlawan: 0, bangunan: 0 }
+  for (const u of dunia.unit) {
+    if (u.tim !== lawan || u.peran === 'pawn') continue
+    hitungBaju[UNIT[u.peran].baju]++
+  }
+  const adaMusuh = hitungBaju.ringan + hitungBaju.berat + hitungBaju.pahlawan > 0
+
+  /** Seberapa baik sebuah unit melawan komposisi lawan sekarang. */
+  const nilai = (peran: PeranUnit): number => {
+    const def = UNIT[peran]
+    if (!adaMusuh) return 1
+    let skor = 0
+    for (const b of ['ringan', 'berat', 'pahlawan'] as JenisBaju[]) {
+      skor += hitungBaju[b] * pengali(def.serangan, b)
+    }
+    // Sedikit keacakan supaya pasukan tetap beragam, bukan satu jenis saja.
+    return skor / (hitungBaju.ringan + hitungBaju.berat + hitungBaju.pahlawan) + acakRentang(ai.rng, 0, 0.25)
+  }
 
   for (const b of aktif) {
     if (b.antrean.length >= 2) continue
-    const bisa = BANGUNAN[b.jenis].melatih.filter((p) => p !== 'pawn')
+    const bisa = BANGUNAN[b.jenis].melatih.filter((p) => p !== 'pawn') as PeranUnit[]
     if (bisa.length === 0) continue
 
-    const peran = bisa[Math.floor(acakRentang(ai.rng, 0, bisa.length)) % bisa.length] as PeranUnit
+    const peran = [...bisa].sort((x, y) => nilai(y) - nilai(x))[0]!
     const def = UNIT[peran]
     if (sisa < def.pop) continue
     if (sd.gold < def.gold || sd.kayu < def.kayu || sd.daging < def.daging) continue
@@ -323,6 +352,46 @@ function aturPelatihan(
     perintah.push({ jenis: 'latih', bangunanId: b.id, peran })
     sisa -= def.pop
   }
+}
+
+/**
+ * Riset. Diutamakan yang memperkuat serangan yang paling banyak dipakai
+ * pasukan sendiri; Baju Zirah menyusul karena berguna untuk semua unit.
+ */
+function aturRiset(
+  dunia: Dunia, ai: KeadaanAi, aktif: Bangunan[], perintah: Perintah[],
+): void {
+  const k = dunia.tim[ai.tim]
+  // Simpan gold untuk pasukan; riset dibiayai dari kelebihan.
+  if (k.sumberDaya.gold < 260 || k.sumberDaya.kayu < 120) return
+
+  const pakai: Record<string, number> = {}
+  for (const u of dunia.unit) {
+    if (u.tim !== ai.tim || u.peran === 'pawn') continue
+    const s = UNIT[u.peran].serangan
+    pakai[s] = (pakai[s] ?? 0) + 1
+  }
+
+  const skor = (r: JenisRiset): number => {
+    const def = RISET[r]
+    if (def.memperkuat === null) return 1.1 // Baju Zirah: berguna untuk semua
+    return pakai[def.memperkuat] ?? 0
+  }
+
+  const calon = SEMUA_RISET
+    .filter((r) => k.riset[r] < TINGKAT_MAKS)
+    .filter((r) => aktif.some((b) => risetDi(b.jenis).includes(r) && !b.riset))
+    // Tingkat rendah dulu: naik tingkat 1 di dua jalur lebih baik daripada
+    // menumpuk satu jalur ke tingkat 3.
+    .sort((a, b) => (k.riset[a] - k.riset[b]) || (skor(b) - skor(a)))
+
+  const pilih = calon[0]
+  if (!pilih) return
+  const biaya = RISET[pilih].tingkat[k.riset[pilih]]
+  if (!biaya || k.sumberDaya.gold < biaya.gold + 150 || k.sumberDaya.kayu < biaya.kayu) return
+
+  const gedung = aktif.find((b) => risetDi(b.jenis).includes(pilih) && !b.riset)
+  if (gedung) perintah.push({ jenis: 'riset', bangunanId: gedung.id, riset: pilih })
 }
 
 /**

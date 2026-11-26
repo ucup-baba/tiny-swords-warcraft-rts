@@ -1,6 +1,6 @@
 import {
-  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BARIS, EFEK, GOBLIN as ASET_GOBLIN,
-  HERO_BLUE, HERO_RED, SUMBER, UNIT_BLUE, UNIT_RED, frame, type Aset,
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BARIS, BARIS_PAWN, EFEK, GOBLIN as ASET_GOBLIN,
+  HERO_BLUE, HERO_RED, SUMBER, UNIT_BLUE, UNIT_RED, frame, jumlahFrameBaris, type Aset,
 } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
 import {
@@ -36,7 +36,7 @@ const PIJAK = 0.68
 /** Menggambar satu frame sprite dengan kaki karakter tepat di (x, y). */
 function sprite(
   ctx: CanvasRenderingContext2D, a: Aset, indeks: number,
-  x: number, y: number, skala = 1, balik = false, pijak = PIJAK,
+  x: number, y: number, skala = 1, balik = false, pijak = PIJAK, rotasi = 0,
 ): void {
   const im = gambarDari(a)
   if (!im) return
@@ -45,50 +45,87 @@ function sprite(
   const h = f.sh * skala
   ctx.save()
   ctx.translate(x, y)
+  if (rotasi !== 0) ctx.rotate(rotasi)
   if (balik) ctx.scale(-1, 1)
   ctx.drawImage(im, f.sx, f.sy, f.sw, f.sh, -w / 2, -h * pijak, w, h)
   ctx.restore()
 }
 
-function asetUnit(u: Unit, tim: Tim): { aset: Aset; indeks: number; skala: number } {
+/** Indeks frame pada baris tertentu dengan jumlah frame aktif akurat (anti-kedip). */
+function frameDiBaris(a: Aset, baris: number, detik: number, fase = 0): number {
+  const n = Math.max(1, jumlahFrameBaris(a, baris))
+  const kol = Math.floor(detik * Math.max(1, a.fps) + fase) % n
+  return baris * a.kolom + kol
+}
+
+/** Pilih baris tembak Archer (r2 atas .. r6 bawah) dari sudut target. */
+function barisArcherSerang(sudut: number): number {
+  const absY = Math.sin(sudut)
+  if (absY < -0.75) return 2
+  if (absY < -0.30) return 3
+  if (absY <= 0.30) return 4
+  if (absY <= 0.75) return 5
+  return 6
+}
+
+function asetUnit(u: Unit, tim: Tim, t: number): { aset: Aset; indeks: number; skala: number } {
   const U = asetTim(tim, UNIT_BLUE, UNIT_RED)
   const H = asetTim(tim, HERO_BLUE, HERO_RED)
-  const bergerak = u.tugas === 'pindah' || u.tugas === 'serangPindah' || u.jalur !== null
-  const t = performance.now() / 1000
+  const aksi = u.aksi
+  const fase = u.id * 0.37
 
   // Goblin netral punya sheet sendiri; peran unitnya hanya pembawa stat.
   if (u.campId !== null) {
-    const a = ASET_GOBLIN[peranGoblin(u)]
-    const kol = Math.floor(t * a.fps) % a.kolom
-    return { aset: a, indeks: kol, skala: 0.6 }
+    const peranG = peranGoblin(u)
+    const a = ASET_GOBLIN[peranG]
+    if (peranG === 'barrel') {
+      const baris = aksi === 'serang' ? 4 : aksi === 'lari' ? 1 : 0
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.72 }
+    }
+    const baris = aksi === 'serang' ? 2 : aksi === 'lari' ? 1 : 0
+    return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.62 }
   }
 
   if (u.hero) {
     const set = H[u.peran as keyof typeof H]
-    const a = bergerak ? set.lari : set.idle
-    return { aset: a, indeks: Math.floor(t * a.fps), skala: 0.72 }
+    const a = aksi === 'serang' ? set.serang : aksi === 'lari' ? set.lari : set.idle
+    return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.74 }
   }
 
   switch (u.peran) {
-    case 'pawn':
-    case 'warrior':
+    case 'pawn': {
+      const a = U.pawn
+      let baris: number = BARIS_PAWN.diam
+      if (aksi === 'tebang') baris = BARIS_PAWN.kapak
+      else if (aksi === 'tambang' || aksi === 'bangun' || aksi === 'serang') baris = BARIS_PAWN.palu
+      else if (aksi === 'bawaLari') baris = BARIS_PAWN.bawaLari
+      else if (aksi === 'bawaDiam') baris = BARIS_PAWN.bawaDiam
+      else if (aksi === 'lari') baris = BARIS_PAWN.lari
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
+    }
+    case 'warrior': {
+      const a = U.warrior
+      const baris = aksi === 'serang' ? BARIS.serang : aksi === 'lari' ? BARIS.lari : BARIS.idle
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
+    }
     case 'archer': {
-      const a = U[u.peran]
-      const baris = bergerak ? BARIS.lari : BARIS.idle
-      const kol = Math.floor(t * a.fps) % a.kolom
-      return { aset: a, indeks: baris * a.kolom + kol, skala: 0.66 }
+      const a = U.archer
+      const baris = aksi === 'serang'
+        ? barisArcherSerang(u.sudutSerang)
+        : aksi === 'lari' ? BARIS.lari : BARIS.idle
+      return { aset: a, indeks: frameDiBaris(a, baris, t, fase), skala: 0.68 }
     }
     case 'lancer': {
-      const a = bergerak ? U.lancerLari : U.lancerIdle
-      return { aset: a, indeks: Math.floor(t * a.fps), skala: 0.42 }
+      const a = aksi === 'serang' ? U.lancerSerang : aksi === 'lari' ? U.lancerLari : U.lancerIdle
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.43 }
     }
     case 'monk': {
-      const a = bergerak ? U.monkLari : U.monkIdle
-      return { aset: a, indeks: Math.floor(t * a.fps), skala: 0.66 }
+      const a = aksi === 'serang' ? U.monkSembuh : aksi === 'lari' ? U.monkLari : U.monkIdle
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68 }
     }
     default: {
-      const a = bergerak ? U.mageLari : U.mageIdle
-      return { aset: a, indeks: Math.floor(t * a.fps), skala: 0.66 }
+      const a = aksi === 'serang' ? U.mageSerang : aksi === 'lari' ? U.mageLari : U.mageIdle
+      return { aset: a, indeks: Math.floor(t * a.fps + fase) % a.kolom, skala: 0.68 }
     }
   }
 }
@@ -96,16 +133,66 @@ function asetUnit(u: Unit, tim: Tim): { aset: Aset; indeks: number; skala: numbe
 function asetBangunan(b: Bangunan, tim: Tim): Aset | null {
   const B = asetTim(tim, BANGUNAN_BLUE, BANGUNAN_RED)
   if (b.fase === 'konstruksi') {
-    if (b.jenis === 'castle') return BANGUNAN_FASE.castleKonstruksi
-    if (b.jenis === 'tower') return BANGUNAN_FASE.towerKonstruksi
-    return BANGUNAN_FASE.houseKonstruksi
+    const map: Record<Bangunan['jenis'], Aset> = {
+      castle: BANGUNAN_FASE.castleKonstruksi,
+      house: BANGUNAN_FASE.houseKonstruksi,
+      tower: BANGUNAN_FASE.towerKonstruksi,
+      barracks: BANGUNAN_FASE.barracksKonstruksi,
+      archery: BANGUNAN_FASE.archeryKonstruksi,
+      monastery: BANGUNAN_FASE.monasteryKonstruksi,
+      altar: BANGUNAN_FASE.altarKonstruksi,
+    }
+    return map[b.jenis]
   }
   if (b.fase === 'hancur') {
-    if (b.jenis === 'castle') return BANGUNAN_FASE.castleHancur
-    if (b.jenis === 'tower') return BANGUNAN_FASE.towerHancur
-    return BANGUNAN_FASE.houseHancur
+    const map: Record<Bangunan['jenis'], Aset> = {
+      castle: BANGUNAN_FASE.castleHancur,
+      house: BANGUNAN_FASE.houseHancur,
+      tower: BANGUNAN_FASE.towerHancur,
+      barracks: BANGUNAN_FASE.barracksHancur,
+      archery: BANGUNAN_FASE.archeryHancur,
+      monastery: BANGUNAN_FASE.monasteryHancur,
+      altar: BANGUNAN_FASE.altarHancur,
+    }
+    return map[b.jenis]
   }
   return B[b.jenis] ?? null
+}
+
+/** Menggambar bendera Rally Point pixel-art yang berkibar di titik kumpul bangunan. */
+function gambarBenderaRally(ctx: CanvasRenderingContext2D, x: number, y: number, tim: Tim, t: number): void {
+  const kibar = Math.sin(t * 7) * 3
+  const warnaKain = tim === 'blue' ? '#4a98f0' : '#e05a4a'
+  const warnaTepi = tim === 'blue' ? '#1c4478' : '#7a2018'
+
+  // Cincin tanah
+  ctx.strokeStyle = '#ffd86b'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.ellipse(x, y + 2, 14, 6, 0, 0, Math.PI * 2)
+  ctx.stroke()
+
+  // Tiang kayu + ujung emas
+  ctx.fillStyle = '#24180f'
+  ctx.fillRect(x - 2, y - 38, 5, 40)
+  ctx.fillStyle = '#8b5e34'
+  ctx.fillRect(x - 1, y - 37, 3, 38)
+  ctx.fillStyle = '#ffd86b'
+  ctx.fillRect(x - 2, y - 41, 5, 4)
+
+  // Kain bendera berkibar
+  ctx.beginPath()
+  ctx.moveTo(x + 2, y - 36)
+  ctx.lineTo(x + 24, y - 32 + kibar)
+  ctx.lineTo(x + 20, y - 24 + kibar * 0.7)
+  ctx.lineTo(x + 24, y - 17 + kibar)
+  ctx.lineTo(x + 2, y - 19)
+  ctx.closePath()
+  ctx.fillStyle = warnaKain
+  ctx.fill()
+  ctx.lineWidth = 1.5
+  ctx.strokeStyle = warnaTepi
+  ctx.stroke()
 }
 
 /** Bayangan lonjong di bawah entitas supaya tidak tampak melayang. */
@@ -118,10 +205,11 @@ function bayangan(ctx: CanvasRenderingContext2D, x: number, y: number, rx: numbe
 
 function barHp(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, porsi: number, tim: Tim): void {
   const h = 6
+  const isi = Math.max(0, Math.min(1, porsi))
   ctx.fillStyle = 'rgba(22,18,14,0.85)'
   ctx.fillRect(x - w / 2 - 1, y - 1, w + 2, h + 2)
-  ctx.fillStyle = porsi > 0.5 ? '#6fd36f' : porsi > 0.25 ? '#e8c75a' : '#e05a4a'
-  ctx.fillRect(x - w / 2, y, w * porsi, h)
+  ctx.fillStyle = isi > 0.5 ? '#6fd36f' : isi > 0.25 ? '#e8c75a' : '#e05a4a'
+  ctx.fillRect(x - w / 2, y, w * isi, h)
   ctx.strokeStyle = tim === 'blue' ? '#4a86c8' : '#c85a4a'
   ctx.lineWidth = 1
   ctx.strokeRect(x - w / 2 - 1.5, y - 1.5, w + 3, h + 3)
@@ -166,17 +254,33 @@ export function gambarEntitas(
   }
   for (const o of dunia.domba) {
     if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dombaDiam, Math.floor(t * 8 + o.id), o.x, o.y, 0.55, false, 0.74) })
+    antrean.push({
+      y: o.y,
+      gambar: () => {
+        bayangan(ctx, o.x, o.y, 12)
+        const a = o.bergerak ? SUMBER.dombaLompat : SUMBER.dombaDiam
+        sprite(ctx, a, Math.floor(t * a.fps + o.id) % a.kolom, o.x, o.y, 0.56, o.arah < 0, 0.74)
+      },
+    })
   }
   for (const o of dunia.daging) {
     if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.5, false, 0.74) })
+    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.52, false, 0.74) })
   }
 
   // Bangunan
+  let rallyAktif: { b: Bangunan } | null = null
   for (const b of dunia.bangunan) {
     if (b.tim !== opsi.timSaya && !diingat(b.x, b.y)) continue
     if (b.tim === opsi.timSaya && !diLayar(b.x, b.y)) continue
+    if (
+      opsi.terpilihBangunan === b.id &&
+      b.tim === opsi.timSaya &&
+      b.fase === 'aktif' &&
+      (BANGUNAN[b.jenis].melatih.length > 0 || b.jenis === 'altar')
+    ) {
+      rallyAktif = { b }
+    }
     antrean.push({
       y: b.y,
       gambar: () => {
@@ -230,9 +334,17 @@ export function gambarEntitas(
         }
 
         bayangan(ctx, u.x, u.y, u.hero ? 20 : 15)
-        const { aset, indeks, skala } = asetUnit(u, u.tim)
-        const balik = u.jalur ? (u.jalur.titik[u.jalur.ke]?.x ?? u.x) < u.x : false
-        sprite(ctx, aset, indeks, u.x, u.y, skala, balik)
+        const { aset, indeks, skala } = asetUnit(u, u.tim, t)
+        sprite(ctx, aset, indeks, u.x, u.y, skala, u.arah < 0)
+
+        // Pawn membawa resource di atas tangan (emas/kayu/daging)
+        if (u.peran === 'pawn' && u.bawaanJenis) {
+          const asetBawa = u.bawaanJenis === 'gold'
+            ? SUMBER.goldDiam
+            : u.bawaanJenis === 'kayu' ? SUMBER.kayuDiam : SUMBER.dagingDiam
+          const ayun = u.aksi === 'bawaLari' ? Math.sin(t * 14) * 2 : 0
+          sprite(ctx, asetBawa, 0, u.x, u.y - 36 + ayun, 0.42, false, 0.6)
+        }
 
         if (u.hp < u.hpMaks || terpilih) barHp(ctx, u.x, u.y - 62, 40, u.hp / u.hpMaks, u.tim)
         if (u.hero && u.campId === null) {
@@ -248,11 +360,28 @@ export function gambarEntitas(
   antrean.sort((a, b) => a.y - b.y)
   for (const item of antrean) item.gambar()
 
+  // Garis & Bendera Rally Point bangunan yang sedang dipilih
+  if (rallyAktif) {
+    const { b } = rallyAktif
+    ctx.save()
+    ctx.setLineDash([7, 5])
+    ctx.strokeStyle = 'rgba(255, 216, 107, 0.85)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(b.x, b.y)
+    ctx.lineTo(b.rallyX, b.rallyY)
+    ctx.stroke()
+    ctx.setLineDash([])
+    gambarBenderaRally(ctx, b.rallyX, b.rallyY, b.tim, t)
+    ctx.restore()
+  }
+
   // Proyektil di atas semuanya
   for (const pr of dunia.proyektil) {
     if (opsi.fog && !terlihatDi(dunia, opsi.timSaya, pr.x, pr.y)) continue
     const U = asetTim(pr.tim, UNIT_BLUE, UNIT_RED)
     const a = pr.jenis === 'panah' ? U.panah : U.mageOrb
-    sprite(ctx, a, pr.jenis === 'panah' ? 0 : Math.floor(t * 12), pr.x, pr.y, 0.7, false, 0.5)
+    const rot = pr.jenis === 'panah' ? Math.atan2(pr.ty - pr.y, pr.tx - pr.x) : 0
+    sprite(ctx, a, pr.jenis === 'panah' ? 0 : Math.floor(t * 12), pr.x, pr.y, 0.72, false, 0.5, rot)
   }
 }
