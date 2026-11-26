@@ -128,4 +128,28 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     expect(btnBuat.disabled).toBe(true)
     expect(btnSolo.disabled).toBe(false)
   })
+
+  it('kartu terkunci tetap bisa diklik agar notifikasi kekurangan resource muncul & inspeksi resource tampil di panel bawah', () => {
+    const { hud, callbacks } = buatHud()
+    const d = buatDunia({ seed: 904 })
+    d.tim.blue.sumberDaya = { gold: 0, kayu: 0, daging: 0 }
+
+    // Kartu Bangun kekurangan resource -> pakai kelas .terkunci (bukan disabled) sehingga klik tetap masuk!
+    hud.perbaruiKisi(d, 'blue', null)
+    const kartuHouse = hud.akar.querySelector<HTMLButtonElement>('.kartu.terkunci')
+    expect(kartuHouse).not.toBeNull()
+    expect(kartuHouse!.disabled).toBe(false)
+    kartuHouse!.click()
+    expect(callbacks.mulaiBangun).toHaveBeenCalled()
+
+    // Toast peringatan memakai kelas .peringatan
+    hud.tampilkanToast('Kurang 30 Gold!', true)
+    expect(hud.akar.querySelector('#toast.peringatan.tampil')).not.toBeNull()
+
+    // Memilih resource pohon menampilkan judul & sisa kayu di panel seleksi bawah
+    const pohon = d.pohon[0]!
+    hud.perbaruiSeleksi(d, 'blue', [], null, false, { jenis: 'pohon', id: pohon.id })
+    expect(hud.akar.querySelector('#seleksi-judul')?.textContent).toBe('Pohon Pinus')
+    expect(hud.akar.querySelector('.hp-teks')?.textContent).toContain('Kayu')
+  })
 })

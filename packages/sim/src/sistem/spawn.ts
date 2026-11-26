@@ -63,10 +63,17 @@ export function buatBangunan(
     rallyX: x + (tim === 'blue' ? 95 : -95),
     rallyY: y + 60,
     revive: null,
-    jedaDomba: 0,
+    jedaDomba: jenis === 'castle' ? 25 : jenis === 'house' ? 30 : 0,
     riset: null,
   }
   dunia.bangunan.push(b)
+  // Bersihkan tunggul yang tertutup tapak bangunan baru agar pohon tidak tumbuh di dalam bangunan.
+  for (let i = dunia.tunggul.length - 1; i >= 0; i--) {
+    const tg = dunia.tunggul[i]!
+    if (Math.abs(tg.x - x) <= def.w * 0.5 && Math.abs(tg.y - y) <= def.h * 0.4) {
+      dunia.tunggul.splice(i, 1)
+    }
+  }
   if (fase === 'aktif') dunia.tim[tim].statistik.bangunanDibangun++
   segarkanHalangan(dunia)
   return b

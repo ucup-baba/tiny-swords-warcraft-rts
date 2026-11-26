@@ -31,20 +31,19 @@ export function langkahBangunan(dunia: Dunia, b: Bangunan): void {
   langkahDomba(dunia, b)
 }
 
-/** Jeda antar kemunculan domba dari satu House, dalam detik. */
-const JEDA_DOMBA = 50
-/** Batas domba hidup di sekitar satu House. */
-const DOMBA_PER_HOUSE = 2
-const RADIUS_PADANG = 260
+/** Setelan respawn domba ternak: Castle menjaga 4 domba awal, tiap House menambah +2. */
+const SETELAN_DOMBA = {
+  castle: { jeda: 25, maks: 4, radius: 460 },
+  house: { jeda: 30, maks: 2, radius: 260 },
+} as const
 
 /**
- * House memunculkan domba ternak (PRD §3). Ini satu-satunya sumber daging yang
- * terbarukan: domba awal habis dipanen, dan daging dari medan perang hanya ada
- * kalau sedang berperang. Tanpa ini ekonomi daging mati dan tidak ada pasukan
- * yang bisa dilatih sama sekali.
+ * Castle dan House memunculkan domba ternak secara berkala sehingga pasokan
+ * daging di sekitar markas terus beregenerasi (PRD §3).
  */
 function langkahDomba(dunia: Dunia, b: Bangunan): void {
-  if (b.jenis !== 'house') return
+  if (b.jenis !== 'castle' && b.jenis !== 'house') return
+  const set = SETELAN_DOMBA[b.jenis]
 
   if (b.jedaDomba > 0) {
     b.jedaDomba -= DT_TETAP
@@ -55,18 +54,18 @@ function langkahDomba(dunia: Dunia, b: Bangunan): void {
   for (const d of dunia.domba) {
     const dx = d.x - b.x
     const dy = d.y - b.y
-    if (dx * dx + dy * dy <= RADIUS_PADANG * RADIUS_PADANG) dekat++
+    if (dx * dx + dy * dy <= set.radius * set.radius) dekat++
   }
-  if (dekat >= DOMBA_PER_HOUSE) {
-    b.jedaDomba = JEDA_DOMBA / 2
+  if (dekat >= set.maks) {
+    b.jedaDomba = set.jeda / 2
     return
   }
 
   const sudut = acak(dunia.rng) * Math.PI * 2
-  const r = 95 + acak(dunia.rng) * 115
+  const r = 105 + acak(dunia.rng) * 125
   const pos = posisiBebasDekat(dunia, b.x + Math.cos(sudut) * r, b.y + Math.sin(sudut) * r, b.x, b.y)
   dunia.domba.push(buatDomba(dunia.idBerikut++, pos.x, pos.y, 45, 2 + acak(dunia.rng) * 3))
-  b.jedaDomba = JEDA_DOMBA
+  b.jedaDomba = set.jeda
 }
 
 function langkahAntrean(dunia: Dunia, b: Bangunan): void {

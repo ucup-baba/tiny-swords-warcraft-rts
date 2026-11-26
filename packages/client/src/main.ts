@@ -6,14 +6,14 @@ import {
 import { KlienLan, TransportLokal, type RingkasRoom } from '@hftf/net'
 import { DT_TETAP, DUNIA_H, DUNIA_W, type Tim } from '@hftf/shared'
 import {
-  BANGUNAN, UNIT, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
-  hitungFog, terapkanPerintah, terapkanSnapshot,
+  BANGUNAN, REVIVE, RISET, TINGKAT_MAKS, UNIT, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
+  hitungFog, supplyMaks, supplyTerpakai, terapkanPerintah, terapkanSnapshot,
   type Bangunan, type Dunia, type JenisRiset, type KeadaanAi, type PeranUnit, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
 import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type ModeSentuh, type PerintahKartu } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
-  perintahKlikKanan, seleksiKotak, unitDiTitik, bolehTaruh,
+  perintahKlikKanan, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
 } from './input.js'
 import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
@@ -62,22 +62,47 @@ class Permainan {
     this.hud = new Hud(BASIS, {
       pilihTab: () => this.perbaruiHud(),
       mulaiBangun: (jenis) => {
+        if (!this.dunia) return
+        const def = BANGUNAN[jenis as keyof typeof BANGUNAN]
+        const kurang = this.teksKurang(def.gold, def.kayu, 0)
+        if (kurang) {
+          this.hud.tampilkanToast(`Kurang ${kurang} untuk membangun ${def.nama}!`, true)
+          return
+        }
         this.input.hantuBangun = jenis
-        this.hud.tampilkanToast(`Pilih lokasi untuk ${BANGUNAN[jenis as keyof typeof BANGUNAN].nama}`)
+        this.hud.tampilkanToast(`Pilih lokasi untuk ${def.nama}`)
       },
       latih: (peran) => {
         if (!this.dunia) return
         const def = UNIT[peran as PeranUnit]
-        let b = this.bangunanTerpilih()
-        if (!b || b.fase !== 'aktif' || b.jenis !== def.dariBangunan) {
-          // Otomatis pilih bangunan produksi aktif yang cocok dengan antrean terpendek.
-          b = this.dunia.bangunan
-            .filter((x) => x.tim === this.timSaya && x.fase === 'aktif' && x.jenis === def.dariBangunan)
-            .sort((a, c) => a.antrean.length - c.antrean.length)[0] ?? null
+        const semuaCocok = this.dunia.bangunan
+          .filter((x) => x.tim === this.timSaya && x.fase === 'aktif' && x.jenis === def.dariBangunan)
+        if (semuaCocok.length === 0) {
+          this.hud.tampilkanToast(`Bangun ${BANGUNAN[def.dariBangunan!].nama} dulu untuk melatih ${def.nama}!`, true)
+          return
         }
-        if (!b) return this.hud.tampilkanToast(`Bangun ${BANGUNAN[def.dariBangunan!].nama} dulu!`)
+        let b = this.bangunanTerpilih()
+        if (!b || b.fase !== 'aktif' || b.jenis !== def.dariBangunan || b.antrean.length >= 5) {
+          b = semuaCocok.slice().sort((a, c) => a.antrean.length - c.antrean.length)[0] ?? null
+        }
+        if (!b || b.antrean.length >= 5) {
+          this.hud.tampilkanToast(`Antrean ${BANGUNAN[def.dariBangunan!].nama} penuh (maks 5)!`, true)
+          return
+        }
+        const popPakai = this.populasiDenganAntrean()
+        const popMaks = supplyMaks(this.dunia, this.timSaya)
+        if (popPakai + def.pop > popMaks) {
+          this.hud.tampilkanToast(`Populasi penuh (${popPakai}/${popMaks}) — bangun House dulu!`, true)
+          return
+        }
+        const kurang = this.teksKurang(def.gold, def.kayu, def.daging)
+        if (kurang) {
+          this.hud.tampilkanToast(`Kurang ${kurang} untuk melatih ${def.nama}!`, true)
+          return
+        }
         this.kirim({ jenis: 'latih', bangunanId: b.id, peran: peran as PeranUnit })
         this.input.unitTerpilih.clear()
+        this.input.sumberTerpilih = null
         this.input.bangunanTerpilih = b.id
         this.perbaruiHud()
       },
@@ -86,13 +111,53 @@ class Permainan {
         this.perbaruiHud()
       },
       riset: (bangunanId, jenis: JenisRiset) => {
+        if (!this.dunia) return
+        const def = RISET[jenis]
+        const k = this.dunia.tim[this.timSaya]
+        const lv = k.riset[jenis]
+        if (lv >= TINGKAT_MAKS) {
+          this.hud.tampilkanToast(`Riset ${def.nama} sudah tingkat maksimum!`, true)
+          return
+        }
+        const b = this.dunia.bangunan.find((x) => x.id === bangunanId)
+        if (!b || b.fase !== 'aktif') return
+        if (b.riset) {
+          this.hud.tampilkanToast(`Sedang meneliti ${RISET[b.riset.jenis].nama} di bangunan ini!`, true)
+          return
+        }
+        if (this.dunia.bangunan.some((x) => x.tim === this.timSaya && x.riset?.jenis === jenis)) {
+          this.hud.tampilkanToast(`Riset ${def.nama} sedang dikerjakan di bangunan lain!`, true)
+          return
+        }
+        const biaya = def.tingkat[lv]!
+        const kurang = this.teksKurang(biaya.gold, biaya.kayu, 0)
+        if (kurang) {
+          this.hud.tampilkanToast(`Kurang ${kurang} untuk riset ${def.nama}!`, true)
+          return
+        }
         this.kirim({ jenis: 'riset', bangunanId, riset: jenis })
         this.perbaruiHud()
       },
       bangkitkanHero: () => {
-        const altar = this.dunia?.bangunan.find(
+        if (!this.dunia) return
+        const altar = this.dunia.bangunan.find(
           (b) => b.tim === this.timSaya && b.jenis === 'altar' && b.fase === 'aktif')
-        if (!altar) return this.hud.tampilkanToast('Bangun Altar of Heroes dulu!')
+        if (!altar) {
+          this.hud.tampilkanToast('Bangun Altar of Heroes dulu untuk membangkitkan Hero!', true)
+          return
+        }
+        const gugur = this.dunia.tim[this.timSaya].heroGugur
+        if (!gugur) return
+        if (altar.revive) {
+          this.hud.tampilkanToast('Hero sedang dibangkitkan di Altar!', true)
+          return
+        }
+        const biayaGold = REVIVE.goldPerLevel * gugur.level
+        const kurang = this.teksKurang(biayaGold, 0, REVIVE.daging)
+        if (kurang) {
+          this.hud.tampilkanToast(`Kurang ${kurang} untuk membangkitkan Hero!`, true)
+          return
+        }
         this.kirim({ jenis: 'bangkitkanHero', bangunanId: altar.id })
       },
       pilihFilterUnit: (filter) => this.pilihFilter(filter),
@@ -100,6 +165,7 @@ class Permainan {
       fokusUnit: (unitId) => {
         this.input.unitTerpilih = new Set([unitId])
         this.input.bangunanTerpilih = null
+        this.input.sumberTerpilih = null
         this.perbaruiHud()
       },
       bukaMenu: () => this.bukaMenuJeda(),
@@ -210,6 +276,11 @@ class Permainan {
         case 'lancer': return potongSprite(UNIT_BLUE.lancerIdle, 0, 64)
         case 'monk': return potongSprite(UNIT_BLUE.monkIdle, 0, 64)
         case 'mage': return potongSprite(UNIT_BLUE.mageIdle, 0, 64)
+        case 'pohon': return potongSprite(SUMBER.pohon, 0, 64)
+        case 'tunggul': return potongSprite(SUMBER.pohon, 8, 64)
+        case 'tambang': return potongSprite(SUMBER.tambangAktif, 0, 64)
+        case 'domba': return potongSprite(SUMBER.dombaDiam, 0, 64)
+        case 'daging': return potongSprite(SUMBER.dagingDiam, 0, 64)
         default: return null
       }
     })
@@ -426,6 +497,28 @@ class Permainan {
     return this.dunia.unit.filter((u) => this.input.unitTerpilih.has(u.id))
   }
 
+  /** Menghitung selisih resource yang kurang agar notif jelas (mis. "35 Gold & 10 Daging"). */
+  private teksKurang(gold: number, kayu: number, daging: number): string | null {
+    if (!this.dunia) return null
+    const s = this.dunia.tim[this.timSaya].sumberDaya
+    const bagian: string[] = []
+    if (s.gold < gold) bagian.push(`${Math.ceil(gold - s.gold)} Gold`)
+    if (s.kayu < kayu) bagian.push(`${Math.ceil(kayu - s.kayu)} Kayu`)
+    if (s.daging < daging) bagian.push(`${Math.ceil(daging - s.daging)} Daging`)
+    return bagian.length > 0 ? bagian.join(' & ') : null
+  }
+
+  /** Total populasi aktif + unit yang sedang antre dilatih. */
+  private populasiDenganAntrean(): number {
+    if (!this.dunia) return 0
+    let total = supplyTerpakai(this.dunia, this.timSaya)
+    for (const b of this.dunia.bangunan) {
+      if (b.tim !== this.timSaya || b.fase !== 'aktif') continue
+      for (const a of b.antrean) total += UNIT[a.peran].pop
+    }
+    return total
+  }
+
   private pilihFilter(filter: FilterUnit): void {
     if (!this.dunia) return
     const cocok = this.dunia.unit.filter((u) => {
@@ -436,6 +529,7 @@ class Permainan {
     })
     this.input.unitTerpilih = new Set(cocok.map((u) => u.id))
     this.input.bangunanTerpilih = null
+    this.input.sumberTerpilih = null
     this.perbaruiHud()
   }
 
@@ -471,6 +565,13 @@ class Permainan {
       const b = bangunanDiTitik(this.dunia, wx, wy)
       const lawan = (u && u.tim !== this.timSaya) || (b && b.tim !== this.timSaya)
       if (lawan) nama = 'kursor02'
+      else if (
+        this.input.sumberHover &&
+        this.input.sumberHover.jenis !== 'tunggul' &&
+        this.unitTerpilih().some((x) => x.peran === 'pawn')
+      ) {
+        nama = 'kursor03'
+      }
     }
     const baru = this.kursorPotong.get(nama) ?? urlAset(KURSOR[nama]!, BASIS)
     if (this.kursor.getAttribute('src') !== baru) this.kursor.src = baru
@@ -532,6 +633,9 @@ class Permainan {
       this.input.mouse.sy = sy
       this.input.mousePernahMasuk = true
       perbaruiMouseDunia(this.input, this.kam)
+      this.input.sumberHover = this.dunia && this.fase === 'main'
+        ? sumberDiTitik(this.dunia, this.input.mouse.wx, this.input.mouse.wy)
+        : null
       this.kursor.style.left = `${sx - 3}px`
       this.kursor.style.top = `${sy - 3}px`
       this.perbaruiKursor()
@@ -622,6 +726,7 @@ class Permainan {
         const ids = seleksiKotak(this.dunia, this.timSaya, this.input)
         this.input.unitTerpilih = new Set(ids)
         this.input.bangunanTerpilih = null
+        this.input.sumberTerpilih = null
         this.perbaruiHud()
         return
       }
@@ -637,13 +742,24 @@ class Permainan {
           ? new Set(this.dunia.unit.filter((x) => x.tim === this.timSaya && x.peran === u.peran).map((x) => x.id))
           : new Set([u.id])
         this.input.bangunanTerpilih = null
+        this.input.sumberTerpilih = null
         this.perbaruiHud()
         return
       }
 
       const b = bangunanDiTitik(this.dunia, wx, wy)
+      if (b && b.tim === this.timSaya) {
+        this.input.unitTerpilih.clear()
+        this.input.bangunanTerpilih = b.id
+        this.input.sumberTerpilih = null
+        this.perbaruiHud()
+        return
+      }
+
+      const s = sumberDiTitik(this.dunia, wx, wy)
       this.input.unitTerpilih.clear()
-      this.input.bangunanTerpilih = b && b.tim === this.timSaya ? b.id : null
+      this.input.bangunanTerpilih = null
+      this.input.sumberTerpilih = s
       this.perbaruiHud()
     })
 
@@ -812,6 +928,8 @@ class Permainan {
     gambarEntitas(ctx, this.dunia, this.kam, {
       terpilihUnit: this.input.unitTerpilih,
       terpilihBangunan: this.input.bangunanTerpilih,
+      terpilihSumber: this.input.sumberTerpilih,
+      hoverSumber: this.input.sumberHover,
       timSaya: this.timSaya,
       fog: true,
     })
@@ -861,7 +979,9 @@ class Permainan {
       this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)')
     this.hud.perbaruiSumberDaya(this.dunia, this.timSaya)
     this.hud.perbaruiTabUnit(this.dunia, this.timSaya, unit)
-    this.hud.perbaruiSeleksi(this.dunia, this.timSaya, unit, bg, this.input.modeSerang)
+    this.hud.perbaruiSeleksi(
+      this.dunia, this.timSaya, unit, bg, this.input.modeSerang, this.input.sumberTerpilih,
+    )
     this.hud.perbaruiKisi(this.dunia, this.timSaya, bg)
   }
 

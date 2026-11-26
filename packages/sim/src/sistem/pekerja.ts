@@ -13,6 +13,14 @@ const JANGKAUAN_TAMBANG_MINE = 112
 const JANGKAUAN_TAMBANG_STONE = 86
 const JANGKAUAN_ANTAR = BANGUNAN.castle.radius + 64
 
+/** Radius luas pencarian otomatis saat resource yang sedang dipanen habis. */
+export const RADIUS_AUTO_KAYU = 950
+export const RADIUS_AUTO_GOLD = 1150
+export const RADIUS_AUTO_DAGING = 950
+/** Detik sebelum tunggul tumbuh kembali menjadi pohon penuh. */
+export const DETIK_TUMBUH_POHON = 75
+export const KAYU_POHON_BARU = 120
+
 /** Kayu yang dihabiskan untuk memperbaiki 1 HP bangunan (PRD §3 poin 3). */
 const KAYU_PER_HP = 0.06
 const HP_PERBAIKI_PER_DETIK = 34
@@ -50,6 +58,67 @@ function mulaiPulang(dunia: Dunia, u: Unit): void {
   u.ty = castle.y
 }
 
+/**
+ * Mencari resource sejenis terdekat dalam radius luas saat target sebelumnya habis,
+ * supaya Pawn otomatis lanjut bekerja tanpa nyasar menyeberang ke markas musuh.
+ */
+function cariSumberBerikut(
+  dunia: Dunia, u: Unit, jenis: 'kayu' | 'gold' | 'daging', acuanX: number, acuanY: number,
+): boolean {
+  const pilihTerdekat = <T extends { id: number; x: number; y: number }>(
+    daftar: readonly T[], maksJarak: number,
+  ): T | null => {
+    let terbaik: T | null = null
+    let dMin = maksJarak
+    for (const item of daftar) {
+      const d = jarak(acuanX, acuanY, item.x, item.y)
+      if (d <= dMin) {
+        dMin = d
+        terbaik = item
+      }
+    }
+    return terbaik
+  }
+
+  if (jenis === 'kayu') {
+    const p = pilihTerdekat(dunia.pohon, RADIUS_AUTO_KAYU)
+    if (p) {
+      u.tugas = 'tebang'
+      u.targetId = p.id
+      u.tikPanen = 0
+      return true
+    }
+  } else if (jenis === 'gold') {
+    const t = pilihTerdekat(dunia.tambang, RADIUS_AUTO_GOLD)
+    if (t) {
+      u.tugas = 'tambang'
+      u.targetId = t.id
+      u.tikPanen = 0
+      return true
+    }
+  } else {
+    // Prioritaskan daging jatuh medan perang yang dekat, lalu domba ternak.
+    const dg = pilihTerdekat(dunia.daging, RADIUS_AUTO_DAGING)
+    if (dg) {
+      u.tugas = 'pungut'
+      u.targetId = dg.id
+      u.tikPanen = 0
+      return true
+    }
+    const mbek = pilihTerdekat(dunia.domba, RADIUS_AUTO_DAGING)
+    if (mbek) {
+      u.tugas = 'gembala'
+      u.targetId = mbek.id
+      u.tikPanen = 0
+      return true
+    }
+  }
+
+  u.tugas = 'diam'
+  u.targetId = null
+  return false
+}
+
 function antarPulang(dunia: Dunia, u: Unit): void {
   const castle = castleTerdekat(dunia, u.tim, u.x, u.y)
   if (!castle) {
@@ -81,6 +150,12 @@ function antarPulang(dunia: Dunia, u: Unit): void {
       return
     }
   }
+
+  // Sumber lama habis -> otomatis cari sumber sejenis terdekat dalam radius aman!
+  if (jenisTadi) {
+    cariSumberBerikut(dunia, u, jenisTadi, castle.x, castle.y)
+    return
+  }
   u.tugas = 'diam'
   u.targetId = null
 }
@@ -88,8 +163,7 @@ function antarPulang(dunia: Dunia, u: Unit): void {
 function panenPohon(dunia: Dunia, u: Unit): void {
   const pohon = dunia.pohon.find((p) => p.id === u.targetId)
   if (!pohon) {
-    u.tugas = 'diam'
-    u.targetId = null
+    cariSumberBerikut(dunia, u, 'kayu', u.x, u.y)
     return
   }
   if (jarak(u.x, u.y, pohon.x, pohon.y) > JANGKAUAN_POHON) {
@@ -109,6 +183,12 @@ function panenPohon(dunia: Dunia, u: Unit): void {
   if (pohon.kayu <= 0) {
     const i = dunia.pohon.indexOf(pohon)
     if (i >= 0) dunia.pohon.splice(i, 1)
+    dunia.tunggul.push({
+      id: dunia.idBerikut++,
+      x: pohon.x,
+      y: pohon.y,
+      sisaTumbuh: DETIK_TUMBUH_POHON,
+    })
     segarkanHalangan(dunia)
   }
   mulaiPulang(dunia, u)
@@ -117,8 +197,7 @@ function panenPohon(dunia: Dunia, u: Unit): void {
 function panenTambang(dunia: Dunia, u: Unit): void {
   const tambang = dunia.tambang.find((t) => t.id === u.targetId)
   if (!tambang) {
-    u.tugas = 'diam'
-    u.targetId = null
+    cariSumberBerikut(dunia, u, 'gold', u.x, u.y)
     return
   }
   const jangkauan = tambang.jenis === 'mine' ? JANGKAUAN_TAMBANG_MINE : JANGKAUAN_TAMBANG_STONE
@@ -147,8 +226,7 @@ function panenTambang(dunia: Dunia, u: Unit): void {
 function panenDomba(dunia: Dunia, u: Unit): void {
   const domba = dunia.domba.find((d) => d.id === u.targetId)
   if (!domba) {
-    u.tugas = 'diam'
-    u.targetId = null
+    cariSumberBerikut(dunia, u, 'daging', u.x, u.y)
     return
   }
   if (jarak(u.x, u.y, domba.x, domba.y) > JANGKAUAN_PANEN) {
@@ -172,8 +250,7 @@ function panenDomba(dunia: Dunia, u: Unit): void {
 function pungutDaging(dunia: Dunia, u: Unit): void {
   const daging = dunia.daging.find((d) => d.id === u.targetId)
   if (!daging) {
-    u.tugas = 'diam'
-    u.targetId = null
+    cariSumberBerikut(dunia, u, 'daging', u.x, u.y)
     return
   }
   if (jarak(u.x, u.y, daging.x, daging.y) > JANGKAUAN_PANEN) {

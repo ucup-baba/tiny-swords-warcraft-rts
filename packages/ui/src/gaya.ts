@@ -231,7 +231,9 @@ img, canvas { image-rendering: pixelated; }
   ${sembilanIris(UI.tombolBlue, 12, basis)};
 }
 .kartu.unit { height: 112px; gap: 2px; }
-.kartu:disabled { ${sembilanIris(UI.tombolMati, 12, basis)}; cursor: not-allowed; opacity: 0.85; }
+.kartu:disabled, .kartu.terkunci { ${sembilanIris(UI.tombolMati, 12, basis)}; opacity: 0.84; }
+.kartu:disabled { cursor: not-allowed; }
+.kartu.terkunci { cursor: pointer; }
 .kartu img { width: 38px; height: 38px; object-fit: contain; }
 .kartu .nama { font-size: 11px; font-weight: 700; line-height: 1.05; text-align: center; }
 .kartu .biaya { font-size: 10px; color: #3a2310; white-space: nowrap; font-weight: 700; }
@@ -430,7 +432,9 @@ img, canvas { image-rendering: pixelated; }
 .cmd-btn.aktif { ${sembilanIris(UI.tombolBlueTekan, 10, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
 .cmd-btn.riset { height: 76px; gap: 1px; }
 .cmd-btn.merah { ${sembilanIris(UI.tombolRed, 10, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-.cmd-btn:disabled { ${sembilanIris(UI.tombolMati, 10, basis)}; color: #544638; cursor: not-allowed; opacity: 0.85; }
+.cmd-btn:disabled, .cmd-btn.terkunci { ${sembilanIris(UI.tombolMati, 10, basis)}; color: #544638; opacity: 0.84; }
+.cmd-btn:disabled { cursor: not-allowed; }
+.cmd-btn.terkunci { cursor: pointer; }
 .cmd-sub { font-size: 9px; color: #402612; font-weight: 700; }
 .cmd-btn.merah .cmd-sub, .cmd-btn.aktif .cmd-sub { color: #ffe8b0; }
 
@@ -479,10 +483,15 @@ img, canvas { image-rendering: pixelated; }
 
 #toast {
   position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
-  padding: 7px 16px; font-size: 14px; font-weight: 700; color: var(--tinta);
+  padding: 7px 18px; font-size: 14px; font-weight: 700; color: var(--tinta);
   ${tigaIris(UI.pitaYellow, 18, basis)};
   opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 30;
   white-space: nowrap;
+}
+#toast.peringatan {
+  ${tigaIris(UI.pitaRed, 18, basis)};
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 #toast.tampil { opacity: 1; }
 `

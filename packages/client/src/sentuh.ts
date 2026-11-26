@@ -4,7 +4,7 @@ import { batasiKamera, pusatkan, type Kamera } from '@hftf/render'
 import type { ModeSentuh } from '@hftf/ui'
 import {
   bangunanDiTitik, bolehTaruh, perbaruiMouseDunia, perintahKlikKanan,
-  seleksiKotak, unitDiTitik, type KeadaanInput,
+  seleksiKotak, sumberDiTitik, unitDiTitik, type KeadaanInput,
 } from './input.js'
 
 export const KUNCI_MODE_SENTUH = 'hftf.modeSentuh'
@@ -273,6 +273,7 @@ export class PengendaliSentuh {
         const ids = seleksiKotak(dunia, tim, this.kait.input)
         this.kait.input.unitTerpilih = new Set(ids)
         this.kait.input.bangunanTerpilih = null
+        this.kait.input.sumberTerpilih = null
         if (this.kotakAktif) {
           this.kotakAktif = false
           this.kait.setKotakUi(false)
@@ -404,6 +405,7 @@ export class PengendaliSentuh {
         ? new Set(dunia.unit.filter((x) => x.tim === tim && x.peran === u.peran).map((x) => x.id))
         : new Set([u.id])
       this.kait.input.bangunanTerpilih = null
+      this.kait.input.sumberTerpilih = null
       this.kait.perbaruiHud()
       return
     }
@@ -413,6 +415,7 @@ export class PengendaliSentuh {
     if (bTap && bTap.tim === tim && bTap.fase === 'aktif' && bTap.hp >= bTap.hpMaks) {
       this.kait.input.unitTerpilih.clear()
       this.kait.input.bangunanTerpilih = bTap.id
+      this.kait.input.sumberTerpilih = null
       this.kait.perbaruiHud()
       return
     }
@@ -432,6 +435,16 @@ export class PengendaliSentuh {
     // 6. Jika bangunan sendiri (konstruksi/rusak) di-tap saat tidak ada unit terpilih -> pilih
     if (bTap && bTap.tim === tim) {
       this.kait.input.bangunanTerpilih = bTap.id
+      this.kait.input.sumberTerpilih = null
+      this.kait.perbaruiHud()
+      return
+    }
+
+    // 6b. Tap pada resource (pohon, tambang, domba, daging, tunggul) -> pilih & tampilkan sisa stok!
+    const sTap = sumberDiTitik(dunia, wx, wy)
+    if (sTap) {
+      this.kait.input.bangunanTerpilih = null
+      this.kait.input.sumberTerpilih = sTap
       this.kait.perbaruiHud()
       return
     }
@@ -445,6 +458,10 @@ export class PengendaliSentuh {
       this.kait.kirim({ jenis: 'rally', bangunanId: bAktif.id, x: wx, y: wy })
       this.kait.tandaiBendera(wx, wy, 'rally')
       this.kait.toast(`Bendera Rally Point ${BANGUNAN[bAktif.jenis].nama} dipindahkan`)
+      return
     }
+
+    this.kait.input.sumberTerpilih = null
+    this.kait.perbaruiHud()
   }
 }

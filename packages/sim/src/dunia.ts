@@ -2,14 +2,14 @@ import { DT_TETAP, PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type Tim } from '@hftf/
 import { BANGUNAN } from './definisi/bangunan.js'
 import { SEMUA_RISET, type JenisRiset } from './definisi/riset.js'
 import type { PeranHero } from './definisi/unit.js'
-import { buatHalangan, segarkanHalangan } from './halangan.js'
+import { buatHalangan, segarkanHalangan, terhalangTile } from './halangan.js'
 import type { Perintah } from './perintah.js'
 import { buatRng } from './rng.js'
 import { antreLatih, batalLatih, langkahBangunan, mulaiRevive, mulaiRiset } from './sistem/bangunan.js'
 import { buatDomba, langkahDombaJalan } from './sistem/domba.js'
 import { bayar } from './sistem/ekonomi.js'
 import { pakaiSkill } from './sistem/hero.js'
-import { langkahPawn } from './sistem/pekerja.js'
+import { KAYU_POHON_BARU, langkahPawn } from './sistem/pekerja.js'
 import { buatBangunan, buatUnit } from './sistem/spawn.js'
 import { langkahAkhir } from './sistem/akhir.js'
 import { langkahCamp, tambahCamp } from './sistem/goblin.js'
@@ -60,6 +60,7 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     bangunan: [],
     unit: [],
     pohon: [],
+    tunggul: [],
     tambang: [],
     domba: [],
     daging: [],
@@ -407,6 +408,27 @@ export function langkah(dunia: Dunia): void {
     d.sisaDetik -= DT_TETAP
     if (d.sisaDetik <= 0) dunia.daging.splice(i, 1)
   }
+
+  // Tunggul pohon tumbuh kembali menjadi pohon utuh bila lokasi masih bebas.
+  let adaTumbuh = false
+  for (let i = dunia.tunggul.length - 1; i >= 0; i--) {
+    const tg = dunia.tunggul[i]!
+    tg.sisaTumbuh -= DT_TETAP
+    if (tg.sisaTumbuh > 0) continue
+    if (terhalangTile(dunia.terrain, dunia.halangan, keTile(tg.x), keTile(tg.y))) {
+      dunia.tunggul.splice(i, 1)
+      continue
+    }
+    const terinjak = dunia.unit.some((u) => Math.hypot(u.x - tg.x, u.y - tg.y) < 36)
+    if (terinjak) {
+      tg.sisaTumbuh = 5
+      continue
+    }
+    dunia.tunggul.splice(i, 1)
+    dunia.pohon.push({ id: dunia.idBerikut++, x: tg.x, y: tg.y, kayu: KAYU_POHON_BARU })
+    adaTumbuh = true
+  }
+  if (adaTumbuh) segarkanHalangan(dunia)
 
   langkahFog(dunia)
   langkahAkhir(dunia)

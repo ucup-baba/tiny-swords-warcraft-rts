@@ -156,6 +156,15 @@ export interface Pohon {
   kayu: number
 }
 
+/** Tunggul sisa pohon yang ditebang; otomatis tumbuh kembali menjadi pohon utuh. */
+export interface Tunggul {
+  id: number
+  x: number
+  y: number
+  /** Sisa detik sebelum tumbuh kembali jadi pohon penuh. */
+  sisaTumbuh: number
+}
+
 export interface Tambang {
   id: number
   x: number
@@ -268,6 +277,7 @@ export interface Dunia {
   bangunan: Bangunan[]
   unit: Unit[]
   pohon: Pohon[]
+  tunggul: Tunggul[]
   tambang: Tambang[]
   domba: Domba[]
   daging: DagingJatuh[]

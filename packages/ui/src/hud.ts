@@ -1,7 +1,7 @@
 import { AVATAR, BANGUNAN_BLUE, HERO_BLUE, SUMBER } from '@hftf/aset'
 import type { Tim } from '@hftf/shared'
 import {
-  BANGUNAN, NAMA_BAJU, NAMA_SERANGAN, REVIVE, RISET, SKILL, TINGKAT_MAKS, UNIT,
+  BANGUNAN, DETIK_TUMBUH_POHON, KAYU_POHON_BARU, NAMA_BAJU, NAMA_SERANGAN, REVIVE, RISET, SKILL, TINGKAT_MAKS, UNIT,
   UNIT_REGULER, URUTAN_BANGUN, ringkasCounter, risetDi, supplyMaks, supplyTerpakai,
   type Bangunan, type Dunia, type JenisRiset, type PeranUnit, type Unit,
 } from '@hftf/sim'
@@ -12,6 +12,10 @@ export type Tab = 'bangun' | 'pasukan' | 'hero'
 export type FilterUnit = 'semua' | 'pawn' | 'warrior' | 'archer' | 'lancer' | 'monk' | 'mage' | 'hero'
 export type PerintahKartu = 'serang' | 'stop' | 'tahan' | 'skill'
 export type KunciSumber = 'gold' | 'kayu' | 'daging' | 'supply'
+export interface SumberInfo {
+  jenis: 'pohon' | 'tunggul' | 'tambang' | 'domba' | 'daging'
+  id: number
+}
 
 /**
  * Penyedia gambar kecil (crop bounding-box) untuk kartu produksi & ikon sumber.
@@ -322,10 +326,11 @@ export class Hud {
     this.layarPutar.classList.toggle('tampil', tampil)
   }
 
-  tampilkanToast(pesan: string): void {
+  tampilkanToast(pesan: string, peringatan = false): void {
     this.toast.textContent = pesan
+    this.toast.classList.toggle('peringatan', peringatan)
     this.toast.classList.add('tampil')
-    this.toastTimer = 2.4
+    this.toastTimer = peringatan ? 3.0 : 2.4
   }
 
   langkahToast(dt: number): void {
@@ -532,7 +537,12 @@ export class Hud {
   }): HTMLElement {
     const b = el('button', o.unit ? 'kartu unit' : 'kartu')
     b.type = 'button'
-    b.disabled = o.mati
+    // Pakai kelas .terkunci (bukan disabled HTML) supaya klik tetap bisa memunculkan
+    // notifikasi alasan (kurang Gold/Kayu/Daging, Populasi penuh, atau bangunan belum ada).
+    if (o.mati) {
+      b.classList.add('terkunci')
+      b.setAttribute('aria-disabled', 'true')
+    }
     const im = el('img')
     im.src = o.ikon
     b.append(im, el('span', 'nama', o.nama), el('span', 'biaya', o.biaya))
@@ -542,7 +552,8 @@ export class Hud {
   }
 
   perbaruiSeleksi(
-    dunia: Dunia, tim: Tim, unitTerpilih: Unit[], bangunanTerpilih: Bangunan | null, modeSerang = false,
+    dunia: Dunia, tim: Tim, unitTerpilih: Unit[], bangunanTerpilih: Bangunan | null,
+    modeSerang = false, sumberTerpilih: SumberInfo | null = null,
   ): void {
     // 1. Mode bangunan terpilih (termasuk Riset Kontekstual & Progres Pelatihan ala Warcraft!)
     if (bangunanTerpilih) {
@@ -567,6 +578,12 @@ export class Hud {
       this.perbaruiTengahBangunan(dunia, bangunanTerpilih)
       this.perbaruiAksiBangunan(dunia, tim, bangunanTerpilih)
       return
+    }
+
+    // 1b. Mode resource terpilih (Pohon, Tunggul, Tambang, Domba, Daging)
+    if (unitTerpilih.length === 0 && sumberTerpilih) {
+      const tampil = this.tampilkanSumber(dunia, sumberTerpilih)
+      if (tampil) return
     }
 
     // 2. Mode tidak ada seleksi
@@ -849,7 +866,10 @@ export class Hud {
           const btn = el('button', 'cmd-btn riset')
           btn.type = 'button'
           btn.dataset['riset'] = r
-          btn.disabled = maks || sedangIni || sibukLain || !mampu
+          if (maks || sedangIni || sibukLain || !mampu) {
+            btn.classList.add('terkunci')
+            btn.setAttribute('aria-disabled', 'true')
+          }
           btn.append(
             el('span', undefined, def.nama),
             el('span', 'cmd-sub', maks ? `MAKS (${lv}/${TINGKAT_MAKS})` : `${def.singkat} • Lv ${lv}/${TINGKAT_MAKS}`),
@@ -869,7 +889,10 @@ export class Hud {
         const btn = el('button', 'cmd-btn riset merah')
         btn.type = 'button'
         btn.style.gridColumn = '1 / -1'
-        btn.disabled = s.gold < biayaGold || s.daging < REVIVE.daging
+        if (s.gold < biayaGold || s.daging < REVIVE.daging) {
+          btn.classList.add('terkunci')
+          btn.setAttribute('aria-disabled', 'true')
+        }
         btn.append(
           el('span', undefined, `Bangkitkan ${UNIT[k.heroGugur.peran].nama}`),
           el('span', 'cmd-sub', `Lv ${k.heroGugur.level} • ${biayaGold}g ${REVIVE.daging}d`),
@@ -894,5 +917,92 @@ export class Hud {
         ref.badge.style.display = 'none'
       }
     }
+  }
+
+  /** Menampilkan inspeksi resource (pohon, tunggul, tambang, domba, daging) di panel bawah. */
+  private tampilkanSumber(dunia: Dunia, s: SumberInfo): boolean {
+    let judul = ''
+    let detail = ''
+    let petunjuk = 'Pilih Pawn lalu klik kanan (atau tap di HP) objek ini untuk memanen.'
+    let nilai = 0
+    let maks = 1
+    let labelBar = ''
+    let warnaBar = '#52c95f'
+    let ikon = this.potret(s.jenis) ?? urlAset(SUMBER.kayuDiam, this.basis)
+
+    if (s.jenis === 'pohon') {
+      const p = dunia.pohon.find((x) => x.id === s.id)
+      if (!p) return false
+      judul = 'Pohon Pinus'
+      nilai = Math.round(p.kayu)
+      maks = KAYU_POHON_BARU
+      labelBar = `${nilai} / ${maks} Kayu`
+      detail = 'Sumber Kayu • Tumbuh lagi setelah ditebang'
+      warnaBar = '#52c95f'
+    } else if (s.jenis === 'tunggul') {
+      const tg = dunia.tunggul.find((x) => x.id === s.id)
+      if (!tg) return false
+      judul = 'Tunggul Pohon'
+      const porsi = Math.max(0, Math.min(1, 1 - tg.sisaTumbuh / DETIK_TUMBUH_POHON))
+      nilai = Math.round(porsi * 100)
+      maks = 100
+      labelBar = `Tumbuh ${nilai}% (${Math.max(1, Math.ceil(tg.sisaTumbuh))}s)`
+      detail = 'Sedang tumbuh kembali menjadi pohon utuh'
+      petunjuk = 'Pohon akan otomatis tumbuh kembali selama tidak ditimpa bangunan.'
+      warnaBar = '#c89b52'
+    } else if (s.jenis === 'tambang') {
+      const tb = dunia.tambang.find((x) => x.id === s.id)
+      if (!tb) return false
+      judul = tb.jenis === 'mine' ? 'Tambang Emas' : 'Batu Emas'
+      nilai = Math.round(tb.gold)
+      maks = tb.jenis === 'mine' ? 4500 : 1400
+      labelBar = `${nilai} Gold`
+      detail = 'Sumber Emas • Panen dengan Pawn'
+      warnaBar = '#e8b931'
+      ikon = this.potret('tambang') ?? urlAset(SUMBER.goldDiam, this.basis)
+    } else if (s.jenis === 'domba') {
+      const d = dunia.domba.find((x) => x.id === s.id)
+      if (!d) return false
+      judul = 'Domba Ternak'
+      nilai = d.daging
+      maks = 45
+      labelBar = `${nilai} Daging`
+      detail = 'Sumber Daging • Respawn di Castle & House'
+      warnaBar = '#e87a90'
+      ikon = this.potret('domba') ?? urlAset(SUMBER.dagingDiam, this.basis)
+    } else {
+      const dg = dunia.daging.find((x) => x.id === s.id)
+      if (!dg) return false
+      judul = 'Daging Medan Perang'
+      nilai = dg.jumlah
+      maks = 40
+      labelBar = `+${nilai} Daging`
+      detail = `Hilang dalam ${Math.max(1, Math.ceil(dg.sisaDetik))}s`
+      warnaBar = '#e06060'
+      ikon = this.potret('daging') ?? urlAset(SUMBER.dagingDiam, this.basis)
+    }
+
+    this.seleksiPotret.src = ikon
+    this.seleksiJudul.textContent = judul
+    this.seleksiHpBar.style.display = 'block'
+    this.seleksiHpIsi.style.width = `${Math.max(0, Math.min(100, (nilai / Math.max(1, maks)) * 100)).toFixed(1)}%`
+    this.seleksiHpIsi.style.background = warnaBar
+    this.seleksiHpTeks.textContent = labelBar
+    this.seleksiDetail.textContent = detail
+
+    const kunciT = `sumber:${s.jenis}:${s.id}`
+    if (this.kunciTengah !== kunciT) {
+      this.kunciTengah = kunciT
+      this.progresSapuan = null
+      this.seleksiTengah.textContent = ''
+      this.seleksiTengah.append(el('div', 'petunjuk-tengah', petunjuk))
+    }
+    if (this.kunciAksi !== 'kosong') {
+      this.kunciAksi = 'kosong'
+      this.seleksiAksi.textContent = ''
+      this.skillSapuan = null
+      this.risetSapuan.clear()
+    }
+    return true
   }
 }

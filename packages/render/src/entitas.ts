@@ -215,12 +215,56 @@ function barHp(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, p
   ctx.strokeRect(x - w / 2 - 1.5, y - 1.5, w + 3, h + 3)
 }
 
+export interface SumberVisual {
+  jenis: 'pohon' | 'tunggul' | 'tambang' | 'domba' | 'daging'
+  id: number
+}
+
 export interface OpsiGambar {
   terpilihUnit: ReadonlySet<number>
   terpilihBangunan: number | null
+  terpilihSumber?: SumberVisual | null
+  hoverSumber?: SumberVisual | null
   timSaya: Tim
   /** Fog aktif? Solo tetap memakainya; mematikannya hanya untuk debug. */
   fog: boolean
+}
+
+const cocokSumber = (a: SumberVisual | null | undefined, jenis: SumberVisual['jenis'], id: number): boolean =>
+  Boolean(a && a.jenis === jenis && a.id === id)
+
+/** Lingkaran sorot/seleksi dan label sisa stok untuk resource (pohon, tambang, domba, daging, tunggul). */
+function gambarCincinSumber(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, rx: number,
+  warna: string, terpilih: boolean, label: string, labelY: number,
+): void {
+  ctx.save()
+  ctx.beginPath()
+  ctx.ellipse(x, y + 3, rx, rx * 0.44, 0, 0, Math.PI * 2)
+  ctx.fillStyle = terpilih ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.08)'
+  ctx.fill()
+  ctx.strokeStyle = warna
+  ctx.lineWidth = terpilih ? 2.6 : 2.2
+  if (!terpilih) ctx.setLineDash([6, 4])
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  // Pill label kecil sisa resource di atas objek
+  ctx.font = "700 12px 'Pixelify Sans', system-ui"
+  const tw = ctx.measureText(label).width
+  const pw = tw + 12
+  const ph = 18
+  ctx.fillStyle = 'rgba(20, 14, 9, 0.86)'
+  ctx.fillRect(x - pw / 2, labelY - ph / 2, pw, ph)
+  ctx.strokeStyle = warna
+  ctx.lineWidth = 1.2
+  ctx.strokeRect(x - pw / 2, labelY - ph / 2, pw, ph)
+  ctx.fillStyle = warna
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, x, labelY)
+  ctx.restore()
 }
 
 /**
@@ -243,20 +287,62 @@ export function gambarEntitas(
   const diingat = (x: number, y: number): boolean =>
     diLayar(x, y) && (!opsi.fog || pernahLihat(dunia, opsi.timSaya, x, y))
 
+  // Tunggul pohon (Tree.png baris 2 kolom 0 = frame 8), tumbuh kembali otomatis
+  for (const tg of dunia.tunggul) {
+    if (!diingat(tg.x, tg.y)) continue
+    const ter = cocokSumber(opsi.terpilihSumber, 'tunggul', tg.id)
+    const hov = cocokSumber(opsi.hoverSumber, 'tunggul', tg.id)
+    antrean.push({
+      y: tg.y - 4,
+      gambar: () => {
+        if (ter || hov) {
+          gambarCincinSumber(ctx, tg.x, tg.y, 24, '#d4b07a', ter, `Tumbuh ${Math.max(1, Math.ceil(tg.sisaTumbuh))}s`, tg.y - 26)
+        }
+        sprite(ctx, SUMBER.pohon, 8, tg.x, tg.y, 0.62, false, 0.78)
+      },
+    })
+  }
+
   // Pohon, tambang, domba, daging
   for (const o of dunia.pohon) {
     if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78) })
-  }
-  for (const o of dunia.tambang) {
-    if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82) })
-  }
-  for (const o of dunia.domba) {
-    if (!diingat(o.x, o.y)) continue
+    const ter = cocokSumber(opsi.terpilihSumber, 'pohon', o.id)
+    const hov = cocokSumber(opsi.hoverSumber, 'pohon', o.id)
     antrean.push({
       y: o.y,
       gambar: () => {
+        if (ter || hov) {
+          gambarCincinSumber(ctx, o.x, o.y, 32, '#6ff088', ter, `${Math.round(o.kayu)} Kayu`, o.y - 84)
+        }
+        sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78)
+      },
+    })
+  }
+  for (const o of dunia.tambang) {
+    if (!diingat(o.x, o.y)) continue
+    const ter = cocokSumber(opsi.terpilihSumber, 'tambang', o.id)
+    const hov = cocokSumber(opsi.hoverSumber, 'tambang', o.id)
+    const rx = o.jenis === 'mine' ? 62 : 34
+    antrean.push({
+      y: o.y,
+      gambar: () => {
+        if (ter || hov) {
+          gambarCincinSumber(ctx, o.x, o.y, rx, '#ffd86b', ter, `${Math.round(o.gold)} Gold`, o.y - (o.jenis === 'mine' ? 76 : 48))
+        }
+        sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82)
+      },
+    })
+  }
+  for (const o of dunia.domba) {
+    if (!diingat(o.x, o.y)) continue
+    const ter = cocokSumber(opsi.terpilihSumber, 'domba', o.id)
+    const hov = cocokSumber(opsi.hoverSumber, 'domba', o.id)
+    antrean.push({
+      y: o.y,
+      gambar: () => {
+        if (ter || hov) {
+          gambarCincinSumber(ctx, o.x, o.y, 24, '#ff9eb5', ter, `Domba • ${o.daging} Daging`, o.y - 38)
+        }
         bayangan(ctx, o.x, o.y, 12)
         const a = o.bergerak ? SUMBER.dombaLompat : SUMBER.dombaDiam
         sprite(ctx, a, Math.floor(t * a.fps + o.id) % a.kolom, o.x, o.y, 0.56, o.arah < 0, 0.74)
@@ -265,7 +351,17 @@ export function gambarEntitas(
   }
   for (const o of dunia.daging) {
     if (!diingat(o.x, o.y)) continue
-    antrean.push({ y: o.y, gambar: () => sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.52, false, 0.74) })
+    const ter = cocokSumber(opsi.terpilihSumber, 'daging', o.id)
+    const hov = cocokSumber(opsi.hoverSumber, 'daging', o.id)
+    antrean.push({
+      y: o.y,
+      gambar: () => {
+        if (ter || hov) {
+          gambarCincinSumber(ctx, o.x, o.y, 22, '#ff8a8a', ter, `+${o.jumlah} Daging`, o.y - 30)
+        }
+        sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.52, false, 0.74)
+      },
+    })
   }
 
   // Bangunan

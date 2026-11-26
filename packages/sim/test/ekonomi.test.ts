@@ -99,10 +99,10 @@ describe('siklus panen pawn', () => {
     terapkanPerintah(d, 'blue', { jenis: 'kumpul', ids: [pawn.id], targetId: domba.id })
     langkahBanyak(d, 60 * 40)
 
-    // Jumlah total tidak dipakai sebagai patokan: House memunculkan domba baru
-    // selama 40 detik itu (PRD §3). Yang diperiksa adalah domba yang dipanen.
+    // Jumlah total tidak dipakai sebagai patokan: Castle/House memunculkan domba baru
+    // dan Pawn otomatis lanjut ke domba berikutnya setelah setor.
     expect(d.domba.some((s) => s.id === domba.id)).toBe(false)
-    expect(d.tim.blue.sumberDaya.daging).toBe(dagingAwal + PANEN.dagingDomba)
+    expect(d.tim.blue.sumberDaya.daging).toBeGreaterThanOrEqual(dagingAwal + PANEN.dagingDomba)
   })
 
   it('pohon habis dibuang dari peta', () => {
