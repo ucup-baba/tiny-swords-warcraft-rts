@@ -116,10 +116,20 @@ export class Hud {
   private tab: Tab = 'bangun'
 
   private potret: PenyediaPotret = () => null
+  private kunciPita = ''
   private kunciTabUnit = ''
   private kunciTengah = ''
   private kunciAksi = ''
   private kunciKisi = ''
+  private cacheSumber: Record<string, string> = {}
+  private cachePotretSrc: string | null = null
+  private cacheJudul = ''
+  private cacheDetail = ''
+  private cacheHpTampil = ''
+  private cacheHpLebar = ''
+  private cacheHpWarna = ''
+  private cacheHpTeks = ''
+  private miniHpEls: HTMLElement[] = []
 
   // Referensi dinamis untuk pembaruan 60fps tanpa menghancurkan DOM tombol
   private progresSapuan: HTMLElement | null = null
@@ -137,6 +147,7 @@ export class Hud {
     this.kunciKisi = ''
     this.kunciTabUnit = ''
     this.kunciTengah = ''
+    this.cachePotretSrc = null
   }
 
   /** Memasang ikon sumber daya hasil crop bounding-box agar tajam 26x26px. */
@@ -355,6 +366,9 @@ export class Hud {
     const mm = String(Math.floor(detik / 60)).padStart(2, '0')
     const ss = String(detik % 60).padStart(2, '0')
     const nama = tim === 'blue' ? 'BLUE KINGDOM' : 'RED EMPIRE'
+    const kunci = `${nama}|${mm}:${ss}|${mode}`
+    if (kunci === this.kunciPita) return
+    this.kunciPita = kunci
     this.pita.textContent = ''
     for (const [i, bagian] of [nama, `${mm}:${ss}`, mode].entries()) {
       if (i > 0) this.pita.append(el('span', 'pisah', '•'))
@@ -364,10 +378,56 @@ export class Hud {
 
   perbaruiSumberDaya(dunia: Dunia, tim: Tim): void {
     const s = dunia.tim[tim].sumberDaya
-    this.sumberEl['gold']!.textContent = String(Math.floor(s.gold))
-    this.sumberEl['kayu']!.textContent = String(Math.floor(s.kayu))
-    this.sumberEl['daging']!.textContent = String(Math.floor(s.daging))
-    this.sumberEl['supply']!.textContent = `${supplyTerpakai(dunia, tim)}/${supplyMaks(dunia, tim)}`
+    const nilai: Record<string, string> = {
+      gold: String(Math.floor(s.gold)),
+      kayu: String(Math.floor(s.kayu)),
+      daging: String(Math.floor(s.daging)),
+      supply: `${supplyTerpakai(dunia, tim)}/${supplyMaks(dunia, tim)}`,
+    }
+    for (const [k, v] of Object.entries(nilai)) {
+      if (this.cacheSumber[k] === v) continue
+      this.cacheSumber[k] = v
+      this.sumberEl[k]!.textContent = v
+    }
+  }
+
+  private setPotretSeleksi(src: string | null): void {
+    if (this.cachePotretSrc === src) return
+    this.cachePotretSrc = src
+    if (src === null) this.seleksiPotret.removeAttribute('src')
+    else this.seleksiPotret.src = src
+  }
+
+  private setInfoSeleksi(judul: string, detail: string): void {
+    if (this.cacheJudul !== judul) {
+      this.cacheJudul = judul
+      this.seleksiJudul.textContent = judul
+    }
+    if (this.cacheDetail !== detail) {
+      this.cacheDetail = detail
+      this.seleksiDetail.textContent = detail
+    }
+  }
+
+  private setHpSeleksi(tampil: boolean, lebar = '', warna = '', teks = ''): void {
+    const mode = tampil ? 'block' : 'none'
+    if (this.cacheHpTampil !== mode) {
+      this.cacheHpTampil = mode
+      this.seleksiHpBar.style.display = mode
+    }
+    if (!tampil) return
+    if (this.cacheHpLebar !== lebar) {
+      this.cacheHpLebar = lebar
+      this.seleksiHpIsi.style.width = lebar
+    }
+    if (this.cacheHpWarna !== warna) {
+      this.cacheHpWarna = warna
+      this.seleksiHpIsi.style.background = warna
+    }
+    if (this.cacheHpTeks !== teks) {
+      this.cacheHpTeks = teks
+      this.seleksiHpTeks.textContent = teks
+    }
   }
 
   /**
@@ -558,22 +618,21 @@ export class Hud {
     // 1. Mode bangunan terpilih (termasuk Riset Kontekstual & Progres Pelatihan ala Warcraft!)
     if (bangunanTerpilih) {
       const def = BANGUNAN[bangunanTerpilih.jenis]
-      this.seleksiPotret.src = urlAset(BANGUNAN_BLUE[bangunanTerpilih.jenis]!, this.basis)
-      this.seleksiJudul.textContent = def.nama
+      this.setPotretSeleksi(urlAset(BANGUNAN_BLUE[bangunanTerpilih.jenis]!, this.basis))
       const porsiHp = Math.max(0, Math.min(1, bangunanTerpilih.hp / bangunanTerpilih.hpMaks))
-      this.seleksiHpBar.style.display = 'block'
-      this.seleksiHpIsi.style.width = `${(porsiHp * 100).toFixed(1)}%`
-      this.seleksiHpIsi.style.background = porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f'
-      this.seleksiHpTeks.textContent = `${Math.round(bangunanTerpilih.hp)} / ${bangunanTerpilih.hpMaks}`
+      this.setHpSeleksi(
+        true,
+        `${(porsiHp * 100).toFixed(1)}%`,
+        porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f',
+        `${Math.round(bangunanTerpilih.hp)} / ${bangunanTerpilih.hpMaks}`,
+      )
 
-      if (bangunanTerpilih.fase === 'konstruksi') {
-        const porsiBangun = Math.round((1 - Math.max(0, bangunanTerpilih.sisaBangun) / def.waktuBangun) * 100)
-        this.seleksiDetail.textContent = `Membangun ${porsiBangun}% (${Math.ceil(bangunanTerpilih.sisaBangun)}s)`
-      } else {
-        this.seleksiDetail.textContent = def.melatih.length > 0
+      const detail = bangunanTerpilih.fase === 'konstruksi'
+        ? `Membangun ${Math.round((1 - Math.max(0, bangunanTerpilih.sisaBangun) / def.waktuBangun) * 100)}% (${Math.ceil(bangunanTerpilih.sisaBangun)}s)`
+        : def.melatih.length > 0
           ? `Aktif • Klik kanan peta: Rally`
           : def.supply > 0 ? `Aktif • +${def.supply} Populasi` : 'Aktif'
-      }
+      this.setInfoSeleksi(def.nama, detail)
 
       this.perbaruiTengahBangunan(dunia, bangunanTerpilih)
       this.perbaruiAksiBangunan(dunia, tim, bangunanTerpilih)
@@ -588,14 +647,14 @@ export class Hud {
 
     // 2. Mode tidak ada seleksi
     if (unitTerpilih.length === 0) {
-      this.seleksiPotret.removeAttribute('src')
-      this.seleksiJudul.textContent = 'Siap Perintah'
-      this.seleksiHpBar.style.display = 'none'
-      this.seleksiDetail.textContent = 'Klik unit/bangunan atau seret kotak seleksi'
+      this.setPotretSeleksi(null)
+      this.setHpSeleksi(false)
+      this.setInfoSeleksi('Siap Perintah', 'Klik unit/bangunan atau seret kotak seleksi')
       if (this.kunciTengah !== 'kosong') {
         this.kunciTengah = 'kosong'
         this.seleksiTengah.textContent = ''
         this.progresSapuan = null
+        this.miniHpEls = []
         this.seleksiTengah.append(el('div', 'petunjuk-tengah',
           'Panah / tepi layar / klik tengah: geser kamera • Klik kanan: perintah pintar • [F2] Semua Pasukan'))
       }
@@ -610,28 +669,31 @@ export class Hud {
     // 3. Mode unit terpilih (Command Card + grid mini unit)
     const utama = unitTerpilih.find((u) => u.hero) ?? unitTerpilih[0]!
     const defUtama = UNIT[utama.peran]
-    this.seleksiPotret.src = utama.hero
-      ? urlAset(HERO_BLUE[utama.peran as keyof typeof HERO_BLUE].potret, this.basis)
-      : (this.potret(utama.peran) ?? urlAset(AVATAR['avatar01']!, this.basis))
-    this.seleksiJudul.textContent = unitTerpilih.length > 1
-      ? `${unitTerpilih.length} Pasukan Terpilih`
-      : defUtama.nama
-
+    this.setPotretSeleksi(
+      utama.hero
+        ? urlAset(HERO_BLUE[utama.peran as keyof typeof HERO_BLUE].potret, this.basis)
+        : (this.potret(utama.peran) ?? urlAset(AVATAR['avatar01']!, this.basis)),
+    )
     const porsiHp = Math.max(0, Math.min(1, utama.hp / utama.hpMaks))
-    this.seleksiHpBar.style.display = 'block'
-    this.seleksiHpIsi.style.width = `${(porsiHp * 100).toFixed(1)}%`
-    this.seleksiHpIsi.style.background = porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f'
-    this.seleksiHpTeks.textContent = `${Math.round(utama.hp)} / ${utama.hpMaks}`
-
-    this.seleksiDetail.textContent = utama.hero
-      ? `Lv${utama.level} (${utama.xp} XP) • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`
-      : `DMG ${utama.dmg} • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`
+    this.setHpSeleksi(
+      true,
+      `${(porsiHp * 100).toFixed(1)}%`,
+      porsiHp > 0.5 ? '#52c95f' : porsiHp > 0.25 ? '#e0b83a' : '#d9534f',
+      `${Math.round(utama.hp)} / ${utama.hpMaks}`,
+    )
+    this.setInfoSeleksi(
+      unitTerpilih.length > 1 ? `${unitTerpilih.length} Pasukan Terpilih` : defUtama.nama,
+      utama.hero
+        ? `Lv${utama.level} (${utama.xp} XP) • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`
+        : `DMG ${utama.dmg} • ${NAMA_SERANGAN[defUtama.serangan]} • ${NAMA_BAJU[defUtama.baju]}`,
+    )
 
     // Tengah: mini-grid unit terpilih (klik untuk fokus unit tunggal)
     const kunciT = 'u:' + unitTerpilih.slice(0, 12).map((u) => u.id).join(',')
     if (kunciT !== this.kunciTengah) {
       this.kunciTengah = kunciT
       this.progresSapuan = null
+      this.miniHpEls = []
       this.seleksiTengah.textContent = ''
       const grid = el('div', 'unit-grid')
       for (const u of unitTerpilih.slice(0, 12)) {
@@ -649,15 +711,16 @@ export class Hud {
         m.append(im, bar)
         m.addEventListener('click', () => this.aksi.fokusUnit?.(u.id))
         grid.append(m)
+        this.miniHpEls.push(isi)
       }
       this.seleksiTengah.append(grid)
     } else {
-      // Update lebar mini HP bar tanpa rebuild DOM
-      const tombolMini = this.seleksiTengah.querySelectorAll<HTMLElement>('.mini-unit')
-      for (let i = 0; i < tombolMini.length && i < unitTerpilih.length; i++) {
+      // Update lebar mini HP bar tanpa querySelectorAll tiap frame
+      for (let i = 0; i < this.miniHpEls.length && i < unitTerpilih.length; i++) {
         const u = unitTerpilih[i]!
-        const isi = tombolMini[i]!.querySelector<HTMLElement>('.mini-hp > div')
-        if (isi) isi.style.width = `${Math.max(0, Math.min(100, Math.round((u.hp / u.hpMaks) * 100)))}%`
+        const lebar = `${Math.max(0, Math.min(100, Math.round((u.hp / u.hpMaks) * 100)))}%`
+        const isi = this.miniHpEls[i]!
+        if (isi.style.width !== lebar) isi.style.width = lebar
       }
     }
 
@@ -982,13 +1045,14 @@ export class Hud {
       ikon = this.potret('daging') ?? urlAset(SUMBER.dagingDiam, this.basis)
     }
 
-    this.seleksiPotret.src = ikon
-    this.seleksiJudul.textContent = judul
-    this.seleksiHpBar.style.display = 'block'
-    this.seleksiHpIsi.style.width = `${Math.max(0, Math.min(100, (nilai / Math.max(1, maks)) * 100)).toFixed(1)}%`
-    this.seleksiHpIsi.style.background = warnaBar
-    this.seleksiHpTeks.textContent = labelBar
-    this.seleksiDetail.textContent = detail
+    this.setPotretSeleksi(ikon)
+    this.setHpSeleksi(
+      true,
+      `${Math.max(0, Math.min(100, (nilai / Math.max(1, maks)) * 100)).toFixed(1)}%`,
+      warnaBar,
+      labelBar,
+    )
+    this.setInfoSeleksi(judul, detail)
 
     const kunciT = `sumber:${s.jenis}:${s.id}`
     if (this.kunciTengah !== kunciT) {

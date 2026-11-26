@@ -32,6 +32,9 @@ export class PeremajaTerrain {
   private chunk = new Map<string, Chunk>()
   private kolomChunk: number
   private barisChunk: number
+  private polaAir: CanvasPattern | null = null
+  private ctxAir: CanvasRenderingContext2D | null = null
+  private imgAir: HTMLImageElement | null = null
 
   constructor(private terrain: Terrain) {
     this.kolomChunk = Math.ceil(terrain.kolom / TILE_PER_CHUNK)
@@ -60,14 +63,18 @@ export class PeremajaTerrain {
     }
   }
 
-  /** Air sebagai pola berulang + busa beranimasi di tepi pandangan. */
+  /** Air sebagai pola berulang (di-cache agar tidak memanggil createPattern 60x/detik). */
   private gambarAir(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number): void {
     const air = gambarDari(TERRAIN.air)
     const p = pandangan(kam)
     if (air) {
-      const pola = ctx.createPattern(air, 'repeat')
-      if (pola) {
-        ctx.fillStyle = pola
+      if (!this.polaAir || this.ctxAir !== ctx || this.imgAir !== air) {
+        this.polaAir = ctx.createPattern(air, 'repeat')
+        this.ctxAir = ctx
+        this.imgAir = air
+      }
+      if (this.polaAir) {
+        ctx.fillStyle = this.polaAir
         ctx.fillRect(p.x1, p.y1, p.x2 - p.x1, p.y2 - p.y1)
         return
       }

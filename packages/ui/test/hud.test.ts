@@ -165,4 +165,28 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     expect(blokAkar).toContain('top: 50%')
     expect(blokAkar).toContain('translate(-50%, -50%)')
   })
+
+  it('tombol 9-slice (.tab-tombol, .cmd-btn, #seleksi) memisahkan border-width tipis dari border-image-width agar teks tidak terpotong', () => {
+    const css = bangunGaya('')
+    const tab = css.match(/\.tab-tombol\s*\{[^}]*\}/)?.[0] ?? ''
+    const cmd = css.match(/\.cmd-btn\s*\{[^}]*\}/)?.[0] ?? ''
+    const seleksi = css.match(/#seleksi\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(tab).toContain('border-width: 3px')
+    expect(tab).toContain('border-image-width: 11px')
+    expect(cmd).toContain('border-width: 3px')
+    expect(cmd).toContain('border-image-width: 10px')
+    expect(seleksi).toContain('border-width: 8px')
+    expect(seleksi).toContain('border-image-width: 16px')
+  })
+
+  it('perbaruiPita tidak membangun ulang DOM saat detik belum berubah (anti-thrash 60fps)', () => {
+    const { hud } = buatHud()
+    const d = buatDunia({ seed: 905 })
+    d.tick = 120
+    hud.perbaruiPita(d, 'blue', 'SOLO vs AI')
+    const anakPertama = hud.akar.querySelector('#pita-status')?.firstChild
+    d.tick = 125 // masih detik ke-2
+    hud.perbaruiPita(d, 'blue', 'SOLO vs AI')
+    expect(hud.akar.querySelector('#pita-status')?.firstChild).toBe(anakPertama)
+  })
 })

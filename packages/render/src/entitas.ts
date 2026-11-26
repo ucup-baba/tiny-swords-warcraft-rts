@@ -43,6 +43,10 @@ function sprite(
   const f = frame(a, indeks)
   const w = f.sw * skala
   const h = f.sh * skala
+  if (!balik && rotasi === 0) {
+    ctx.drawImage(im, f.sx, f.sy, f.sw, f.sh, x - w / 2, y - h * pijak, w, h)
+    return
+  }
   ctx.save()
   ctx.translate(x, y)
   if (rotasi !== 0) ctx.rotate(rotasi)

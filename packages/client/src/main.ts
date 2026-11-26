@@ -45,6 +45,8 @@ class Permainan {
   private kursor: HTMLImageElement
   private ctx: CanvasRenderingContext2D | null = null
   private akumulator = 0
+  private akumulatorHud = 1
+  private akumulatorMinimap = 1
   private waktuTerakhir = 0
   private klikTerakhir = { waktu: 0, id: -1 }
   private geserTengah = { aktif: false, x: 0, y: 0 }
@@ -369,6 +371,8 @@ class Permainan {
         // Guest menghitung fog-nya sendiri dari unit miliknya, yang selalu
         // lengkap di snapshot. Tanpa ini layarnya hitam total.
         hitungFog(this.dunia)
+        this.fog?.kotor()
+        this.minimap?.segarkanFog()
       },
       lawanPutus: (detik) => this.tampilkanPutus(detik),
       lawanKembali: () => this.sembunyikanPutus(),
@@ -434,6 +438,8 @@ class Permainan {
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.akumulatorHud = 1
+    this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
   }
@@ -454,6 +460,8 @@ class Permainan {
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.akumulatorHud = 1
+    this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
   }
@@ -870,7 +878,7 @@ class Permainan {
   // -------------------------------------------------------------------------
 
   private bingkai(t: number): void {
-    const dt = Math.min(0.25, (t - this.waktuTerakhir) / 1000 || 0)
+    const dt = Math.min(0.1, (t - this.waktuTerakhir) / 1000 || 0)
     this.waktuTerakhir = t
 
     if (this.fase === 'main' && this.dunia) {
@@ -885,9 +893,10 @@ class Permainan {
 
       if (bolehJalan) {
         // Langkah tetap: simulasi TIDAK boleh bergantung pada fps.
+        // Batas 4 langkah/frame mencegah spiral lag di CPU HP saat ada lonjakan frame.
         this.akumulator += dt
         let langkah = 0
-        while (this.akumulator >= DT_TETAP && langkah < 8) {
+        while (this.akumulator >= DT_TETAP && langkah < 4) {
           if (this.ai && this.dunia.hasil.jenis === 'berlangsung') {
             for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
           }
@@ -895,6 +904,9 @@ class Permainan {
           this.efek.serap(this.dunia.kejadian, this.timSaya)
           this.akumulator -= DT_TETAP
           langkah++
+        }
+        if (langkah >= 4 && this.akumulator > DT_TETAP * 2) {
+          this.akumulator = 0
         }
 
         // Host menyiarkan snapshot ~15 Hz, sudah disaring fog guest.
@@ -911,8 +923,15 @@ class Permainan {
 
     this.efek.langkah(dt)
     this.hud.langkahToast(dt)
+    this.akumulatorMinimap += dt
     this.gambar()
-    if (this.fase === 'main') this.perbaruiHudRingan()
+    if (this.fase === 'main') {
+      this.akumulatorHud += dt
+      if (this.akumulatorHud >= 0.1) {
+        this.akumulatorHud = 0
+        this.perbaruiHudRingan()
+      }
+    }
     requestAnimationFrame((n) => this.bingkai(n))
   }
 
@@ -975,9 +994,12 @@ class Permainan {
       ctx.setLineDash([])
     }
 
-    const mctx = this.hud.petaMini.getContext('2d')
-    if (mctx && this.minimap) {
-      this.minimap.gambar(mctx, this.kam, this.hud.petaMini.width, this.hud.petaMini.height, this.timSaya)
+    if (this.akumulatorMinimap >= 0.066) {
+      this.akumulatorMinimap = 0
+      const mctx = this.hud.petaMini.getContext('2d')
+      if (mctx && this.minimap) {
+        this.minimap.gambar(mctx, this.kam, this.hud.petaMini.width, this.hud.petaMini.height, this.timSaya)
+      }
     }
   }
 
@@ -996,6 +1018,7 @@ class Permainan {
   }
 
   private perbaruiHud(): void {
+    this.akumulatorHud = 0
     this.perbaruiHudRingan()
   }
 

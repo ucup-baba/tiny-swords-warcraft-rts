@@ -1,20 +1,29 @@
 import { DUNIA_H, DUNIA_W, TILE, TINGGI, type Tim } from '@hftf/shared'
-import { pernahLihat, terlihatDi, type Dunia } from '@hftf/sim'
+import { pernahLihat, terlihatDi, TICK_PER_FOG, type Dunia } from '@hftf/sim'
 import type { Kamera } from './kamera.js'
 
 /**
- * Minimap. Terrain-nya digambar SEKALI ke kanvas offscreen lalu di-blit tiap
- * frame; hanya unit & bangunan yang digambar ulang. Menggambar 9.216 tile tiap
- * frame di minimap sama mahalnya dengan menggambar petanya dua kali.
+ * Minimap. Terrain dan lapisan fog-nya dicache di kanvas offscreen lalu di-blit
+ * sekali per frame — menggambar 9.216 tile/fog tiap frame membuat FPS HP anjlok.
  */
 export class Minimap {
   private latar: HTMLCanvasElement | null = null
+  private fogKanvas: HTMLCanvasElement | null = null
+  private fogCtx: CanvasRenderingContext2D | null = null
+  private fogData: ImageData | null = null
+  private slotFogTerakhir = -1
+  private timFogTerakhir: Tim | null = null
 
   constructor(private dunia: Dunia) {}
 
   /** Dipanggil kalau terrain berubah (saat ini hanya sekali, saat mulai). */
   perbarui(): void {
     this.latar = null
+  }
+
+  /** Paksa rebuild tekstur fog minimap (mis. saat Guest menerima snapshot baru). */
+  segarkanFog(): void {
+    this.slotFogTerakhir = -1
   }
 
   private buatLatar(w: number, h: number): HTMLCanvasElement {
@@ -82,18 +91,37 @@ export class Minimap {
       ctx.stroke()
     }
 
-    // Lapisan fog di minimap: belum pernah dilihat jadi hitam (PRD §12.1).
+    // Lapisan fog di minimap memakai tekstur offscreen 96x96 (1x drawImage, bukan 9.216 fillRect!).
     const t2 = this.dunia.terrain
-    const fog = this.dunia.fog[timSaya]
-    const sx = w / t2.kolom
-    const sy = h / t2.baris
-    for (let ty = 0; ty < t2.baris; ty++) {
-      for (let tx = 0; tx < t2.kolom; tx++) {
-        const i = ty * t2.kolom + tx
-        if (fog.kini[i] === 1) continue
-        ctx.fillStyle = fog.pernah[i] === 1 ? 'rgba(6,8,14,0.45)' : 'rgba(6,8,14,0.95)'
-        ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
+    if (!this.fogKanvas || this.fogKanvas.width !== t2.kolom || this.fogKanvas.height !== t2.baris) {
+      this.fogKanvas = document.createElement('canvas')
+      this.fogKanvas.width = t2.kolom
+      this.fogKanvas.height = t2.baris
+      this.fogCtx = this.fogKanvas.getContext('2d')
+      this.fogData = this.fogCtx ? this.fogCtx.createImageData(t2.kolom, t2.baris) : null
+      this.slotFogTerakhir = -1
+    }
+    const slotFog = Math.floor(this.dunia.tick / TICK_PER_FOG)
+    if (this.fogCtx && this.fogData && (slotFog !== this.slotFogTerakhir || timSaya !== this.timFogTerakhir)) {
+      this.slotFogTerakhir = slotFog
+      this.timFogTerakhir = timSaya
+      const fog = this.dunia.fog[timSaya]
+      const pxFog = this.fogData.data
+      const total = t2.kolom * t2.baris
+      for (let i = 0; i < total; i++) {
+        const o = i * 4
+        pxFog[o] = 6
+        pxFog[o + 1] = 8
+        pxFog[o + 2] = 14
+        pxFog[o + 3] = fog.kini[i] === 1 ? 0 : fog.pernah[i] === 1 ? 115 : 242
       }
+      this.fogCtx.putImageData(this.fogData, 0, 0)
+    }
+    if (this.fogKanvas) {
+      const halus = ctx.imageSmoothingEnabled
+      ctx.imageSmoothingEnabled = true
+      ctx.drawImage(this.fogKanvas, 0, 0, w, h)
+      ctx.imageSmoothingEnabled = halus
     }
 
     // Kotak kamera

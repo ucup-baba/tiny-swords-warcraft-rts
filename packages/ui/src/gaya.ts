@@ -61,7 +61,8 @@ img, canvas { image-rendering: pixelated; }
   overflow: hidden;
   transform-origin: center center;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 42px rgba(0, 0, 0, 0.85);
+  will-change: transform;
+  outline: 2px solid #090705;
 }
 
 #panggung {
@@ -91,8 +92,12 @@ img, canvas { image-rendering: pixelated; }
   z-index: 14;
 }
 .btn-util {
-  height: 36px;
-  padding: 4px 10px;
+  height: 34px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -100,10 +105,10 @@ img, canvas { image-rendering: pixelated; }
   cursor: pointer;
   background: transparent;
   white-space: nowrap;
-  ${sembilanIris(UI.tombolBlue, 10, basis)};
+  ${sembilanIris(UI.tombolBlue, 10, basis, 3)};
 }
 .btn-util.aktif {
-  ${sembilanIris(UI.tombolBlueTekan, 10, basis)};
+  ${sembilanIris(UI.tombolBlueTekan, 10, basis, 3)};
   color: #fff;
   text-shadow: 0 1px 2px #000;
   outline: 2px solid var(--emas);
@@ -170,10 +175,11 @@ img, canvas { image-rendering: pixelated; }
 #pita-status {
   position: absolute; top: 8px; left: 10px;
   display: flex; gap: 10px; align-items: center;
-  padding: 6px 14px; font-size: 14px; font-weight: 700;
-  color: var(--tinta); min-height: 40px;
+  padding: 5px 14px 9px; font-size: 14px; font-weight: 700; line-height: 1;
+  color: var(--tinta); min-height: 38px;
   ${tigaIris(UI.pitaBlue, 18, basis)};
   z-index: 12;
+  contain: layout style;
 }
 #pita-status.red { ${tigaIris(UI.pitaRed, 18, basis)}; }
 #pita-status .pisah { opacity: 0.45; }
@@ -188,14 +194,15 @@ img, canvas { image-rendering: pixelated; }
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  ${sembilanIris(UI.panelUkir, 16, basis)};
+  ${sembilanIris(UI.panelUkir, 16, basis, 10)};
   background: var(--kayu-gelap);
   overflow: hidden;
+  contain: layout style;
 }
 #sisi > *, #tab > *, #kisi-produksi > * { min-width: 0; }
 
 #peta-mini-bingkai {
-  ${sembilanIris(UI.bannerH, 14, basis)};
+  ${sembilanIris(UI.bannerH, 14, basis, 6)};
   background: #26303a;
   padding: 2px;
   flex: none;
@@ -205,22 +212,24 @@ img, canvas { image-rendering: pixelated; }
 #sumber-daya { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; flex: none; }
 .sumber {
   display: flex; align-items: center; gap: 6px;
-  height: 36px; padding: 3px 7px; font-size: 14px; font-weight: 700;
+  height: 36px; padding: 2px 8px; font-size: 14px; font-weight: 700; line-height: 1;
   color: var(--tinta); overflow: hidden; white-space: nowrap;
-  ${sembilanIris(UI.panelUkir3, 10, basis)};
+  ${sembilanIris(UI.panelUkir3, 10, basis, 3)};
 }
-.sumber img { width: 26px; height: 26px; flex: none; object-fit: contain; }
+.sumber img { width: 24px; height: 24px; flex: none; object-fit: contain; }
 
 #tab { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; flex: none; }
 .tab-tombol {
-  height: 34px; padding: 4px 2px; font-family: inherit; font-size: 13px; font-weight: 700;
+  height: 34px; padding: 0 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1;
   color: var(--tinta); cursor: pointer; background: transparent;
   white-space: nowrap; overflow: hidden;
-  ${sembilanIris(UI.tombolBlue, 11, basis)};
+  ${sembilanIris(UI.tombolBlue, 11, basis, 3)};
 }
-.tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolBlueTekan, 11, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-#akar.red .tab-tombol { ${sembilanIris(UI.tombolRed, 11, basis)}; }
-#akar.red .tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolRedTekan, 11, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolBlueTekan, 11, basis, 3)}; color: #fff; text-shadow: 0 1px 2px #000; }
+#akar.red .tab-tombol { ${sembilanIris(UI.tombolRed, 11, basis, 3)}; }
+#akar.red .tab-tombol[aria-selected="true"] { ${sembilanIris(UI.tombolRedTekan, 11, basis, 3)}; color: #fff; text-shadow: 0 1px 2px #000; }
 
 #kisi-produksi {
   display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
@@ -229,12 +238,12 @@ img, canvas { image-rendering: pixelated; }
 .kartu {
   position: relative;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  height: 86px; padding: 4px 3px; cursor: pointer; background: transparent;
+  height: 86px; padding: 3px 4px; cursor: pointer; background: transparent;
   font-family: inherit; color: var(--tinta); overflow: hidden;
-  ${sembilanIris(UI.tombolBlue, 12, basis)};
+  ${sembilanIris(UI.tombolBlue, 12, basis, 4)};
 }
 .kartu.unit { height: 112px; gap: 2px; }
-.kartu:disabled, .kartu.terkunci { ${sembilanIris(UI.tombolMati, 12, basis)}; opacity: 0.84; }
+.kartu:disabled, .kartu.terkunci { ${sembilanIris(UI.tombolMati, 12, basis, 4)}; opacity: 0.84; }
 .kartu:disabled { cursor: not-allowed; }
 .kartu.terkunci { cursor: pointer; }
 .kartu img { width: 38px; height: 38px; object-fit: contain; }
@@ -268,7 +277,7 @@ img, canvas { image-rendering: pixelated; }
   position: absolute;
   left: 10px;
   right: 10px;
-  bottom: 130px;
+  bottom: 132px;
   display: flex;
   flex-wrap: nowrap;
   gap: 5px;
@@ -280,38 +289,41 @@ img, canvas { image-rendering: pixelated; }
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   height: 32px;
-  padding: 2px 8px;
+  padding: 0 9px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   color: var(--tinta);
   cursor: pointer;
   background: transparent;
   white-space: nowrap;
-  ${sembilanIris(UI.tombolBlue, 10, basis)};
+  ${sembilanIris(UI.tombolBlue, 10, basis, 3)};
 }
-.tab-unit-btn.hero { ${sembilanIris(UI.tombolRed, 10, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.tab-unit-btn.hero { ${sembilanIris(UI.tombolRed, 10, basis, 3)}; color: #fff; text-shadow: 0 1px 2px #000; }
 .tab-unit-btn.aktif { outline: 2px solid var(--emas); transform: translateY(-2px); }
 .tab-unit-btn img { width: 20px; height: 20px; object-fit: contain; }
 
-/* --- Panel seleksi bawah Warcraft III (tinggi tetap 116px) --- */
+/* --- Panel seleksi bawah Warcraft III (tinggi tetap 118px) --- */
 #seleksi {
   position: absolute;
   left: 10px;
   right: 10px;
   bottom: 10px;
-  height: 116px;
-  padding: 10px 14px;
+  height: 118px;
+  padding: 8px 12px;
   display: grid;
-  grid-template-columns: 238px 1fr 274px;
+  grid-template-columns: 242px 1fr 278px;
   gap: 10px;
   align-items: center;
-  ${sembilanIris(UI.panelUkir, 18, basis)};
+  ${sembilanIris(UI.panelUkir, 16, basis, 8)};
   background: var(--kayu-gelap);
   overflow: hidden;
   z-index: 11;
+  contain: layout style;
 }
 
 #seleksi-kiri {
@@ -324,7 +336,7 @@ img, canvas { image-rendering: pixelated; }
   width: 66px; height: 66px; flex: none;
   display: flex; align-items: center; justify-content: center;
   padding: 4px;
-  ${sembilanIris(UI.panelUkir3, 10, basis)};
+  ${sembilanIris(UI.panelUkir3, 10, basis, 4)};
 }
 #seleksi-potret img { width: 100%; height: 100%; object-fit: contain; }
 #seleksi-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -419,26 +431,26 @@ img, canvas { image-rendering: pixelated; }
 #seleksi-aksi {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 5px;
+  gap: 4px;
   width: 100%;
 }
 .cmd-btn {
   position: relative;
-  height: 44px;
-  padding: 3px 6px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-family: inherit; font-size: 11px; font-weight: 700;
+  height: 40px;
+  padding: 2px 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1.08;
   color: var(--tinta); cursor: pointer; background: transparent;
   overflow: hidden;
-  ${sembilanIris(UI.tombolBlue, 10, basis)};
+  ${sembilanIris(UI.tombolBlue, 10, basis, 3)};
 }
-.cmd-btn.aktif { ${sembilanIris(UI.tombolBlueTekan, 10, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-.cmd-btn.riset { height: 76px; gap: 1px; }
-.cmd-btn.merah { ${sembilanIris(UI.tombolRed, 10, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-.cmd-btn:disabled, .cmd-btn.terkunci { ${sembilanIris(UI.tombolMati, 10, basis)}; color: #544638; opacity: 0.84; }
+.cmd-btn.aktif { ${sembilanIris(UI.tombolBlueTekan, 10, basis, 3)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.cmd-btn.riset { height: 80px; gap: 2px; padding: 4px 6px; }
+.cmd-btn.merah { ${sembilanIris(UI.tombolRed, 10, basis, 3)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.cmd-btn:disabled, .cmd-btn.terkunci { ${sembilanIris(UI.tombolMati, 10, basis, 3)}; color: #544638; opacity: 0.84; }
 .cmd-btn:disabled { cursor: not-allowed; }
 .cmd-btn.terkunci { cursor: pointer; }
-.cmd-sub { font-size: 9px; color: #402612; font-weight: 700; }
+.cmd-sub { font-size: 9px; color: #402612; font-weight: 700; line-height: 1.05; }
 .cmd-btn.merah .cmd-sub, .cmd-btn.aktif .cmd-sub { color: #ffe8b0; }
 
 .cip {
@@ -463,12 +475,12 @@ img, canvas { image-rendering: pixelated; }
 .kotak p { font-size: 12px; line-height: 1.35; margin-bottom: 4px; color: #362111; font-weight: 700; }
 .baris { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; align-items: center; }
 .tombol-besar {
-  padding: 6px 14px; font-family: inherit; font-size: 13px; font-weight: 700;
+  padding: 8px 16px; font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1.1;
   color: var(--tinta); cursor: pointer; background: transparent;
-  ${sembilanIris(UI.tombolBlue, 12, basis)};
+  ${sembilanIris(UI.tombolBlue, 12, basis, 4)};
 }
-.tombol-besar.merah { ${sembilanIris(UI.tombolRed, 12, basis)}; color: #fff; text-shadow: 0 1px 2px #000; }
-.tombol-besar:disabled { ${sembilanIris(UI.tombolMati, 12, basis)}; cursor: not-allowed; }
+.tombol-besar.merah { ${sembilanIris(UI.tombolRed, 12, basis, 4)}; color: #fff; text-shadow: 0 1px 2px #000; }
+.tombol-besar:disabled { ${sembilanIris(UI.tombolMati, 12, basis, 4)}; cursor: not-allowed; }
 
 #muat-bar { height: 16px; background: rgba(0,0,0,0.45); margin-top: 10px; }
 #muat-isi { height: 100%; width: 0%; background: var(--emas); transition: width 0.12s linear; }
