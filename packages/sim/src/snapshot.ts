@@ -1,4 +1,5 @@
 import type { Tim } from '@hftf/shared'
+import { GOBLIN } from './definisi/goblin.js'
 import type { JenisRiset } from './definisi/riset.js'
 import { segarkanHalangan } from './halangan.js'
 import { saringUntuk, terlihatDi } from './sistem/fog.js'
@@ -24,6 +25,7 @@ export interface Snapshot {
   tambang: { id: number; x: number; y: number; jenis: 'mine' | 'stone'; gold?: number }[]
   domba: { id: number; x: number; y: number; daging?: number; bergerak?: boolean; arah?: 1 | -1 }[]
   daging: { id: number; x: number; y: number; jumlah?: number }[]
+  camp?: { id: number; respawn: number }[]
   kejadian?: Kejadian[]
 }
 
@@ -95,6 +97,7 @@ export function buatSnapshot(dunia: Dunia, untuk: Tim): Snapshot {
     tambang: dunia.tambang.map((t) => ({ id: t.id, x: t.x, y: t.y, jenis: t.jenis, gold: Math.round(t.gold) })),
     domba: dunia.domba.map((d) => ({ id: d.id, x: bulat(d.x), y: bulat(d.y), daging: d.daging, bergerak: d.bergerak, arah: d.arah })),
     daging: dunia.daging.map((d) => ({ id: d.id, x: d.x, y: d.y, jumlah: d.jumlah })),
+    camp: dunia.camp.map((c) => ({ id: c.id, respawn: Math.ceil(c.respawn) })),
     kejadian: dunia.kejadian.filter((k) => kejadianTerlihat(dunia, untuk, k)),
   }
 }
@@ -129,9 +132,16 @@ export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number
       unitBaru.push(lama)
       continue
     }
+    const gobDef = camp >= 0
+      ? (peran === 'archer' ? GOBLIN.tnt : peran === 'pawn' ? GOBLIN.barrel : GOBLIN.torch)
+      : null
     unitBaru.push({
       id, tim, peran: peran as Unit['peran'], x, y,
-      hp, hpMaks, dmg: 0, jarak: 0, jeda: 1, kecepatan: 0, jedaTimer: 0,
+      hp, hpMaks,
+      dmg: gobDef?.dmg ?? 0,
+      jarak: gobDef?.jarak ?? 0,
+      jeda: gobDef?.jeda ?? 1,
+      kecepatan: 0, jedaTimer: 0,
       tugas: tugas ?? 'diam', tx: x, ty: y, targetId: null,
       bawaanJenis: bawaan ?? null, bawaanJumlah: 0, tikPanen: 0,
       arah: arah ?? (tim === 'red' ? -1 : 1),
@@ -193,6 +203,12 @@ export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number
     arah: d.arah ?? 1, bergerak: d.bergerak ?? false,
   }))
   dunia.daging = s.daging.map((d) => ({ id: d.id, x: d.x, y: d.y, jumlah: d.jumlah ?? 18, sisaDetik: 30 }))
+  if (s.camp) {
+    for (const sc of s.camp) {
+      const lokal = dunia.camp.find((c) => c.id === sc.id)
+      if (lokal) lokal.respawn = sc.respawn
+    }
+  }
   if (s.kejadian) dunia.kejadian = s.kejadian
   segarkanHalangan(dunia)
 }

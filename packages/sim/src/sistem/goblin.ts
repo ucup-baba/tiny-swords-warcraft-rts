@@ -1,6 +1,7 @@
-import { DT_TETAP } from '@hftf/shared'
+import { DT_TETAP, TINGGI } from '@hftf/shared'
 import { CAMP, GOBLIN, ISI_CAMP, type JenisCamp, type PeranGoblin } from '../definisi/goblin.js'
 import { acakRentang } from '../rng.js'
+import { keTengahPiksel, keTile, tinggiDi } from '../terrain.js'
 import type { Camp, Dunia, Unit } from '../tipe.js'
 import { bermusuhan, jarak } from '../util.js'
 import { langkahMenuju } from './gerak.js'
@@ -42,10 +43,19 @@ export function peranGoblin(u: Unit): PeranGoblin {
 
 export function isiCamp(dunia: Dunia, camp: Camp): void {
   const daftar = ISI_CAMP[camp.jenis]
+  const levelCamp = tinggiDi(dunia.terrain, keTile(camp.x), keTile(camp.y))
+  const rDasar = dunia.peta === 'klasik2' ? 40 : 84
   for (const [i, peran] of daftar.entries()) {
     const sudut = (i / daftar.length) * Math.PI * 2
-    const r = 40 + acakRentang(dunia.rng, 0, 40)
-    buatGoblin(dunia, camp, peran, camp.x + Math.cos(sudut) * r, camp.y + Math.sin(sudut) * r)
+    const r = rDasar + acakRentang(dunia.rng, 0, 40)
+    let gx = camp.x + Math.cos(sudut) * r
+    let gy = camp.y + Math.sin(sudut) * r
+    const lv = tinggiDi(dunia.terrain, keTile(gx), keTile(gy))
+    if (lv === TINGGI.air || (levelCamp !== TINGGI.air && lv !== levelCamp)) {
+      gx = keTengahPiksel(keTile(camp.x))
+      gy = keTengahPiksel(keTile(camp.y))
+    }
+    buatGoblin(dunia, camp, peran, gx, gy)
   }
   camp.aggro = false
   camp.respawn = 0

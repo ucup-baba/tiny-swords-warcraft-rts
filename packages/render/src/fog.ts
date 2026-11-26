@@ -64,6 +64,7 @@ export class LapisanFog {
     const kol = this.kolom
 
     // Pass 1: Wilayah belum pernah dilihat (hitam pekat buram, tanpa alpha-blend).
+    // Overlap 0.5px menghilangkan garis rambut grid 1px saat kamera di-zoom pecahan (mis. 0.6x).
     ctx.fillStyle = '#06080e'
     for (let ty = ty1; ty < ty2; ty++) {
       const off = ty * kol
@@ -73,12 +74,15 @@ export class LapisanFog {
         if (kini[off + tx] === 1 || pernah[off + tx] === 1) { tx++; continue }
         const awal = tx
         while (tx < tx2 && kini[off + tx] !== 1 && pernah[off + tx] !== 1) tx++
-        ctx.fillRect(awal * TILE, py, (tx - awal) * TILE, TILE)
+        ctx.fillRect(awal * TILE - 0.5, py - 0.5, (tx - awal) * TILE + 1, TILE + 1)
       }
     }
 
-    // Pass 2: Wilayah pernah dilihat tapi sedang gelap (setengah transparan).
+    // Pass 2: Wilayah pernah dilihat tapi sedang gelap (gabung dalam 1 path fill
+    // agar bebas garis sela 1px DAN bebas garis tumpang-tindih alpha ganda!).
     ctx.fillStyle = 'rgba(6,8,14,0.54)'
+    ctx.beginPath()
+    let adaGelap = false
     for (let ty = ty1; ty < ty2; ty++) {
       const off = ty * kol
       const py = ty * TILE
@@ -87,8 +91,10 @@ export class LapisanFog {
         if (kini[off + tx] === 1 || pernah[off + tx] !== 1) { tx++; continue }
         const awal = tx
         while (tx < tx2 && kini[off + tx] !== 1 && pernah[off + tx] === 1) tx++
-        ctx.fillRect(awal * TILE, py, (tx - awal) * TILE, TILE)
+        ctx.rect(awal * TILE - 0.35, py - 0.35, (tx - awal) * TILE + 0.7, TILE + 0.7)
+        adaGelap = true
       }
     }
+    if (adaGelap) ctx.fill()
   }
 }

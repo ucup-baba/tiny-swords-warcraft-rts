@@ -40,12 +40,17 @@ export class Minimap {
       for (let tx = 0; tx < t.kolom; tx++) {
         const idx = ty * t.kolom + tx
         const v = t.tinggi[idx]!
+        const bawahPlat = ty > 0 && v !== TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
+        const bawahLaut = ty > 0 && v === TINGGI.air && t.tinggi[(ty - 1) * t.kolom + tx] !== TINGGI.air && (t.jembatan[(ty - 1) * t.kolom + tx] ?? 0) === 0
         c.fillStyle =
-          (t.jembatan[idx] ?? 0) > 0 ? '#b5824c'
-          : v === TINGGI.air ? '#2f5f6e'
-          : t.ramp[idx] === 1 ? '#9c8f63'
-          : v === TINGGI.plateau ? '#7f9e86'
-          : '#5f8a4e'
+          (t.jembatan[idx] ?? 0) > 0 ? '#b87d45'
+          : bawahLaut ? '#466c75'
+          : v === TINGGI.air ? '#2b6a7a'
+          : (t.ramp[idx] ?? 0) > 0 ? '#d4c387'
+          : bawahPlat ? '#53737a'
+          : (t.jalan?.[idx] ?? 0) === 1 ? '#cfb87c'
+          : v === TINGGI.plateau ? '#86b562'
+          : '#62964c'
         c.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
       }
     }
@@ -81,18 +86,6 @@ export class Minimap {
       if (!pernahLihat(this.dunia, timSaya, t.x, t.y)) continue
       ctx.fillStyle = '#ffd86b'
       ctx.fillRect(px(t.x) - 2, py(t.y) - 2, 4, 4)
-    }
-
-    // Camp goblin: lingkaran peringatan, berkedip menjelang respawn (PRD §10.3).
-    for (const c of this.dunia.camp) {
-      const hidup = this.dunia.unit.some((u) => u.campId === c.id)
-      const segeraKembali = !hidup && c.respawn > 0 && c.respawn < 10
-      if (!hidup && !segeraKembali) continue
-      ctx.strokeStyle = segeraKembali ? '#ffe08a' : '#c9a227'
-      ctx.lineWidth = segeraKembali ? 2 : 1
-      ctx.beginPath()
-      ctx.arc(px(c.x), py(c.y), c.jenis === 'besar' ? 7 : 5, 0, Math.PI * 2)
-      ctx.stroke()
     }
 
     // Lapisan fog di minimap: pakai tekstur fogBersama dari LapisanFog (nol putImageData duplikat!)
@@ -131,6 +124,21 @@ export class Minimap {
       ctx.imageSmoothingEnabled = true
       ctx.drawImage(sumberFog, 0, 0, w, h)
       ctx.imageSmoothingEnabled = halus
+    }
+
+    // Camp goblin tampil di ATAS fog (ala titik creep Warcraft III) agar lokasi Goblin jelas terlihat!
+    for (const c of this.dunia.camp) {
+      const hidup = c.respawn <= 0 && this.dunia.unit.some((u) => u.campId === c.id)
+      const segeraKembali = !hidup && c.respawn > 0 && c.respawn < 10
+      if (!hidup && !segeraKembali) continue
+      const r = c.jenis === 'besar' ? 4.5 : 3.2
+      ctx.fillStyle = c.jenis === 'besar' ? '#ff7b3a' : '#f2c14e'
+      ctx.beginPath()
+      ctx.arc(px(c.x), py(c.y), r, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = segeraKembali ? '#ffffff' : '#2a1608'
+      ctx.lineWidth = 1.2
+      ctx.stroke()
     }
 
     // Kotak kamera

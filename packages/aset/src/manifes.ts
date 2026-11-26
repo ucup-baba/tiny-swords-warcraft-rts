@@ -23,6 +23,24 @@ export const TERRAIN = {
   batuAir4: { file: 'Terrain/Water/Rocks/Rocks_04.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
 } as const satisfies Record<string, Aset>
 
+const ALASAN_TERRAIN_FREE = 'Free Pack menyediakan tileset tebing bertingkat berumput (rumput di atas tebing batu, lereng miring, & tebing laut) serta awan yang tidak ada di Update 010'
+
+export const TERRAIN_FREE = {
+  tileHijau: { file: 'Terrain/Tileset/Tilemap_color1.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  awan1: { file: 'Terrain/Decorations/Clouds/Clouds_01.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  awan2: { file: 'Terrain/Decorations/Clouds/Clouds_02.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+} as const satisfies Record<string, Aset>
+
+const ALASAN_POHON_FREE = 'Free Pack punya 4 variasi pohon beranimasi (pinus gelap, pinus cerah, birch kuning-hijau, dan daun gugur emas) agar hutan di pojok pulau hidup seperti ilustrasi resmi'
+
+export const POHON_FREE = {
+  pinus1: { file: 'Terrain/Resources/Wood/Trees/Tree1.png', pack: 'free', fw: 192, fh: 256, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
+  pinus2: { file: 'Terrain/Resources/Wood/Trees/Tree2.png', pack: 'free', fw: 192, fh: 256, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
+  daun1: { file: 'Terrain/Resources/Wood/Trees/Tree3.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
+  daun2: { file: 'Terrain/Resources/Wood/Trees/Tree4.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
+  tunggul: { file: 'Terrain/Resources/Wood/Trees/Stump 1.png', pack: 'free', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_POHON_FREE },
+} as const satisfies Record<string, Aset>
+
 /**
  * Deco 01-18 TIDAK seragam ukurannya: sebagian 64x64, dua di antaranya 64x128,
  * dan satu 192x192. Ukurannya ditulis eksplisit — ditebak seragam berarti tiga
@@ -366,7 +384,8 @@ export const AVATAR = Object.fromEntries(
 
 /** Semua aset yang dipakai, rata, untuk validator dan preloader. */
 export const SEMUA: Record<string, Aset> = {
-  ...pref('terrain', TERRAIN), ...pref('deko', DEKO), ...pref('sumber', SUMBER),
+  ...pref('terrain', TERRAIN), ...pref('terrainFree', TERRAIN_FREE), ...pref('pohonFree', POHON_FREE),
+  ...pref('deko', DEKO), ...pref('sumber', SUMBER),
   ...pref('efek', EFEK), ...pref('bgBlue', BANGUNAN_BLUE), ...pref('bgRed', BANGUNAN_RED),
   ...pref('bgPurple', BANGUNAN_U010_WARNA.purple), ...pref('bgYellow', BANGUNAN_U010_WARNA.yellow),
   ...pref('bgFase', BANGUNAN_FASE), ...pref('unitBlue', UNIT_BLUE), ...pref('unitRed', UNIT_RED),

@@ -1,4 +1,4 @@
-import { DEKO, TERRAIN, frame, url, type Aset } from '@hftf/aset'
+import { DEKO, TERRAIN, TERRAIN_FREE, frame, url, type Aset } from '@hftf/aset'
 import { TILE, TINGGI } from '@hftf/shared'
 import type { Terrain } from '@hftf/sim'
 import { BARIS_ELEV, GUGUS_FLAT, selAutotile } from './autotile.js'
@@ -23,6 +23,10 @@ const DAFTAR_DEKO: readonly (Aset | undefined)[] = Array.from({ length: 15 }, (_
   DEKO[`deco${String(i + 1).padStart(2, '0')}`],
 )
 
+const BATU_AIR: readonly Aset[] = [
+  TERRAIN.batuAir1, TERRAIN.batuAir2, TERRAIN.batuAir3, TERRAIN.batuAir4,
+]
+
 interface Chunk {
   kanvas: HTMLCanvasElement
   ctx: CanvasRenderingContext2D | null
@@ -30,12 +34,36 @@ interface Chunk {
   pakaiKe: number
 }
 
+interface RentangJembatan {
+  horiz: boolean
+  x1: number
+  x2: number
+  y1: number
+  y2: number
+}
+
+interface BatuAirPos {
+  x: number
+  y: number
+  varian: number
+  fase: number
+}
+
+interface AwanPos {
+  x0: number
+  y: number
+  varian: 0 | 1
+  kecepatan: number
+  skala: number
+}
+
 /**
- * Perender terrain hibrida (Chunk 512x512 buram + budget panggang 1 chunk/frame):
- * - Saat normal: hanya 4–6 drawImage chunk buram (~0.2 ms, 60 FPS terkunci di HP).
- * - Saat geser kamera cepat: paling banyak 1 chunk dipanggang per frame (nol freeze);
- *   chunk sisanya digambar langsung untuk 1 frame dari tabel autotile datar lalu menyusul.
- * - Pool LRU maks 20 chunk (~20 MB VRAM) agar Chrome Android tidak pernah turun ke software.
+ * Perender terrain bertingkat bergaya Tiny Swords resmi (Free Pack Tilemap_color1 + Update 010):
+ * - Pulau Level 1 (dataran) duduk di atas tebing batu laut + busa pantai lembut.
+ * - Benteng & Plateau Level 2 duduk di atas tebing batu berumput + bayangan tebing + tangga batu / lereng ramp.
+ * - Jalan tanah/pasir keemasan menghubungkan Castle -> Tangga -> Jembatan -> Pusat.
+ * - Jembatan kayu dirender utuh dalam 1 pass khusus di atas sambungan chunk tanpa sela air 1 piksel pun.
+ * - Batu air beranimasi & awan lembut melayang di pinggir laut — tetap 60 FPS di HP.
  */
 export class PeremajaTerrain {
   private readonly kolom: number
@@ -43,16 +71,34 @@ export class PeremajaTerrain {
   private readonly kolomChunk: number
   private readonly barisChunk: number
   private readonly butuhAir: Uint8Array
-  private readonly flatSx: Int16Array
-  private readonly flatSy: Int16Array
-  private readonly elevSx: Int16Array
-  private readonly elevSy: Int16Array
-  private readonly tebingSx: Int16Array
-  private readonly jembatanSx: Int16Array
-  private readonly jembatanSy: Int16Array
-  /** Bit posisi melintang jembatan 3-tile: 0=top/kiri tepi, 1=tengah tak bertepi, 2=bawah/kanan tepi, 3=1-tile penuh. */
-  private readonly jembatanSisi: Int8Array
+  private readonly busaPantai: Uint8Array
+  /** Level 1 (dataran) pakai blok elevated Tilemap_color1 (kol 5..8, bar 0..3). */
+  private readonly daratKol: Int8Array
+  private readonly daratBar: Int8Array
+  /** Tebing laut jatuh ke tile air (tx, ty+1): nilai 0..3 = kol (5+k, bar 5). */
+  private readonly tebingLautKol: Int8Array
+  /** Jalan pasir pada dataran & plateau (Tilemap_Flat kol 5..8). */
+  private readonly jalanSx: Int16Array
+  private readonly jalanSy: Int16Array
+  /** Level 2 (plateau) permukaan rumput bertingkat (kol 5..8, bar 0..3). */
+  private readonly platKol: Int8Array
+  private readonly platBar: Int8Array
+  /** Tebing plateau jatuh ke tile (tx, ty+1): kol 0..3, baris 4 (di atas rumput) atau 5 (di atas air). */
+  private readonly tebingPlatKol: Int8Array
+  private readonly tebingPlatBar: Int8Array
+  /** Ramp: 0=bukan, 1=tangga vertikal (N/S), 2=tangga barat (turun ke barat), 3=tangga timur (turun ke timur). */
+  private readonly jenisRamp: Uint8Array
+  private readonly rampKol: Int8Array
+  private readonly rampBar: Int8Array
+  /** Tangga lanjutan di kaki tebing selatan ramp N/S (ty+1). */
+  private readonly tanggaBawahKol: Int8Array
   private readonly dekoIdx: Int8Array
+
+  private daftarJembatan: RentangJembatan[] = []
+  private daftarBatuAir: BatuAirPos[] = []
+  private daftarAwan: AwanPos[] = []
+  private tanggaBarat: HTMLCanvasElement | null = null
+  private tanggaTimur: HTMLCanvasElement | null = null
   private readonly chunk = new Map<string, Chunk>()
   private urutanPakai = 0
 
@@ -63,14 +109,20 @@ export class PeremajaTerrain {
     this.barisChunk = Math.ceil(this.baris / TILE_PER_CHUNK)
     const total = this.kolom * this.baris
     this.butuhAir = new Uint8Array(total)
-    this.flatSx = new Int16Array(total).fill(-1)
-    this.flatSy = new Int16Array(total).fill(-1)
-    this.elevSx = new Int16Array(total).fill(-1)
-    this.elevSy = new Int16Array(total).fill(-1)
-    this.tebingSx = new Int16Array(total).fill(-1)
-    this.jembatanSx = new Int16Array(total).fill(-1)
-    this.jembatanSy = new Int16Array(total).fill(-1)
-    this.jembatanSisi = new Int8Array(total).fill(-1)
+    this.busaPantai = new Uint8Array(total)
+    this.daratKol = new Int8Array(total).fill(-1)
+    this.daratBar = new Int8Array(total).fill(-1)
+    this.tebingLautKol = new Int8Array(total).fill(-1)
+    this.jalanSx = new Int16Array(total).fill(-1)
+    this.jalanSy = new Int16Array(total).fill(-1)
+    this.platKol = new Int8Array(total).fill(-1)
+    this.platBar = new Int8Array(total).fill(-1)
+    this.tebingPlatKol = new Int8Array(total).fill(-1)
+    this.tebingPlatBar = new Int8Array(total).fill(-1)
+    this.jenisRamp = new Uint8Array(total)
+    this.rampKol = new Int8Array(total).fill(-1)
+    this.rampBar = new Int8Array(total).fill(-1)
+    this.tanggaBawahKol = new Int8Array(total).fill(-1)
     this.dekoIdx = new Int8Array(total).fill(-1)
     this.bangunTabel()
   }
@@ -89,90 +141,199 @@ export class PeremajaTerrain {
       if (tx < 0 || ty < 0 || tx >= kol || ty >= bar) return TINGGI.air
       return t.tinggi[ty * kol + tx]!
     }
-    const ramp = (tx: number, ty: number): boolean =>
-      tx >= 0 && ty >= 0 && tx < kol && ty < bar && t.ramp[ty * kol + tx] === 1
+    const rampVal = (tx: number, ty: number): number =>
+      tx >= 0 && ty >= 0 && tx < kol && ty < bar ? (t.ramp[ty * kol + tx] ?? 0) : 0
+    const isRamp = (tx: number, ty: number): boolean => rampVal(tx, ty) > 0
     const jemb = (tx: number, ty: number): number =>
       tx >= 0 && ty >= 0 && tx < kol && ty < bar ? (t.jembatan[ty * kol + tx] ?? 0) : 0
-    // Jembatan berdiri di atas air, jadi rumput tepi tetap berbingkai pantai alami.
+    const jln = (tx: number, ty: number): boolean =>
+      tx >= 0 && ty >= 0 && tx < kol && ty < bar && (t.jalan?.[ty * kol + tx] ?? 0) === 1
     const darat = (tx: number, ty: number): boolean => h(tx, ty) !== TINGGI.air && jemb(tx, ty) === 0
     const atas = (tx: number, ty: number): boolean => h(tx, ty) === TINGGI.plateau
 
     this.butuhAir.fill(0)
-    this.flatSx.fill(-1)
-    this.flatSy.fill(-1)
-    this.elevSx.fill(-1)
-    this.elevSy.fill(-1)
-    this.tebingSx.fill(-1)
-    this.jembatanSx.fill(-1)
-    this.jembatanSy.fill(-1)
-    this.jembatanSisi.fill(-1)
+    this.busaPantai.fill(0)
+    this.daratKol.fill(-1)
+    this.daratBar.fill(-1)
+    this.tebingLautKol.fill(-1)
+    this.jalanSx.fill(-1)
+    this.jalanSy.fill(-1)
+    this.platKol.fill(-1)
+    this.platBar.fill(-1)
+    this.tebingPlatKol.fill(-1)
+    this.tebingPlatBar.fill(-1)
+    this.jenisRamp.fill(0)
+    this.rampKol.fill(-1)
+    this.rampBar.fill(-1)
+    this.tanggaBawahKol.fill(-1)
     this.dekoIdx.fill(-1)
+    this.daftarJembatan = []
+    this.daftarBatuAir = []
+    this.daftarAwan = []
 
+    // 1. Kumpulkan rentang jembatan yang menyatu (untuk gambar utuh tanpa sela & tanpa terpotong chunk).
+    const sudahJemb = new Uint8Array(kol * bar)
     for (let ty = 0; ty < bar; ty++) {
-      const barisOff = ty * kol
       for (let tx = 0; tx < kol; tx++) {
-        const i = barisOff + tx
+        const jv = jemb(tx, ty)
+        if (jv === 0 || sudahJemb[ty * kol + tx] === 1) continue
+        let x2 = tx
+        while (x2 + 1 < kol && jemb(x2 + 1, ty) === jv && sudahJemb[ty * kol + x2 + 1] === 0) x2++
+        let y2 = ty
+        while (y2 + 1 < bar) {
+          let penuh = true
+          for (let x = tx; x <= x2; x++) {
+            if (jemb(x, y2 + 1) !== jv || sudahJemb[(y2 + 1) * kol + x] === 1) {
+              penuh = false
+              break
+            }
+          }
+          if (!penuh) break
+          y2++
+        }
+        for (let y = ty; y <= y2; y++) {
+          for (let x = tx; x <= x2; x++) sudahJemb[y * kol + x] = 1
+        }
+        this.daftarJembatan.push({ horiz: jv === 1, x1: tx, x2, y1: ty, y2 })
+      }
+    }
+
+    // 2. Hitung autotile daratan, tebing laut, busa pantai, jalan pasir, plateau, tebing plateau, & ramp.
+    for (let ty = 0; ty < bar; ty++) {
+      const off = ty * kol
+      for (let tx = 0; tx < kol; tx++) {
+        const i = off + tx
         const hv = h(tx, ty)
         const jv = jemb(tx, ty)
-        if (hv === TINGGI.air) {
+
+        if (hv === TINGGI.air || jv > 0) {
           this.butuhAir[i] = 1
-          continue
-        }
-        if (jv > 0) {
-          this.butuhAir[i] = 1
-          if (jv === 1) {
-            const kiri = jemb(tx - 1, ty) === 1
-            const kanan = jemb(tx + 1, ty) === 1
-            this.jembatanSx[i] = (!kiri ? 0 : !kanan ? 2 : 1) * TILE
-            this.jembatanSy[i] = 0
-            const atasJ = jemb(tx, ty - 1) === 1
-            const bawahJ = jemb(tx, ty + 1) === 1
-            this.jembatanSisi[i] = !atasJ && !bawahJ ? 3 : !atasJ ? 0 : !bawahJ ? 2 : 1
-          } else {
-            const atasJ = jemb(tx, ty - 1) === 2
-            const bawahJ = jemb(tx, ty + 1) === 2
-            this.jembatanSx[i] = 0
-            this.jembatanSy[i] = (!atasJ ? 1 : !bawahJ ? 3 : 2) * TILE
-            const kiri = jemb(tx - 1, ty) === 2
-            const kanan = jemb(tx + 1, ty) === 2
-            this.jembatanSisi[i] = !kiri && !kanan ? 3 : !kiri ? 0 : !kanan ? 2 : 1
+          // Batu air dekoratif di perairan terbuka (jauh dari jembatan & tebing selatan)
+          if (
+            hv === TINGGI.air &&
+            !darat(tx, ty - 1) && !darat(tx, ty - 2) &&
+            !darat(tx - 1, ty) && !darat(tx + 1, ty) && !darat(tx, ty + 1) &&
+            jemb(tx - 1, ty) === 0 && jemb(tx + 1, ty) === 0 &&
+            jemb(tx, ty - 1) === 0 && jemb(tx, ty + 1) === 0
+          ) {
+            const ac = cakar(tx, ty)
+            if (ac % 37 === 0) {
+              this.daftarBatuAir.push({
+                x: tx * TILE + TILE / 2,
+                y: ty * TILE + TILE / 2,
+                varian: (ac >> 3) % BATU_AIR.length,
+                fase: (ac % 17) * 0.4,
+              })
+            }
           }
           continue
         }
 
-        // 1. Rumput datar (tepi pantai butuh latar air di bawah sudut bulatnya).
+        // Daratan Level 1 (pakai elevated grass Tilemap_color1 kol 5..8 + tebing laut baris 5 di selatan!)
         const sel = selAutotile(darat(tx - 1, ty), darat(tx + 1, ty), darat(tx, ty - 1), darat(tx, ty + 1))
-        this.flatSx[i] = (GUGUS_FLAT.rumput + sel.kol) * TILE
-        this.flatSy[i] = sel.bar * TILE
-        if (sel.kol !== 1 || sel.bar !== 1) this.butuhAir[i] = 1
+        this.daratKol[i] = sel.kol
+        this.daratBar[i] = sel.bar
+        if (sel.kol !== 1 || sel.bar !== 1) {
+          this.butuhAir[i] = 1
+          this.busaPantai[i] = 1
+        }
+        // Jika tile langsung di selatan adalah air (bukan jembatan), pasang tebing batu laut!
+        if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.air && jemb(tx, ty + 1) === 0) {
+          const idxBawah = (ty + 1) * kol + tx
+          this.tebingLautKol[idxBawah] = sel.kol
+          this.butuhAir[idxBawah] = 1
+          this.busaPantai[idxBawah] = 1
+        }
 
-        // 2. Plateau / ramp + muka tebing jatuh ke tile (tx, ty + 1).
+        // Jalan tanah/pasir keemasan
+        if (jln(tx, ty) && !isRamp(tx, ty)) {
+          const sj = selAutotile(
+            jln(tx - 1, ty) || jemb(tx - 1, ty) === 1 || isRamp(tx - 1, ty),
+            jln(tx + 1, ty) || jemb(tx + 1, ty) === 1 || isRamp(tx + 1, ty),
+            jln(tx, ty - 1) || jemb(tx, ty - 1) === 2 || isRamp(tx, ty - 1),
+            jln(tx, ty + 1) || jemb(tx, ty + 1) === 2 || isRamp(tx, ty + 1),
+          )
+          this.jalanSx[i] = (GUGUS_FLAT.pasir + sj.kol) * TILE
+          this.jalanSy[i] = sj.bar * TILE
+        }
+
+        // Level 2: Plateau & Ramp / Tangga batu berarah eksplisit (1=N/S, 2=Barat, 3=Timur)
         if (hv === TINGGI.plateau) {
-          if (ramp(tx, ty)) {
-            const sr = selAutotile(ramp(tx - 1, ty), ramp(tx + 1, ty), true, true)
-            this.elevSx[i] = sr.kol * TILE
-            this.elevSy[i] = BARIS_ELEV.ramp * TILE
+          const rv = rampVal(tx, ty)
+          if (rv === 1) {
+            // Tangga batu Utara / Selatan (horizontal treads)
+            const sr = selAutotile(rampVal(tx - 1, ty) === 1, rampVal(tx + 1, ty) === 1, true, true)
+            this.jenisRamp[i] = 1
+            this.rampKol[i] = sr.kol
+            if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.dataran && !isRamp(tx, ty + 1)) {
+              this.tanggaBawahKol[(ty + 1) * kol + tx] = sr.kol
+            }
+          } else if (rv === 2 || rv === 3) {
+            // Tangga batu Barat / Timur (diputar 90 derajat dari Tilemap_Elevation baris 7 -> serasi sempurna!)
+            const sb = selAutotile(true, true, rampVal(tx, ty - 1) === rv, rampVal(tx, ty + 1) === rv)
+            this.jenisRamp[i] = rv
+            this.rampBar[i] = sb.bar
+            // Jika bagian bawah tangga E/W langsung menghadap dataran, tutup dengan tebing batu rumput rapi
+            if (ty + 1 < bar && !atas(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+              const idxBawah = (ty + 1) * kol + tx
+              const kiriPlat = atas(tx - 1, ty)
+              const kananPlat = atas(tx + 1, ty)
+              this.tebingPlatKol[idxBawah] = kiriPlat && kananPlat ? 1 : kiriPlat ? 2 : kananPlat ? 0 : 3
+              this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+            }
           } else {
-            const sp = selAutotile(atas(tx - 1, ty), atas(tx + 1, ty), atas(tx, ty - 1), atas(tx, ty + 1))
-            this.elevSx[i] = sp.kol * TILE
-            this.elevSy[i] = Math.min(sp.bar, BARIS_ELEV.permukaanBawah) * TILE
-            if (!atas(tx, ty + 1) && ty + 1 < bar) {
-              this.tebingSx[(ty + 1) * kol + tx] = sp.kol * TILE
+            const sp = selAutotile(
+              atas(tx - 1, ty), atas(tx + 1, ty), atas(tx, ty - 1), atas(tx, ty + 1),
+            )
+            this.platKol[i] = sp.kol
+            this.platBar[i] = sp.bar
+            // Tebing batu plateau jatuh ke selatan (ty + 1)
+            if (ty + 1 < bar && !atas(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+              const idxBawah = (ty + 1) * kol + tx
+              this.tebingPlatKol[idxBawah] = sp.kol
+              this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
             }
           }
         }
-
-        // 3. Dekorasi deterministik.
-        if (!ramp(tx, ty)) {
-          const acak = cakar(tx, ty)
-          if (acak % 11 === 0) this.dekoIdx[i] = (acak >> 4) % 15
-        }
       }
+    }
+
+    // 3. Dekorasi rumput/bunga/jamur/batu hanya di rumput terbuka (bukan di jalan, ramp, atau kaki tebing).
+    for (let ty = 0; ty < bar; ty++) {
+      const off = ty * kol
+      for (let tx = 0; tx < kol; tx++) {
+        const i = off + tx
+        if (!darat(tx, ty)) continue
+        if (isRamp(tx, ty) || jln(tx, ty)) continue
+        if (this.tebingPlatKol[i]! >= 0 || this.tanggaBawahKol[i]! >= 0) continue
+        const acak = cakar(tx, ty)
+        if (acak % 9 === 0) this.dekoIdx[i] = (acak >> 4) % 15
+      }
+    }
+
+    // 4. Awan dekoratif lembut melayang di pinggiran laut luar peta (seperti ilustrasi Free Pack).
+    const duniaW = kol * TILE
+    const duniaH = bar * TILE
+    for (let k = 0; k < 10; k++) {
+      const sisiAtasBawah = k < 6
+      const y = sisiAtasBawah
+        ? (k % 2 === 0 ? 110 + k * 28 : duniaH - 170 - (k % 3) * 32)
+        : 900 + (k - 6) * 1150
+      const x0 = sisiAtasBawah
+        ? ((k * 1070) % duniaW)
+        : (k % 2 === 0 ? 90 : duniaW - 260)
+      this.daftarAwan.push({
+        x0,
+        y,
+        varian: (k % 2) as 0 | 1,
+        kecepatan: 10 + (k % 4) * 4,
+        skala: 0.45 + (k % 3) * 0.12,
+      })
     }
   }
 
   gambar(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number): void {
-    const p = pandangan(kam, TILE)
+    const p = pandangan(kam, TILE * 2)
     const cx1 = Math.max(0, Math.floor(p.x1 / UKURAN_CHUNK))
     const cy1 = Math.max(0, Math.floor(p.y1 / UKURAN_CHUNK))
     const cx2 = Math.min(this.kolomChunk - 1, Math.floor(p.x2 / UKURAN_CHUNK))
@@ -186,24 +347,169 @@ export class PeremajaTerrain {
         const ada = this.chunk.get(kunci)
         if (ada && ada.bersih) {
           ada.pakaiKe = this.urutanPakai
-          ctx.drawImage(ada.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+          ctx.drawImage(ada.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK, UKURAN_CHUNK + 0.75, UKURAN_CHUNK + 0.75)
           continue
         }
-        // Saat geser cepat, panggang maksimal 1 chunk/frame; sisanya gambar langsung 1 frame.
         if (jumlahBake < MAKS_BAKE_PER_FRAME) {
           const c = this.ambilAtauDaurChunk(kunci)
           this.gambarRentangTile(c.ctx!, cx * TILE_PER_CHUNK, cy * TILE_PER_CHUNK, 0, 0)
           c.bersih = true
           c.pakaiKe = this.urutanPakai
-          ctx.drawImage(c.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+          ctx.drawImage(c.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK, UKURAN_CHUNK + 0.75, UKURAN_CHUNK + 0.75)
           jumlahBake++
         } else {
           this.gambarRentangTile(ctx, cx * TILE_PER_CHUNK, cy * TILE_PER_CHUNK, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
         }
       }
     }
+
+    // Pass dinamis ringan: batu air beranimasi, jembatan utuh tanpa sela, & awan lembut di tepi laut.
+    this.gambarBatuAir(ctx, p, waktu)
+    this.gambarJembatanUtuh(ctx, p)
+    this.gambarAwanTepi(ctx, p, waktu)
     void url
-    void waktu
+  }
+
+  private gambarBatuAir(
+    ctx: CanvasRenderingContext2D,
+    p: { x1: number; y1: number; x2: number; y2: number },
+    waktu: number,
+  ): void {
+    for (let i = 0; i < this.daftarBatuAir.length; i++) {
+      const b = this.daftarBatuAir[i]!
+      if (b.x < p.x1 - 64 || b.x > p.x2 + 64 || b.y < p.y1 - 64 || b.y > p.y2 + 64) continue
+      const aset = BATU_AIR[b.varian]!
+      const im = gambarDari(aset)
+      if (!im) continue
+      const f = frame(aset, Math.floor(waktu * aset.fps + b.fase) % aset.kolom)
+      ctx.drawImage(im, f.sx, f.sy, f.sw, f.sh, b.x - 44, b.y - 44, 88, 88)
+    }
+  }
+
+  /**
+   * Menggambar setiap jembatan kayu secara utuh dalam satu pass (melewati batas chunk
+   * dan menancap 14px ke kedua tepi daratan sehingga NOL sela air di kedua ujung!).
+   */
+  private gambarJembatanUtuh(
+    ctx: CanvasRenderingContext2D,
+    p: { x1: number; y1: number; x2: number; y2: number },
+  ): void {
+    const jembIm = gambarDari(TERRAIN.jembatan)
+    if (!jembIm) return
+    ctx.imageSmoothingEnabled = false
+
+    for (let idx = 0; idx < this.daftarJembatan.length; idx++) {
+      const j = this.daftarJembatan[idx]!
+      const bx1 = j.x1 * TILE - 20
+      const bx2 = (j.x2 + 1) * TILE + 20
+      const by1 = j.y1 * TILE - 20
+      const by2 = (j.y2 + 1) * TILE + 20
+      if (bx2 < p.x1 || bx1 > p.x2 || by2 < p.y1 || by1 > p.y2) continue
+
+      if (j.horiz) {
+        const tinggiTile = j.y2 - j.y1 + 1
+        const kiriPx = j.x1 * TILE
+        const kananPx = (j.x2 + 1) * TILE
+        const deckMulai = kiriPx - 12
+        const deckAkhir = kananPx + 12
+
+        for (let ty = j.y1; ty <= j.y2; ty++) {
+          const py = ty * TILE
+          const sisi = tinggiTile === 1 ? 3 : ty === j.y1 ? 0 : ty === j.y2 ? 2 : 1
+
+          // 1. Papan tengah menerus dari tepi darat kiri (-12px) sampai darat kanan (+12px) — NOL sela!
+          for (let dx = deckMulai; dx < deckAkhir; dx += TILE) {
+            const w = Math.min(TILE, deckAkhir - dx)
+            this.potongJembHoriz(ctx, jembIm, TILE, 0, w, dx, py, sisi)
+          }
+          // 2. Tiang ujung kiri (kol 0, piksel solid sx=18..63 -> lebar 46px) menancap di darat kiri
+          this.potongJembHoriz(ctx, jembIm, 18, 0, 46, kiriPx - 14, py, sisi)
+          // 3. Tiang ujung kanan (kol 2, piksel solid sx=0..45 -> lebar 46px) menancap di darat kanan
+          this.potongJembHoriz(ctx, jembIm, 2 * TILE, 0, 46, kananPx - 32, py, sisi)
+        }
+      } else {
+        const lebarTile = j.x2 - j.x1 + 1
+        const atasPx = j.y1 * TILE
+        const bawahPx = (j.y2 + 1) * TILE
+        const deckMulai = atasPx - 12
+        const deckAkhir = bawahPx + 12
+
+        for (let tx = j.x1; tx <= j.x2; tx++) {
+          const px = tx * TILE
+          const sisi = lebarTile === 1 ? 3 : tx === j.x1 ? 0 : tx === j.x2 ? 2 : 1
+
+          // 1. Papan vertikal menerus dari darat atas (-12px) sampai darat bawah (+12px) — NOL sela!
+          for (let dy = deckMulai; dy < deckAkhir; dy += TILE) {
+            const h = Math.min(TILE, deckAkhir - dy)
+            this.potongJembVert(ctx, jembIm, 0, 2 * TILE, h, px, dy, sisi)
+          }
+          // 2. Tiang ujung atas (bar 1, piksel solid sy=64+17..127 -> tinggi 47px) menancap di darat atas
+          this.potongJembVert(ctx, jembIm, 0, TILE + 17, 47, px, atasPx - 14, sisi)
+          // 3. Tiang ujung bawah (bar 3, piksel solid sy=192..238 -> tinggi 47px) menancap di darat bawah
+          this.potongJembVert(ctx, jembIm, 0, 3 * TILE, 47, px, bawahPx - 33, sisi)
+        }
+      }
+    }
+  }
+
+  private potongJembHoriz(
+    ctx: CanvasRenderingContext2D, im: HTMLImageElement,
+    sx: number, sy: number, sw: number, dx: number, dy: number, sisi: number,
+  ): void {
+    if (sisi === 3) {
+      ctx.drawImage(im, sx, sy, sw, TILE, dx, dy, sw, TILE)
+    } else if (sisi === 0) {
+      ctx.drawImage(im, sx, sy, sw, 48, dx, dy, sw, 48)
+      ctx.drawImage(im, sx, sy + 16, sw, 16, dx, dy + 48, sw, 16)
+    } else if (sisi === 1) {
+      ctx.drawImage(im, sx, sy + 16, sw, 32, dx, dy, sw, 32)
+      ctx.drawImage(im, sx, sy + 16, sw, 32, dx, dy + 32, sw, 32)
+    } else {
+      ctx.drawImage(im, sx, sy + 16, sw, 16, dx, dy, sw, 16)
+      ctx.drawImage(im, sx, sy + 16, sw, 48, dx, dy + 16, sw, 48)
+    }
+  }
+
+  private potongJembVert(
+    ctx: CanvasRenderingContext2D, im: HTMLImageElement,
+    sx: number, sy: number, sh: number, dx: number, dy: number, sisi: number,
+  ): void {
+    if (sisi === 3) {
+      ctx.drawImage(im, sx, sy, TILE, sh, dx, dy, TILE, sh)
+    } else if (sisi === 0) {
+      ctx.drawImage(im, sx, sy, 48, sh, dx, dy, 48, sh)
+      ctx.drawImage(im, sx + 16, sy, 16, sh, dx + 48, dy, 16, sh)
+    } else if (sisi === 1) {
+      ctx.drawImage(im, sx + 16, sy, 32, sh, dx, dy, 32, sh)
+      ctx.drawImage(im, sx + 16, sy, 32, sh, dx + 32, dy, 32, sh)
+    } else {
+      ctx.drawImage(im, sx + 16, sy, 16, sh, dx, dy, 16, sh)
+      ctx.drawImage(im, sx + 16, sy, 48, sh, dx + 16, dy, 48, sh)
+    }
+  }
+
+  private gambarAwanTepi(
+    ctx: CanvasRenderingContext2D,
+    p: { x1: number; y1: number; x2: number; y2: number },
+    waktu: number,
+  ): void {
+    const a1 = gambarDari(TERRAIN_FREE.awan1)
+    const a2 = gambarDari(TERRAIN_FREE.awan2)
+    if (!a1 && !a2) return
+    const duniaW = this.kolom * TILE
+    ctx.save()
+    ctx.globalAlpha = 0.65
+    for (let i = 0; i < this.daftarAwan.length; i++) {
+      const aw = this.daftarAwan[i]!
+      const im = aw.varian === 0 ? (a1 ?? a2) : (a2 ?? a1)
+      if (!im) continue
+      const w = 576 * aw.skala
+      const h = 256 * aw.skala
+      const x = ((aw.x0 + waktu * aw.kecepatan) % (duniaW + w)) - w / 2
+      if (x + w < p.x1 || x > p.x2 || aw.y + h < p.y1 || aw.y > p.y2) continue
+      ctx.drawImage(im, x, aw.y, w, h)
+    }
+    ctx.restore()
   }
 
   private ambilAtauDaurChunk(kunci: string): Chunk {
@@ -241,6 +547,35 @@ export class PeremajaTerrain {
     return c
   }
 
+  /**
+   * Membangun strip 64x256 (4 sel vertikal: atas, tengah, bawah, sempit) tangga batu Barat/Timur
+   * dengan memutar Tilemap_Elevation baris 7 tepat 90° sehingga motif batu 100% serasi dengan tangga N/S!
+   */
+  private ambilTanggaEW(tinggiIm: HTMLImageElement, arah: 2 | 3): HTMLCanvasElement | null {
+    if (arah === 2 && this.tanggaBarat) return this.tanggaBarat
+    if (arah === 3 && this.tanggaTimur) return this.tanggaTimur
+    const k = document.createElement('canvas')
+    k.width = TILE
+    k.height = TILE * 4
+    const c = k.getContext('2d')
+    if (!c) return null
+    c.imageSmoothingEnabled = false
+    // Barat (turun ke kiri, putar +90°): kol 0->atas, 1->tengah, 2->bawah, 3->sempit
+    // Timur (turun ke kanan, putar -90°): kol 2->atas, 1->tengah, 0->bawah, 3->sempit
+    const petaKol = arah === 2 ? [0, 1, 2, 3] : [2, 1, 0, 3]
+    const sudut = arah === 2 ? Math.PI / 2 : -Math.PI / 2
+    for (let bar = 0; bar < 4; bar++) {
+      c.save()
+      c.translate(TILE / 2, bar * TILE + TILE / 2)
+      c.rotate(sudut)
+      c.drawImage(tinggiIm, petaKol[bar]! * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, -TILE / 2, -TILE / 2, TILE, TILE)
+      c.restore()
+    }
+    if (arah === 2) this.tanggaBarat = k
+    else this.tanggaTimur = k
+    return k
+  }
+
   private gambarRentangTile(
     ctx: CanvasRenderingContext2D, tx0: number, ty0: number, asalPxX: number, asalPxY: number,
   ): void {
@@ -249,10 +584,13 @@ export class PeremajaTerrain {
     const tx2 = Math.min(this.kolom - 1, tx0 + TILE_PER_CHUNK - 1)
     const ty2 = Math.min(this.baris - 1, ty0 + TILE_PER_CHUNK - 1)
     const air = gambarDari(TERRAIN.air)
+    const busa = gambarDari(TERRAIN.busa)
     const datar = gambarDari(TERRAIN.tanahDatar)
-    const tinggi = gambarDari(TERRAIN.tanahTinggi)
+    const tinggiU010 = gambarDari(TERRAIN.tanahTinggi)
+    const bayang = gambarDari(TERRAIN.bayangTanah)
+    const tileFree = gambarDari(TERRAIN_FREE.tileHijau)
 
-    // Pass 0: Air hanya di tile air / tepi pantai.
+    // Pass 0: Air laut turquoise.
     if (air) {
       for (let ty = ty0; ty <= ty2; ty++) {
         const off = ty * kol
@@ -268,80 +606,122 @@ export class PeremajaTerrain {
       ctx.fillRect(asalPxX, asalPxY, UKURAN_CHUNK, UKURAN_CHUNK)
     }
 
-    // Pass 1: Rumput datar.
+    // Pass 0.5: Busa pantai lembut di bawah tepi pulau & kaki tebing laut (dibakar di bawah tebing).
+    if (busa) {
+      for (let ty = Math.max(0, ty0 - 1); ty <= Math.min(this.baris - 1, ty2 + 1); ty++) {
+        const off = ty * kol
+        const py = asalPxY + (ty - ty0) * TILE
+        for (let tx = Math.max(0, tx0 - 1); tx <= Math.min(this.kolom - 1, tx2 + 1); tx++) {
+          if (this.busaPantai[off + tx] !== 1) continue
+          const f = frame(TERRAIN.busa, cakar(tx, ty) % TERRAIN.busa.kolom)
+          const px = asalPxX + (tx - tx0) * TILE
+          ctx.drawImage(busa, f.sx, f.sy, f.sw, f.sh, px - 64, py - 64, 192, 192)
+        }
+      }
+    }
+
+    // Pass 1: Daratan Level 1 (blok elevated Tilemap_color1 kol 5..8) + tebing batu laut (baris 5).
+    for (let ty = ty0; ty <= ty2; ty++) {
+      const off = ty * kol
+      const py = asalPxY + (ty - ty0) * TILE
+      for (let tx = tx0; tx <= tx2; tx++) {
+        const i = off + tx
+        const px = asalPxX + (tx - tx0) * TILE
+
+        const tlKol = this.tebingLautKol[i]!
+        if (tlKol >= 0 && tileFree) {
+          ctx.drawImage(tileFree, (5 + tlKol) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        }
+
+        const dk = this.daratKol[i]!
+        if (dk >= 0) {
+          const db = this.daratBar[i]!
+          if (tileFree) {
+            ctx.drawImage(tileFree, (5 + dk) * TILE, db * TILE, TILE, TILE, px, py, TILE, TILE)
+          } else if (datar) {
+            ctx.drawImage(datar, (GUGUS_FLAT.rumput + dk) * TILE, db * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+      }
+    }
+
+    // Pass 1.5: Jalan pasir keemasan pada Level 1 (dataran).
     if (datar) {
       for (let ty = ty0; ty <= ty2; ty++) {
         const off = ty * kol
         const py = asalPxY + (ty - ty0) * TILE
         for (let tx = tx0; tx <= tx2; tx++) {
-          const sx = this.flatSx[off + tx]!
-          if (sx >= 0) {
-            ctx.drawImage(datar, sx, this.flatSy[off + tx]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
+          const i = off + tx
+          const jsx = this.jalanSx[i]!
+          if (jsx >= 0 && this.platKol[i]! < 0 && this.jenisRamp[i] === 0) {
+            ctx.drawImage(datar, jsx, this.jalanSy[i]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
           }
         }
       }
     }
 
-    // Pass 1.5: Jembatan kayu utuh 1-dek lebar di atas kanal air (nol sekat hitam tengah).
-    const jembIm = gambarDari(TERRAIN.jembatan)
-    if (jembIm) {
-      for (let ty = ty0; ty <= ty2; ty++) {
-        const off = ty * kol
-        const py = asalPxY + (ty - ty0) * TILE
-        for (let tx = tx0; tx <= tx2; tx++) {
-          const i = off + tx
-          const jsx = this.jembatanSx[i]!
-          if (jsx < 0) continue
-          const jsy = this.jembatanSy[i]!
-          const px = asalPxX + (tx - tx0) * TILE
-          const sisi = this.jembatanSisi[i]!
-          const horiz = jsy === 0
-          if (sisi === 3) {
-            ctx.drawImage(jembIm, jsx, jsy, TILE, TILE, px, py, TILE, TILE)
-          } else if (horiz) {
-            if (sisi === 0) {
-              ctx.drawImage(jembIm, jsx, jsy, TILE, 48, px, py, TILE, 48)
-              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 16, px, py + 48, TILE, 16)
-            } else if (sisi === 1) {
-              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 32, px, py, TILE, 32)
-              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 32, px, py + 32, TILE, 32)
-            } else {
-              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 16, px, py, TILE, 16)
-              ctx.drawImage(jembIm, jsx, jsy + 16, TILE, 48, px, py + 16, TILE, 48)
-            }
-          } else {
-            if (sisi === 0) {
-              ctx.drawImage(jembIm, jsx, jsy, 48, TILE, px, py, 48, TILE)
-              ctx.drawImage(jembIm, jsx + 16, jsy, 16, TILE, px + 48, py, 16, TILE)
-            } else if (sisi === 1) {
-              ctx.drawImage(jembIm, jsx + 16, jsy, 32, TILE, px, py, 32, TILE)
-              ctx.drawImage(jembIm, jsx + 16, jsy, 32, TILE, px + 32, py, 32, TILE)
-            } else {
-              ctx.drawImage(jembIm, jsx + 16, jsy, 16, TILE, px, py, 16, TILE)
-              ctx.drawImage(jembIm, jsx + 16, jsy, 48, TILE, px + 16, py, 48, TILE)
-            }
+    // Pass 2: Bayangan tebing, Tebing Batu Plateau (baris 4 di atas rumput / baris 5 di atas air),
+    // Tangga batu & lereng ramp, serta permukaan Plateau Level 2!
+    for (let ty = ty0; ty <= ty2; ty++) {
+      const off = ty * kol
+      const py = asalPxY + (ty - ty0) * TILE
+      for (let tx = tx0; tx <= tx2; tx++) {
+        const i = off + tx
+        const px = asalPxX + (tx - tx0) * TILE
+
+        // 2a. Tebing batu plateau di atas rumput / air + bayangan jatuh di kakinya
+        const tpk = this.tebingPlatKol[i]!
+        if (tpk >= 0) {
+          const tpb = this.tebingPlatBar[i]!
+          if (tpb === 4 && bayang) {
+            ctx.save()
+            ctx.globalAlpha = 0.45
+            ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
+            ctx.restore()
+          }
+          if (tileFree) {
+            ctx.drawImage(tileFree, (5 + tpk) * TILE, tpb * TILE, TILE, TILE, px, py, TILE, TILE)
+          } else if (tinggiU010) {
+            ctx.drawImage(tinggiU010, tpk * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+
+        // 2b. Lanjutan kaki tangga selatan (turun dari tebing ke jalan bawah)
+        const tbk = this.tanggaBawahKol[i]!
+        if (tbk >= 0 && tinggiU010) {
+          ctx.drawImage(tinggiU010, tbk * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
+        }
+
+        // 2c. Permukaan Plateau Level 2 (rumput hijau bertingkat Tilemap_color1 kol 5..8)
+        const pk = this.platKol[i]!
+        if (pk >= 0) {
+          const pb = this.platBar[i]!
+          if (tileFree) {
+            ctx.drawImage(tileFree, (5 + pk) * TILE, pb * TILE, TILE, TILE, px, py, TILE, TILE)
+          } else if (tinggiU010) {
+            ctx.drawImage(tinggiU010, pk * TILE, Math.min(pb, BARIS_ELEV.permukaanBawah) * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+          // Jalan pasir di atas Plateau Level 2
+          const jsx = this.jalanSx[i]!
+          if (jsx >= 0 && datar) {
+            ctx.drawImage(datar, jsx, this.jalanSy[i]!, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+
+        // 2d. Tile Ramp / Tangga batu (penghubung naik-turun antar level, serasi N/S/W/E)
+        const jr = this.jenisRamp[i]!
+        if (jr === 1 && tinggiU010) {
+          ctx.drawImage(tinggiU010, this.rampKol[i]! * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
+        } else if ((jr === 2 || jr === 3) && tinggiU010) {
+          const strip = this.ambilTanggaEW(tinggiU010, jr)
+          if (strip) {
+            ctx.drawImage(strip, 0, this.rampBar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
           }
         }
       }
     }
 
-    // Pass 2: Plateau, ramp, & muka tebing.
-    if (tinggi) {
-      const tebingSy = BARIS_ELEV.tebing * TILE
-      for (let ty = ty0; ty <= ty2; ty++) {
-        const off = ty * kol
-        const py = asalPxY + (ty - ty0) * TILE
-        for (let tx = tx0; tx <= tx2; tx++) {
-          const i = off + tx
-          const tsx = this.tebingSx[i]!
-          if (tsx >= 0) ctx.drawImage(tinggi, tsx, tebingSy, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
-          const esx = this.elevSx[i]!
-          if (esx >= 0) ctx.drawImage(tinggi, esx, this.elevSy[i]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
-        }
-      }
-    }
-
-    // Pass 3: Dekorasi rumput/batu/semak.
+    // Pass 3: Dekorasi rumput/bunga/batu/semak di padang rumput terbuka.
     for (let ty = ty0; ty <= ty2; ty++) {
       const off = ty * kol
       const py = asalPxY + (ty - ty0) * TILE

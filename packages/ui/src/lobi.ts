@@ -1000,12 +1000,17 @@ export class Lobi {
       for (let tx = 0; tx < t.kolom; tx++) {
         const idx = ty * t.kolom + tx
         const v = t.tinggi[idx]!
+        const bawahPlat = ty > 0 && v !== TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
+        const bawahLaut = ty > 0 && v === TINGGI.air && t.tinggi[(ty - 1) * t.kolom + tx] !== TINGGI.air && (t.jembatan[(ty - 1) * t.kolom + tx] ?? 0) === 0
         ctx.fillStyle =
-          (t.jembatan[idx] ?? 0) > 0 ? '#b5824c'
-          : v === TINGGI.air ? '#245363'
-          : t.ramp[idx] === 1 ? '#c2ad70'
-          : v === TINGGI.plateau ? '#7f9e86'
-          : '#5f8a4e'
+          (t.jembatan[idx] ?? 0) > 0 ? '#b87d45'
+          : bawahLaut ? '#466c75'
+          : v === TINGGI.air ? '#26697a'
+          : (t.ramp[idx] ?? 0) > 0 ? '#dfd095'
+          : bawahPlat ? '#53737a'
+          : (t.jalan?.[idx] ?? 0) === 1 ? '#d4bd80'
+          : v === TINGGI.plateau ? '#87b862'
+          : '#62964c'
         ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
       }
     }

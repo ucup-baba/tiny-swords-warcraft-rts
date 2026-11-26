@@ -1,10 +1,11 @@
 import {
-  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS, EFEK, GOBLIN as ASET_GOBLIN,
-  HERO_BLUE, HERO_RED, PAWN_FREE, SUMBER, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA, frame, jumlahFrameBaris, type Aset,
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS, DEKO, EFEK, GOBLIN as ASET_GOBLIN,
+  HERO_BLUE, HERO_RED, PAWN_FREE, POHON_FREE, SUMBER, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA,
+  frame, jumlahFrameBaris, type Aset,
 } from '@hftf/aset'
 import { WARNA_TIM, type Tim } from '@hftf/shared'
 import {
-  AMBANG_API, BANGUNAN, peranGoblin, pernahLihat, sekutu, terlihatDi,
+  AMBANG_API, BANGUNAN, adalahJembatan, adalahRamp, keTile, peranGoblin, pernahLihat, sekutu, terlihatDi, tinggiDi,
   type Bangunan, type Dunia, type Unit,
 } from '@hftf/sim'
 import { gambarDari, gambarTim } from './gambar.js'
@@ -16,16 +17,20 @@ const heroPack = (tim: Tim) => (tim === 'red' ? HERO_RED : HERO_BLUE)
 const bangunanPack = (tim: Tim) => (tim === 'red' ? BANGUNAN_RED : BANGUNAN_BLUE)
 const warnaTintUmum = (tim: Tim): Tim => (tim === 'red' || tim === 'blue' || tim === 'neutral' ? 'blue' : tim)
 
-/**
- * Frame pohon yang sedang goyang.
- *
- * Tree.png adalah sheet 4x3, tapi hanya BARIS 0 yang berisi pohon utuh:
- * baris 1 punya 2 frame lalu 2 frame kosong, baris 2 hanya tunggul lalu
- * 3 frame kosong. Memutar kedua belas frame membuat pohon lenyap 42% waktu.
- */
-const FRAME_POHON_GOYANG = 4
-function framePohon(detik: number, benih: number): number {
-  return Math.floor(detik * 4 + benih) % FRAME_POHON_GOYANG
+const VARIASI_POHON: readonly { aset: Aset; skala: number; pijak: number }[] = [
+  { aset: POHON_FREE.pinus1, skala: 0.56, pijak: 0.84 },
+  { aset: POHON_FREE.pinus2, skala: 0.54, pijak: 0.84 },
+  { aset: POHON_FREE.daun1, skala: 0.62, pijak: 0.82 },
+  { aset: POHON_FREE.daun2, skala: 0.62, pijak: 0.82 },
+]
+
+function pilihPohonFree(id: number, x: number, y: number): { aset: Aset; skala: number; pijak: number } {
+  const h = Math.abs((id * 37 + Math.round(x / 64) * 17 + Math.round(y / 64) * 31)) % VARIASI_POHON.length
+  return VARIASI_POHON[h]!
+}
+
+function framePohonFree(a: Aset, detik: number, benih: number): number {
+  return Math.floor(detik * 6 + benih * 0.7) % a.kolom
 }
 
 /**
@@ -279,6 +284,61 @@ type ItemRender =
   | { jenis: 4; y: number; obj: Dunia['daging'][number] }
   | { jenis: 5; y: number; obj: Bangunan }
   | { jenis: 6; y: number; obj: Unit; x: number; yr: number }
+  | { jenis: 7; y: number; obj: Dunia['camp'][number]; hidup: boolean; gx: number; gy: number; tx: number; ty: number }
+
+const KANDIDAT_GUBUK: readonly [number, number, number, number][] = [
+  [-146, -34, 118, 22],
+  [146, -34, -118, 22],
+  [0, -138, 118, 22],
+  [-132, 76, 118, -20],
+  [132, 76, -118, -20],
+]
+
+/** Memilih posisi gubuk Goblin & totem tengkorak di tanah rata selevel, terpisah rapi dari Tambang Emas. */
+function posisiCampGoblin(dunia: Dunia, cx: number, cy: number): { gx: number; gy: number; tx: number; ty: number } {
+  const t = dunia.terrain
+  const lv = tinggiDi(t, keTile(cx), keTile(cy))
+  const lahanAman = (px: number, py: number, margin: number): boolean => {
+    const cek = [
+      [px, py],
+      [px - margin, py],
+      [px + margin, py],
+      [px, py - margin],
+      [px, py + margin],
+    ] as const
+    for (const [qx, qy] of cek) {
+      const tx = keTile(qx)
+      const ty = keTile(qy)
+      if (tinggiDi(t, tx, ty) !== lv || adalahRamp(t, tx, ty) || adalahJembatan(t, tx, ty)) return false
+    }
+    return true
+  }
+
+  let gx = cx - 146
+  let gy = cy - 34
+  let tx = cx + 118
+  let ty = cy + 22
+  for (const [gdx, gdy, tdx, tdy] of KANDIDAT_GUBUK) {
+    if (lahanAman(cx + gdx, cy + gdy, 32)) {
+      gx = cx + gdx
+      gy = cy + gdy
+      tx = cx + tdx
+      ty = cy + tdy
+      break
+    }
+  }
+  if (!lahanAman(tx, ty, 12)) {
+    const opsiTotem: readonly [number, number][] = [[118, 22], [-118, 22], [0, 114], [0, -114]]
+    for (const [odx, ody] of opsiTotem) {
+      if (Math.hypot(cx + odx - gx, cy + ody - gy) > 90 && lahanAman(cx + odx, cy + ody, 12)) {
+        tx = cx + odx
+        ty = cy + ody
+        break
+      }
+    }
+  }
+  return { gx, gy, tx, ty }
+}
 
 const antreanBersama: ItemRender[] = []
 
@@ -411,6 +471,13 @@ export function gambarEntitas(
     antrean.push({ jenis: 5, y: b.y, obj: b })
   }
 
+  for (const c of dunia.camp) {
+    if (!diingat(c.x, c.y)) continue
+    const hidup = c.respawn <= 0 && dunia.unit.some((u) => u.campId === c.id)
+    const pos = posisiCampGoblin(dunia, c.x, c.y)
+    antrean.push({ jenis: 7, y: pos.gy, obj: c, hidup, gx: pos.gx, gy: pos.gy, tx: pos.tx, ty: pos.ty })
+  }
+
   for (const u of dunia.unit) {
     if (!sekutu(u.tim, timSaya, dunia) ? !terlihat(u.x, u.y) : !diLayar(u.x, u.y)) continue
     const [rx, ry] = posisiHalus(u.id, u.x, u.y, posLama, alpha)
@@ -429,7 +496,7 @@ export function gambarEntitas(
         if (ter || hov) {
           gambarCincinSumber(ctx, tg.x, tg.y, 24, '#d4b07a', ter, `Tumbuh ${Math.max(1, Math.ceil(tg.sisaTumbuh))}s`, tg.y - 26)
         }
-        sprite(ctx, SUMBER.pohon, 8, tg.x, tg.y, 0.62, false, 0.78)
+        sprite(ctx, POHON_FREE.tunggul, 0, tg.x, tg.y, 0.56, false, 0.84)
         break
       }
       case 1: {
@@ -444,7 +511,8 @@ export function gambarEntitas(
             kenaSorot ? sorot!.porsi : undefined,
           )
         }
-        sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78)
+        const v = pilihPohonFree(o.id, o.x, o.y)
+        sprite(ctx, v.aset, framePohonFree(v.aset, t, o.id), o.x, o.y, v.skala, false, v.pijak)
         break
       }
       case 2: {
@@ -554,6 +622,15 @@ export function gambarEntitas(
           ctx.textAlign = 'center'
           ctx.fillText(`Lv${u.level}`, ux, uy - 70)
         }
+        break
+      }
+      case 7: {
+        // Gubuk Goblin & totem tengkorak terpisah rapi dari Tambang Emas sehingga camp creep jelas terlihat
+        bayangan(ctx, item.gx, item.gy, 34)
+        const gubuk = item.hidup ? ASET_GOBLIN.rumah : ASET_GOBLIN.rumahHancur
+        sprite(ctx, gubuk, 0, item.gx, item.gy, 0.72, false, 0.84)
+        const totem = DEKO['deco16']
+        if (totem) sprite(ctx, totem, 0, item.tx, item.ty, 0.92, false, 0.88)
         break
       }
     }

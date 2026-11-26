@@ -30,6 +30,17 @@ describe('Peta baru 4P (salib4) & 6P (bintang6) + jembatan', () => {
     expect(adalahJembatan(d.terrain, bridgeTile!.tx, bridgeTile!.ty)).toBe(true)
     expect(bolehTaruhBangunan(d, 'house', keTengahPiksel(bridgeTile!.tx), keTengahPiksel(bridgeTile!.ty))).toBe(false)
 
+    // Peta salib4 bertingkat: markas berdiri di benteng atas (plateau), ada jalan pasir & camp Goblin lengkap
+    for (const c of castles) {
+      expect(d.terrain.tinggi[keTile(c.y) * d.terrain.kolom + keTile(c.x)]).toBe(TINGGI.plateau)
+    }
+    expect(d.camp.length).toBeGreaterThanOrEqual(9)
+    const goblins = d.unit.filter((u) => u.campId !== null)
+    expect(goblins.length).toBeGreaterThanOrEqual(24)
+    for (const g of goblins) {
+      expect(d.terrain.tinggi[keTile(g.y) * d.terrain.kolom + keTile(g.x)]).not.toBe(TINGGI.air)
+    }
+
     // Setiap basis harus dapat mencapai basis lain DAN plateau pusat via jembatan + ramp
     const pusatX = keTengahPiksel(d.titik.plateauPusat.tx)
     const pusatY = keTengahPiksel(d.titik.plateauPusat.ty)
@@ -55,6 +66,13 @@ describe('Peta baru 4P (salib4) & 6P (bintang6) + jembatan', () => {
 
     for (const c of castles) {
       expect(d.tim[c.tim].sumberDaya.gold).toBe(1200)
+      expect(d.terrain.tinggi[keTile(c.y) * d.terrain.kolom + keTile(c.x)]).toBe(TINGGI.plateau)
+    }
+    expect(d.camp.length).toBeGreaterThanOrEqual(7)
+    const goblins6 = d.unit.filter((u) => u.campId !== null)
+    expect(goblins6.length).toBeGreaterThanOrEqual(20)
+    for (const g of goblins6) {
+      expect(d.terrain.tinggi[keTile(g.y) * d.terrain.kolom + keTile(g.x)]).not.toBe(TINGGI.air)
     }
 
     const pusatX = keTengahPiksel(d.titik.plateauPusat.tx)

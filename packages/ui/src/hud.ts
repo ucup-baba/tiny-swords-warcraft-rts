@@ -227,6 +227,8 @@ export class Hud {
     const potretKotak = el('div')
     potretKotak.id = 'seleksi-potret'
     this.seleksiPotret = el('img')
+    this.seleksiPotret.alt = ''
+    this.seleksiPotret.style.visibility = 'hidden'
     potretKotak.append(this.seleksiPotret)
 
     const info = el('div')
@@ -403,8 +405,13 @@ export class Hud {
   private setPotretSeleksi(src: string | null): void {
     if (this.cachePotretSrc === src) return
     this.cachePotretSrc = src
-    if (src === null) this.seleksiPotret.removeAttribute('src')
-    else this.seleksiPotret.src = src
+    if (src === null) {
+      this.seleksiPotret.style.visibility = 'hidden'
+      this.seleksiPotret.removeAttribute('src')
+    } else {
+      this.seleksiPotret.src = src
+      this.seleksiPotret.style.visibility = 'visible'
+    }
   }
 
   private setInfoSeleksi(judul: string, detail: string): void {

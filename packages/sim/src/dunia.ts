@@ -21,7 +21,7 @@ import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
 import { cariBangunan, cariUnit } from './util.js'
 import {
-  adalahJembatan, adalahRamp, buatTerrain, indeks, keTengahPiksel, keTile, tinggiDi,
+  adalahJalan, adalahJembatan, adalahRamp, buatTerrain, indeks, keTengahPiksel, keTile, tinggiDi,
 } from './terrain.js'
 import { batalkanJalur, pisahUnit } from './sistem/gerak.js'
 
@@ -258,14 +258,17 @@ function dekatJembatan(t: Dunia['terrain'], tx: number, ty: number): boolean {
 }
 
 /**
- * Mengisi peta kepulauan multipemain (`salib4` 4P / `bintang6` 6P) beserta basis simetris,
- * hutan pulau, tambang ekspansi, dan penjaga goblin di pusat arena.
+ * Mengisi peta kepulauan multipemain (`salib4` 4P / `bintang6` 6P) beserta benteng
+ * bertingkat simetris, hutan indah di pojok pulau & pulau kecil, tambang ekspansi,
+ * serta camp Goblin lengkap di pusat arena & jalur jembatan/danau.
  */
 function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void {
   const t = dunia.terrain
   const P = (tx: number, ty: number): [number, number] => [keTengahPiksel(tx), keTengahPiksel(ty)]
 
-  const dataranBebas = (tx: number, ty: number): [number, number] => {
+  const lahanBebas = (
+    tx: number, ty: number, level: number = TINGGI.dataran, hindariJalan = false,
+  ): [number, number] => {
     for (let r = 0; r <= 12; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
@@ -273,9 +276,10 @@ function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void
           const x = tx + dx
           const y = ty + dy
           if (
-            tinggiDi(t, x, y) === TINGGI.dataran &&
+            tinggiDi(t, x, y) === level &&
             !adalahRamp(t, x, y) &&
-            !dekatJembatan(t, x, y)
+            !dekatJembatan(t, x, y) &&
+            (!hindariJalan || !adalahJalan(t, x, y))
           ) {
             return [x, y]
           }
@@ -285,57 +289,74 @@ function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void
     return [tx, ty]
   }
 
+  const tanamPohon = (tx: number, ty: number, jarakMin = 48): boolean => {
+    if (tinggiDi(t, tx, ty) === TINGGI.air || adalahRamp(t, tx, ty) || adalahJalan(t, tx, ty) || dekatJembatan(t, tx, ty)) {
+      return false
+    }
+    const [wx, wy] = P(tx, ty)
+    if (dunia.bangunan.some((b) => Math.hypot(b.x - wx, b.y - wy) < 160)) return false
+    if (dunia.tambang.some((m) => Math.hypot(m.x - wx, m.y - wy) < 110)) return false
+    if (dunia.pohon.some((p) => Math.hypot(p.x - wx, p.y - wy) < jarakMin)) return false
+    dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
+    return true
+  }
+
   for (let idx = 0; idx < dunia.titik.basis.length; idx++) {
     const b = dunia.titik.basis[idx]!
+    const levelBasis = b.level ?? TINGGI.dataran
     const slot = daftarSlot.find((s) => s.indeks === idx) ?? null
     const sx = b.arahX !== 0 ? b.arahX : (idx % 2 === 0 ? 1 : -1)
     const sy = b.arahY !== 0 ? b.arahY : 1
-    const [btx, bty] = dataranBebas(b.tx, b.ty)
+    const [btx, bty] = lahanBebas(b.tx, b.ty, levelBasis)
 
-    // Setiap pulau selalu memiliki 1 tambang emas utama & 2 rumpun hutan (bahkan jika slot kosong).
-    const [mx, my] = P(...dataranBebas(btx - 5 * sx, bty - 3 * sy))
+    // Setiap pulau selalu memiliki 1 tambang emas utama di benteng (bahkan jika slot kosong).
+    const [mx, my] = P(...lahanBebas(btx - 5 * sx, bty + 2 * sy, levelBasis, true))
     dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'mine', x: mx, y: my, gold: 3500 })
 
-    const rumpun: [number, number][] = [
-      [btx - 7 * sx, bty - 7 * sy],
-      [btx + 5 * sx, bty - 7 * sy],
+    if (slot) {
+      const tim = slot.tim
+
+      const [cx, cy] = P(btx, bty)
+      buatBangunan(dunia, tim, 'castle', cx, cy, 'aktif')
+
+      const [hx, hy] = P(...lahanBebas(btx + 4 * sx, bty - 3 * sy, levelBasis, true))
+      buatBangunan(dunia, tim, 'house', hx, hy, 'aktif')
+
+      for (let i = 0; i < 5; i++) {
+        const [px, py] = P(...lahanBebas(btx + (i - 2), bty + 3 * sy, levelBasis))
+        buatUnit(dunia, tim, 'pawn', px, py)
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const [dx, dy] = P(...lahanBebas(btx - 4 * sx + i * 2 * sx, bty + 5 * sy, levelBasis))
+        dunia.domba.push(buatDomba(dunia.idBerikut++, dx, dy, 45, 1.0 + i * 0.9))
+      }
+
+      const peran = dunia.tim[tim].heroPilihan
+      const [ux, uy] = P(...lahanBebas(btx + 2 * sx, bty + 4 * sy, levelBasis))
+      const hero = buatUnit(dunia, tim, peran, ux, uy)
+      dunia.tim[tim].heroHidup = hero.id
+    }
+
+    // Hutan indah di pojok-pojok luar & tepi tebing pulau (persis seperti ilustrasi)
+    const pojokList = b.pojokPohon ?? [
+      [btx - 6 * sx, bty - 6 * sy],
+      [btx + 5 * sx, bty - 6 * sy],
+      [btx - 6 * sx, bty + 5 * sy],
     ]
-    for (const [rx, ry] of rumpun) {
-      for (let i = 0; i < 8; i++) {
-        const [tx2, ty2] = dataranBebas(rx + (i % 4) * 2 * sx, ry + Math.floor(i / 4) * 2 * sy)
-        const [wx, wy] = P(tx2, ty2)
-        if (Math.hypot(wx - mx, wy - my) < 96) continue
-        if (dunia.pohon.some((p) => Math.hypot(p.x - wx, p.y - wy) < 48)) continue
-        dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: 120 })
+    const polaRumpun: readonly [number, number][] = [
+      [0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [2, 1], [-1, 2], [1, -1],
+    ]
+    for (const [px0, py0] of pojokList) {
+      let ditanam = 0
+      for (const [ox, oy] of polaRumpun) {
+        if (ditanam >= 4) break
+        if (tanamPohon(px0 + ox, py0 + oy, 56)) ditanam++
       }
     }
-
-    if (!slot) continue
-    const tim = slot.tim
-
-    const [cx, cy] = P(btx, bty)
-    buatBangunan(dunia, tim, 'castle', cx, cy, 'aktif')
-
-    const [hx, hy] = P(...dataranBebas(btx + 5 * sx, bty - 2 * sy))
-    buatBangunan(dunia, tim, 'house', hx, hy, 'aktif')
-
-    for (let i = 0; i < 5; i++) {
-      const [px, py] = P(...dataranBebas(btx + (i - 2), bty + 3 * sy))
-      buatUnit(dunia, tim, 'pawn', px, py)
-    }
-
-    for (let i = 0; i < 4; i++) {
-      const [dx, dy] = P(...dataranBebas(btx - 5 * sx + i * 2 * sx, bty + 5 * sy))
-      dunia.domba.push(buatDomba(dunia.idBerikut++, dx, dy, 45, 1.0 + i * 0.9))
-    }
-
-    const peran = dunia.tim[tim].heroPilihan
-    const [ux, uy] = P(...dataranBebas(btx + 2 * sx, bty + 4 * sy))
-    const hero = buatUnit(dunia, tim, peran, ux, uy)
-    dunia.tim[tim].heroHidup = hero.id
   }
 
-  // Tambang kaya di plateau pusat + camp besar penjaga
+  // Tambang kaya di plateau pusat + camp besar penjaga Goblin
   const pusat = dunia.titik.plateauPusat
   dunia.tambang.push({
     id: dunia.idBerikut++,
@@ -346,21 +367,45 @@ function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void
   })
   tambahCamp(dunia, 'besar', keTengahPiksel(pusat.tx), keTengahPiksel(pusat.ty))
 
-  // Tambang ekspansi & camp kecil di arena tengah
+  // Tambang ekspansi & camp kecil Goblin di arena tengah
   for (const ek of dunia.titik.ekspansi) {
-    const [tx, ty] = dataranBebas(ek.tx, ek.ty)
+    const [tx, ty] = lahanBebas(ek.tx, ek.ty, TINGGI.dataran)
     const [ex, ey] = P(tx, ty)
     dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'stone', x: ex, y: ey, gold: 1500 })
     tambahCamp(dunia, 'kecil', ex, ey)
 
-    // Sedikit pohon netral dekat tepi ekspansi
-    for (let i = 0; i < 5; i++) {
-      const [ptx, pty] = dataranBebas(tx + ((i % 3) - 1) * 3, ty + (i < 3 ? -3 : 3))
-      const [px, py] = P(ptx, pty)
-      if (Math.hypot(px - ex, py - ey) < 96) continue
-      if (dunia.pohon.some((p) => Math.hypot(p.x - px, p.y - py) < 52)) continue
-      dunia.pohon.push({ id: dunia.idBerikut++, x: px, y: py, kayu: 120 })
+    // Pohon-pohon rindang di sekitar tepi ekspansi (tidak menghalangi jalan pasir)
+    for (const [ox, oy] of [[-4, -3], [4, -3], [-4, 3], [4, 3], [-5, 0], [5, 0]] as const) {
+      tanamPohon(tx + ox, ty + oy, 60)
     }
+  }
+
+  // Camp Goblin tambahan penjaga jalur jembatan & tepi danau
+  for (const cp of dunia.titik.campTambahan ?? []) {
+    const [tx, ty] = lahanBebas(cp.tx, cp.ty, TINGGI.dataran)
+    const [gx, gy] = P(tx, ty)
+    tambahCamp(dunia, 'kecil', gx, gy)
+  }
+
+  // Pepohonan pemanis di tepi pulau mini laut & di sekitar tepi arena tengah
+  for (const pk of dunia.titik.pulauKecil ?? []) {
+    tanamPohon(pk.tx, pk.ty, 44)
+    tanamPohon(pk.tx + 1, pk.ty, 44)
+  }
+  const tepiHutanTengah: readonly [number, number][] = dunia.peta === 'salib4'
+    ? [
+        [36, 25], [59, 25], [36, 70], [59, 70],
+        [25, 36], [25, 59], [70, 36], [70, 59],
+        [42, 42], [54, 42], [42, 54], [54, 54],
+      ]
+    : [
+        [33, 40], [62, 40], [33, 55], [62, 55],
+        [43, 33], [52, 33], [43, 62], [52, 62],
+        [18, 40], [77, 40], [18, 55], [77, 55],
+      ]
+  for (const [fx, fy] of tepiHutanTengah) {
+    tanamPohon(fx, fy, 64)
+    tanamPohon(fx + 1, fy - 1, 64)
   }
 
   segarkanHalangan(dunia)
