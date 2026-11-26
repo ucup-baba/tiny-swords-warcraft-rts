@@ -5,3 +5,4 @@
 
 export * from './transport.js'
 export * from './lan.js'
+export * from './p2p.js'

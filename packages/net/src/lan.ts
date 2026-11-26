@@ -48,12 +48,30 @@ export interface PendengarLan {
   terputus?(): void
 }
 
+export interface KlienMultiplayer {
+  readonly kode: string
+  readonly mode: 'lan' | 'p2p'
+  sambung(nama: string): void
+  kirimNama(nama: string): void
+  buatRoom(hero: string, opsi?: Partial<KonfigMatch>): void
+  aturRoom(opsi: { peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }): void
+  ubahSlot(opsi: { hero?: string; aliansi?: number; tim?: TimPemain }): void
+  gabung(kode: string, hero: string): void
+  keluar(): void
+  mulai(): void
+  sambungUlang(): void
+  kirimCmd(cmd: unknown): void
+  kirimSnapshot(state: unknown, untuk?: TimPemain): void
+  tutup(): void
+}
+
 /**
  * Klien papan room LAN. Menyimpan token sesi supaya bisa menyambung ulang
  * setelah koneksi putus (PRD §15.2) — tanpa token, perangkat lain di LAN bisa
  * mengaku-aku sebagai pemain yang putus.
  */
-export class KlienLan {
+export class KlienLan implements KlienMultiplayer {
+  readonly mode = 'lan' as const
   private ws: WebSocket | null = null
   private token = ''
   private kodeRoom = ''

@@ -45,6 +45,7 @@ export interface AksiLobi {
   gabungRoom(kode: string, nama: string, hero: PeranHeroAset): void
   mulaiLan(): void
   keluarRoom(): void
+  salinLinkRoom?(kode: string): void
   ubahModeSentuh?(mode: ModeSentuh): void
   layarPenuh?(): void
 }
@@ -140,6 +141,7 @@ export class Lobi {
   private roomBannerEl: HTMLElement
   private roomKodeBesarEl: HTMLElement
   private roomInfoPeranEl: HTMLElement
+  private tombolSalinLink: HTMLButtonElement
   private tombolKeluarBanner: HTMLButtonElement
   private judulTabelSlot: HTMLElement
   private slotTabel: HTMLElement
@@ -164,6 +166,7 @@ export class Lobi {
   private peranLan: 'host' | 'tamu' | null = null
   private timLanSaya: TimPemain | null = null
   private modeStatis = false
+  private modeJaringan: 'lan' | 'p2p' = 'lan'
   private lanTersambung = false
   private sedangGabung = false
   private alamatLanTeks = '—'
@@ -395,10 +398,18 @@ export class Lobi {
     this.roomKodeBesarEl = el('span', 'room-kode-besar', 'KODE: -----')
     this.roomInfoPeranEl = el('span', undefined, '')
     bannerKiri.append(this.roomKodeBesarEl, this.roomInfoPeranEl)
+    const bannerKanan = el('div', 'baris')
+    bannerKanan.style.marginTop = '0'
+    this.tombolSalinLink = el('button', 'btn-kembali', '📋 Salin Link')
+    this.tombolSalinLink.type = 'button'
+    this.tombolSalinLink.addEventListener('click', () => {
+      if (this.kodeRoomAktif) this.aksi.salinLinkRoom?.(this.kodeRoomAktif)
+    })
     this.tombolKeluarBanner = el('button', 'tombol-besar merah', 'Keluar Room')
     this.tombolKeluarBanner.type = 'button'
     this.tombolKeluarBanner.addEventListener('click', () => this.keluarRoomOlehPengguna())
-    this.roomBannerEl.append(bannerKiri, this.tombolKeluarBanner)
+    bannerKanan.append(this.tombolSalinLink, this.tombolKeluarBanner)
+    this.roomBannerEl.append(bannerKiri, bannerKanan)
     this.layarSetupEl.append(this.roomBannerEl)
 
     // Grid 2 kolom gaya Warcraft III
@@ -663,19 +674,20 @@ export class Lobi {
     this.tombolKembali.style.display = this.layar === 'pilih' ? 'none' : ''
     this.tombolKembali.textContent = this.layar === 'room' ? '← Keluar Room' : '← Kembali'
 
+    const modeLabel = this.modeJaringan === 'p2p' ? 'Online P2P / Wi-Fi' : 'Wi-Fi / LAN'
     if (this.layar === 'pilih') {
       this.judulUtama.textContent = 'Tiny Swords: Warcraft RTS'
-      this.subJudul.textContent = 'Pilih mode permainan: Main vs AI (Skirmish) atau Multiplayer Wi-Fi / LAN (2–6 Pemain)'
+      this.subJudul.textContent = `Pilih mode permainan: Main vs AI (Skirmish) atau Multiplayer ${modeLabel} (2–6 Pemain)`
     } else if (this.layar === 'ai') {
       this.judulUtama.textContent = '⚔ Main vs AI (Skirmish)'
       this.subJudul.textContent = 'Atur Peta (2–6P), Tingkat AI (Gampang–Extreme), Aliansi, Hero, & Custom Gold Awal'
     } else if (this.layar === 'wifi') {
-      this.judulUtama.textContent = '📶 Main Wi-Fi / LAN (2–6 Pemain)'
+      this.judulUtama.textContent = `📶 Main ${modeLabel} (2–6 Pemain)`
       this.subJudul.textContent = 'Pilih Buat Room (Host) atau Gabung Room teman lewat Kode / Daftar Room di bawah'
     } else {
       this.judulUtama.textContent = `📶 Ruang Tunggu Room ${this.kodeRoomAktif}`
       this.subJudul.textContent = this.peranLan === 'host'
-        ? 'Anda adalah Host — teman di Wi-Fi bisa langsung masuk, atau tambahkan AI pada slot terbuka'
+        ? 'Anda adalah Host — teman bisa langsung masuk lewat Kode, Link, atau Daftar Room; AI bisa ditambah di slot terbuka'
         : 'Anda adalah Tamu — pilih Warna, Aliansi, & Hero Anda sambil menunggu Host memulai'
     }
   }
@@ -693,13 +705,28 @@ export class Lobi {
       return
     }
     this.lencanaWifi.className = 'mode-lencana wifi'
-    this.lencanaWifi.textContent = 'MULTIPLAYER · 2–6 HP/PC'
+    this.lencanaWifi.textContent = this.modeJaringan === 'p2p' ? 'ONLINE P2P · 2–6 HP/PC' : 'LAN WI-FI · 2–6 HP/PC'
+    this.btnPilihWifi.textContent = this.modeJaringan === 'p2p'
+      ? '🌐 MAIN ONLINE / WI-FI (P2P)'
+      : '📶 MAIN WI-FI / LAN'
     this.btnPilihWifi.disabled = false
     this.tombolBuat.disabled = false
     this.tombolGabung.disabled = this.sedangGabung
     this.inputKode.disabled = false
 
     const jmlBuka = this.roomTersedia.filter((r) => hitungSlotTerbukaRoom(r) > 0).length
+    if (this.modeJaringan === 'p2p') {
+      if (this.lanTersambung) {
+        this.badgeKoneksiEl.textContent = '● Terhubung ke Jaringan Online P2P'
+        this.statusWifiMenu.textContent = jmlBuka > 0
+          ? `● Online P2P Siap (tanpa server lokal) · ${jmlBuka} room terbuka menunggu pemain`
+          : '● Online P2P Siap (tanpa server lokal) · Cukup buka link GitHub ini di HP/PC!'
+      } else {
+        this.badgeKoneksiEl.textContent = '○ Menghubungkan ke Jaringan Online P2P…'
+        this.statusWifiMenu.textContent = '○ Menghubungkan ke jaringan Online P2P (WebRTC)…'
+      }
+      return
+    }
     if (this.lanTersambung) {
       this.badgeKoneksiEl.textContent = '● Terhubung ke Server Wi-Fi'
       this.statusWifiMenu.textContent = jmlBuka > 0
@@ -1021,9 +1048,30 @@ export class Lobi {
   }
 
   setAlamat(url: string): void {
+    this.modeJaringan = 'lan'
     this.alamatLanTeks = url
     this.alamatEl.textContent = `Alamat LAN: ${url} (Buka alamat ini di HP teman pada Wi-Fi yang sama)`
     this.segarkanStatusWifi()
+  }
+
+  /** Mode Online P2P WebRTC murni (GitHub Pages): 2–6 pemain tanpa server lokal di HP & Desktop. */
+  setModeOnlineP2p(urlBerbagi?: string): void {
+    this.modeStatis = false
+    this.modeJaringan = 'p2p'
+    this.alamatLanTeks = urlBerbagi ?? 'GitHub Pages P2P'
+    this.alamatEl.textContent =
+      'Mode Online P2P (Tanpa Server Lokal) — Cukup buka link yang sama di HP/Desktop (Wi-Fi maupun 4G/5G)!'
+    this.segarkanSemuaUi()
+    this.renderDaftarRoom()
+  }
+
+  /** Membuka layar Multiplayer dengan kode room terisi otomatis (mis. dari link ?room=XXXXX). */
+  bukaDenganKodeRoom(kode: string): void {
+    const bersih = kode.trim().toUpperCase().slice(0, 5)
+    if (!bersih || this.modeStatis) return
+    this.inputKode.value = bersih
+    this.bukaLayar('wifi')
+    this.wifiGalatEl.textContent = `Kode room ${bersih} terisi otomatis — ubah Nama jika perlu lalu klik "Gabung Kode".`
   }
 
   setStatusKoneksi(tersambung: boolean): void {

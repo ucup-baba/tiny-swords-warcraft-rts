@@ -332,4 +332,48 @@ describe('Lobi Warcraft III — Pemisahan Main vs AI / Wi-Fi LAN, Peta 2/4/6P, 4
     expect(lobi.layarAktif).toBe('wifi')
     expect(lobi.akar.textContent).toContain('Host menutup room')
   })
+
+  it('mode Online P2P (GitHub Pages) mengaktifkan tombol Multiplayer tanpa server lokal & mendukung deep-link ?room=KODE', () => {
+    const salinLinkRoom = vi.fn()
+    const lobi = new Lobi('', {
+      mulaiSolo: vi.fn(),
+      buatRoom: vi.fn(),
+      gabungRoom: vi.fn(),
+      mulaiLan: vi.fn(),
+      keluarRoom: vi.fn(),
+      salinLinkRoom,
+    })
+
+    lobi.setModeOnlineP2p('https://ucup-baba.github.io/tiny-swords-warcraft-rts/')
+    lobi.setStatusKoneksi(true)
+    const btnWifi = lobi.akar.querySelector<HTMLButtonElement>('[data-pilih-mode="wifi"]')!
+    expect(btnWifi.disabled).toBe(false)
+    expect(btnWifi.textContent).toContain('ONLINE')
+
+    // Deep-link ?room=AB3CD langsung membuka hub Wi-Fi/Online dengan kode terisi
+    lobi.bukaDenganKodeRoom('ab3cd')
+    expect(lobi.layarAktif).toBe('wifi')
+    const inputKode = lobi.akar.querySelector<HTMLInputElement>('.wifi-kode-input')!
+    expect(inputKode.value).toBe('AB3CD')
+
+    // Masuk room -> tombol Salin Link memanggil salinLinkRoom dengan kode aktif
+    lobi.terimaRoomLan('AB3CD', 'host', 'blue', {
+      kode: 'AB3CD',
+      hostNama: 'Komandan',
+      tamuNama: null,
+      jumlah: 1,
+      slotTerbuka: 1,
+      maksPemain: 2,
+      peta: 'klasik2',
+      goldAwal: 320,
+      slot: [
+        { indeks: 0, tim: 'blue', jenis: 'manusia', aliansi: 1, hero: 'king', kesulitanAi: 'medium', nama: 'Komandan', terisi: true },
+        { indeks: 1, tim: 'red', jenis: 'manusia', aliansi: 2, hero: 'champion', kesulitanAi: 'medium', nama: 'Terbuka (LAN)', terisi: false },
+      ],
+    })
+    const btnSalin = [...lobi.akar.querySelectorAll<HTMLButtonElement>('button')]
+      .find((b) => b.textContent?.includes('Salin Link'))!
+    btnSalin.click()
+    expect(salinLinkRoom).toHaveBeenCalledWith('AB3CD')
+  })
 })

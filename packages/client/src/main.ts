@@ -7,7 +7,10 @@ import {
   Efek, LapisanFog, Minimap, PeremajaTerrain, batasiKamera, buatKamera, buatKursorAksi,
   gambarEntitas, keLayarX, keLayarY, muatSemuaAset, potongKursor, potongSprite, pusatkan,
 } from '@hftf/render'
-import { KlienLan, TransportLokal, type MulaiLanInfo, type RingkasRoom } from '@hftf/net'
+import {
+  KlienLan, KlienP2p, TransportLokal, p2pDidukungBrowser, pasangPolyfillP2p,
+  type KlienMultiplayer, type MulaiLanInfo, type PendengarLan, type RingkasRoom,
+} from '@hftf/net'
 import {
   DT_TETAP, DUNIA_H, DUNIA_W, GOLD_AWAL_BAKU, WARNA_TIM, buatSlotDefault,
   type KonfigMatch, type Tim, type TimPemain,
@@ -26,6 +29,7 @@ import {
 import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
 const BASIS = ''
+pasangPolyfillP2p()
 
 type Fase = 'muat' | 'lobi' | 'main' | 'selesai'
 
@@ -34,7 +38,8 @@ class Permainan {
   private dunia: Dunia | null = null
   private daftarAi: KeadaanAi[] = []
   private transport: TransportLokal<Perintah, never> | null = null
-  private lan: KlienLan | null = null
+  private lan: KlienMultiplayer | null = null
+  private modeKoneksi: 'lan' | 'p2p' = 'lan'
   private peran: 'solo' | 'host' | 'tamu' = 'solo'
   private peranLanRoom: 'host' | 'tamu' | null = null
   private tamuAktif: TimPemain[] = []
@@ -263,6 +268,19 @@ class Permainan {
         this.lan?.keluar()
         this.peranLanRoom = null
       },
+      salinLinkRoom: (kode) => {
+        const u = new URL(location.href)
+        u.searchParams.set('room', kode)
+        const teks = u.toString()
+        if (navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(teks).then(
+            () => this.hud.tampilkanToast(`Link room ${kode} disalin — kirim ke teman!`),
+            () => this.hud.tampilkanToast(`Kode room: ${kode}`),
+          )
+        } else {
+          this.hud.tampilkanToast(`Bagikan kode room: ${kode}`)
+        }
+      },
       ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
       layarPenuh: () => void this.mintaLayarPenuh(),
     })
@@ -360,27 +378,41 @@ class Permainan {
     this.fase = 'lobi'
     this.lobi.tampil(true)
 
-    // Deteksi server LAN lokal vs hosting statis (GitHub Pages):
-    // Hanya menyambung WebSocket /ws jika endpoint ./alamat mengembalikan JSON server.
+    // Deteksi server LAN lokal vs GitHub Pages (otomatis Online P2P WebRTC tanpa server lokal):
+    const params = new URLSearchParams(location.search)
+    const paksaP2p = params.get('mode') === 'p2p'
+    const kodeUrl = params.get('room')?.trim().toUpperCase() ?? ''
+
     let lanTersedia = false
-    try {
-      const r = await fetch(`${BASIS}alamat`)
-      const ct = r.headers.get('content-type') ?? ''
-      if (r.ok && ct.includes('application/json')) {
-        const j = (await r.json()) as { url?: string }
-        this.lobi.setAlamat(j.url ?? window.location.origin)
-        lanTersedia = true
+    if (!paksaP2p) {
+      try {
+        const r = await fetch(`${BASIS}alamat`)
+        const ct = r.headers.get('content-type') ?? ''
+        if (r.ok && ct.includes('application/json')) {
+          const j = (await r.json()) as { url?: string }
+          this.lobi.setAlamat(j.url ?? window.location.origin)
+          lanTersedia = true
+        }
+      } catch {
+        lanTersedia = false
       }
-    } catch {
-      lanTersedia = false
     }
 
     if (lanTersedia) {
+      this.modeKoneksi = 'lan'
       this.modeStatis = false
+      this.pastikanLan(this.lobi.nama)
+    } else if (p2pDidukungBrowser()) {
+      this.modeKoneksi = 'p2p'
+      this.modeStatis = false
+      this.lobi.setModeOnlineP2p(`${location.origin}${location.pathname}`)
       this.pastikanLan(this.lobi.nama)
     } else {
       this.modeStatis = true
       this.lobi.setModeStatis()
+    }
+    if (kodeUrl && !this.modeStatis) {
+      this.lobi.bukaDenganKodeRoom(kodeUrl)
     }
     requestAnimationFrame((t) => this.bingkai(t))
   }
@@ -445,11 +477,10 @@ class Permainan {
     })
   }
 
-  /** Membuka koneksi papan sekali saja, lalu dipakai ulang. */
+  /** Membuka koneksi multiplayer (Server LAN lokal atau Online P2P WebRTC) sekali saja, lalu dipakai ulang. */
   private pastikanLan(nama: string): void {
     if (this.lan) return
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    this.lan = new KlienLan(`${proto}://${location.host}/ws`, {
+    const pendengar: PendengarLan = {
       daftar: (room: RingkasRoom[]) => this.lobi.setDaftarRoom(room),
       room: (kode, peran, tim, ringkas) => {
         this.peranLanRoom = peran
@@ -493,6 +524,7 @@ class Permainan {
       },
       terputus: () => {
         this.lobi.setStatusKoneksi(false)
+        if (this.modeKoneksi === 'p2p') return
         this.hud.tampilkanToast('Koneksi LAN terputus — mencoba menyambung lagi…')
         window.setTimeout(() => {
           this.lan = null
@@ -500,7 +532,14 @@ class Permainan {
           window.setTimeout(() => this.lan?.sambungUlang(), 400)
         }, 1200)
       },
-    })
+    }
+
+    if (this.modeKoneksi === 'p2p') {
+      this.lan = new KlienP2p(pendengar)
+    } else {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+      this.lan = new KlienLan(`${proto}://${location.host}/ws`, pendengar)
+    }
     this.lan.sambung(nama)
   }
 
@@ -1097,10 +1136,11 @@ class Permainan {
           this.akumulator = 0
         }
 
-        // Host menyiarkan snapshot ~15 Hz, disaring fog masing-masing pemain tamu.
+        // Host menyiarkan snapshot (~15 Hz LAN, ~12 Hz P2P), disaring fog masing-masing pemain tamu.
         if (this.peran === 'host') {
           this.akumulatorSiar += dt
-          if (this.akumulatorSiar >= 1 / 15) {
+          const selang = this.modeKoneksi === 'p2p' ? 1 / 12 : 1 / 15
+          if (this.akumulatorSiar >= selang) {
             this.akumulatorSiar = 0
             for (const timTamu of this.tamuAktif) {
               this.lan?.kirimSnapshot(buatSnapshot(this.dunia, timTamu), timTamu)
@@ -1208,9 +1248,10 @@ class Permainan {
     if (!this.dunia) return
     const unit = this.unitTerpilih()
     const bg = this.bangunanTerpilih()
+    const labelJaringan = this.modeKoneksi === 'p2p' ? 'ONLINE' : 'LAN'
     this.hud.perbaruiPita(
       this.dunia, this.timSaya,
-      this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)',
+      this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? `${labelJaringan} (HOST)` : `${labelJaringan} (GUEST)`,
       this.fpsTampil,
     )
     this.hud.perbaruiSumberDaya(this.dunia, this.timSaya)
