@@ -1,6 +1,6 @@
 import {
-  GOLD_AWAL_BAKU, JENIS_PETA, KESULITAN_AI, PAPAN, TIM_PEMAIN, jepitGoldAwal,
-  type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigSlot, type TimPemain,
+  GOLD_AWAL_BAKU, JENIS_PETA, KESULITAN_AI, PAPAN, TIM_PEMAIN, jepitGoldAwal, validasiDataPetaCustom,
+  type DataPetaCustom, type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigSlot, type TimPemain,
 } from '@hftf/shared'
 
 export interface SlotRoom {
@@ -24,6 +24,8 @@ export interface RingkasRoom {
   maksPemain: number
   mulai: boolean
   peta: JenisPeta
+  petaCustom?: DataPetaCustom | null
+  namaPetaCustom?: string
   goldAwal: number
   slot: SlotRoom[]
 }
@@ -31,8 +33,8 @@ export interface RingkasRoom {
 /** Pesan dari perangkat ke papan. */
 export type KePapan =
   | { t: 'halo'; nama: string }
-  | { t: 'buat-room'; hero: string; peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }
-  | { t: 'atur-room'; peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }
+  | { t: 'buat-room'; hero: string; peta?: JenisPeta; petaCustom?: DataPetaCustom; goldAwal?: number; slot?: KonfigSlot[] }
+  | { t: 'atur-room'; peta?: JenisPeta; petaCustom?: DataPetaCustom | null; goldAwal?: number; slot?: KonfigSlot[] }
   | { t: 'ubah-slot'; hero?: string; aliansi?: number; tim?: TimPemain }
   | { t: 'gabung-room'; kode: string; hero: string }
   | { t: 'keluar-room' }
@@ -54,6 +56,7 @@ export type DariPapan =
       heroBlue: string
       heroRed: string
       peta: JenisPeta
+      petaCustom?: DataPetaCustom
       goldAwal: number
       slot: SlotRoom[]
     }
@@ -133,6 +136,12 @@ export function pesanSah(x: unknown): KePapan | null {
     case 'buat-room': {
       if (!teks(m['hero'], 16)) return null
       const peta = typeof m['peta'] === 'string' && PETA_SET.has(m['peta']) ? (m['peta'] as JenisPeta) : undefined
+      let petaCustom: DataPetaCustom | undefined
+      if (m['petaCustom'] !== undefined && m['petaCustom'] !== null) {
+        const sah = validasiDataPetaCustom(m['petaCustom'])
+        if (!sah) return null
+        petaCustom = sah
+      }
       const goldAwal = typeof m['goldAwal'] === 'number' && Number.isFinite(m['goldAwal'])
         ? jepitGoldAwal(m['goldAwal'])
         : undefined
@@ -142,12 +151,21 @@ export function pesanSah(x: unknown): KePapan | null {
         t: 'buat-room',
         hero: m['hero'],
         ...(peta !== undefined ? { peta } : {}),
+        ...(petaCustom !== undefined ? { petaCustom } : {}),
         ...(goldAwal !== undefined ? { goldAwal } : {}),
         ...(slot !== undefined ? { slot } : {}),
       }
     }
     case 'atur-room': {
       const peta = typeof m['peta'] === 'string' && PETA_SET.has(m['peta']) ? (m['peta'] as JenisPeta) : undefined
+      let petaCustom: DataPetaCustom | null | undefined
+      if (m['petaCustom'] === null) {
+        petaCustom = null
+      } else if (m['petaCustom'] !== undefined) {
+        const sah = validasiDataPetaCustom(m['petaCustom'])
+        if (!sah) return null
+        petaCustom = sah
+      }
       const goldAwal = typeof m['goldAwal'] === 'number' && Number.isFinite(m['goldAwal'])
         ? jepitGoldAwal(m['goldAwal'])
         : undefined
@@ -156,6 +174,7 @@ export function pesanSah(x: unknown): KePapan | null {
       return {
         t: 'atur-room',
         ...(peta !== undefined ? { peta } : {}),
+        ...(petaCustom !== undefined ? { petaCustom } : {}),
         ...(goldAwal !== undefined ? { goldAwal } : {}),
         ...(slot !== undefined ? { slot } : {}),
       }

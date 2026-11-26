@@ -44,7 +44,7 @@ export function peranGoblin(u: Unit): PeranGoblin {
 export function isiCamp(dunia: Dunia, camp: Camp): void {
   const daftar = ISI_CAMP[camp.jenis]
   const levelCamp = tinggiDi(dunia.terrain, keTile(camp.x), keTile(camp.y))
-  const rDasar = dunia.peta === 'klasik2' ? 40 : 84
+  const rDasar = dunia.peta === 'klasik2' && !dunia.petaCustomNama ? 40 : 84
   for (const [i, peran] of daftar.entries()) {
     const sudut = (i / daftar.length) * Math.PI * 2
     const r = rDasar + acakRentang(dunia.rng, 0, 40)

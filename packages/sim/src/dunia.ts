@@ -1,6 +1,7 @@
 import {
-  DT_TETAP, GOLD_AWAL_BAKU, INFO_PETA, PETA_BARIS, PETA_KOLOM, TIM, TINGGI, jepitGoldAwal,
-  type JenisPeta, type KonfigSlot, type Tim, type TimPemain,
+  DT_TETAP, GOLD_AWAL_BAKU, INFO_PETA, PETA_BARIS, PETA_KOLOM, TIM, TINGGI, encodeRle, jepitGoldAwal,
+  type DataPetaCustom, type JenisPeta, type KonfigSlot, type PohonPetaCustom, type SpawnPetaCustom,
+  type TambangPetaCustom, type Tim, type TimPemain,
 } from '@hftf/shared'
 import { BANGUNAN } from './definisi/bangunan.js'
 import { SEMUA_RISET, type JenisRiset } from './definisi/riset.js'
@@ -23,11 +24,13 @@ import { cariBangunan, cariUnit } from './util.js'
 import {
   adalahJalan, adalahJembatan, adalahRamp, buatTerrain, indeks, keTengahPiksel, keTile, tinggiDi,
 } from './terrain.js'
+import { buatTerrainDariCustom } from './peta-custom.js'
 import { batalkanJalur, pisahUnit } from './sistem/gerak.js'
 
 export interface OpsiDunia {
   seed: number
   peta?: JenisPeta
+  petaCustom?: DataPetaCustom
   goldAwal?: number
   heroBlue?: PeranHero
   heroRed?: PeranHero
@@ -56,17 +59,23 @@ function keadaanTim(hero: PeranHero, goldAwal = GOLD_AWAL_BAKU): KeadaanTim {
 
 export function buatDunia(opsi: OpsiDunia): Dunia {
   const peta: JenisPeta = opsi.peta ?? 'klasik2'
+  const petaCustom = opsi.petaCustom
   const goldAwal = jepitGoldAwal(opsi.goldAwal ?? GOLD_AWAL_BAKU)
   const rng = buatRng(opsi.seed)
-  const { terrain, titik } = buatTerrain(rng, peta)
+  const { terrain, titik } = petaCustom
+    ? buatTerrainDariCustom(petaCustom)
+    : buatTerrain(rng, peta)
 
   const info = INFO_PETA[peta]
+  const maksSlot = petaCustom
+    ? Math.max(2, Math.min(6, petaCustom.entitas.spawn.length || 2))
+    : info.maksPemain
   let daftarSlot: KonfigSlot[]
   if (opsi.slot && opsi.slot.length > 0) {
     daftarSlot = opsi.slot
       .filter((s) => s.jenis !== 'kosong')
-      .slice(0, info.maksPemain)
-      .map((s, idx) => ({ ...s, indeks: Math.min(info.maksPemain - 1, Math.max(0, s.indeks ?? idx)) }))
+      .slice(0, maksSlot)
+      .map((s, idx) => ({ ...s, indeks: Math.min(maksSlot - 1, Math.max(0, s.indeks ?? idx)) }))
   } else {
     const heroUrut: PeranHero[] = [
       opsi.heroBlue ?? 'king',
@@ -76,7 +85,10 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
       'champion',
       'knight',
     ]
-    daftarSlot = info.warnaDefault.map((tim, i) => ({
+    const warnaPakai = info.warnaDefault.length >= maksSlot
+      ? info.warnaDefault.slice(0, maksSlot)
+      : INFO_PETA.bintang6.warnaDefault.slice(0, maksSlot)
+    daftarSlot = warnaPakai.map((tim, i) => ({
       indeks: i,
       tim,
       jenis: i === 0 ? 'manusia' : 'ai',
@@ -132,9 +144,15 @@ export function buatDunia(opsi: OpsiDunia): Dunia {
     camp: [],
     fog,
     tim,
+    ...(petaCustom ? {
+      dekoCustom: petaCustom.entitas.deko.map((d) => ({ ...d })),
+      petaCustomNama: petaCustom.nama,
+    } : {}),
     kejadian: [],
   }
-  if (peta === 'klasik2') {
+  if (petaCustom) {
+    isiPetaCustom(dunia, petaCustom, daftarSlot)
+  } else if (peta === 'klasik2') {
     isiPetaKlasik2(dunia, daftarSlot)
   } else {
     isiPetaKepulauan(dunia, daftarSlot)
@@ -409,6 +427,184 @@ function isiPetaKepulauan(dunia: Dunia, daftarSlot: readonly KonfigSlot[]): void
   }
 
   segarkanHalangan(dunia)
+}
+
+/**
+ * Mengisi `Dunia` dari data `DataPetaCustom` buatan Map Editor secara setia.
+ */
+function isiPetaCustom(dunia: Dunia, data: DataPetaCustom, daftarSlot: readonly KonfigSlot[]): void {
+  const t = dunia.terrain
+  const P = (tx: number, ty: number): [number, number] => [keTengahPiksel(tx), keTengahPiksel(ty)]
+
+  const lahanBebas = (tx: number, ty: number, level: number): [number, number] => {
+    for (let r = 0; r <= 12; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (r > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+          const x = tx + dx
+          const y = ty + dy
+          if (tinggiDi(t, x, y) === level && !adalahRamp(t, x, y) && !dekatJembatan(t, x, y)) {
+            return [x, y]
+          }
+        }
+      }
+    }
+    return [tx, ty]
+  }
+
+  const spawns = [...data.entitas.spawn].sort((a, b) => a.slot - b.slot)
+  for (let i = 0; i < spawns.length; i++) {
+    const sp = spawns[i]!
+    const slot = daftarSlot.find((s) => s.indeks === sp.slot) ?? daftarSlot[i] ?? null
+    if (!slot) continue
+    const tim = slot.tim
+    const lv = tinggiDi(t, sp.tx, sp.ty) || TINGGI.dataran
+    const [btx, bty] = lahanBebas(sp.tx, sp.ty, lv)
+    const cx = btx < Math.floor(t.kolom / 2) ? 1 : -1
+    const cy = bty < Math.floor(t.baris / 2) ? 1 : -1
+
+    const [wx, wy] = P(btx, bty)
+    buatBangunan(dunia, tim, 'castle', wx, wy, 'aktif')
+
+    const [hx, hy] = P(...lahanBebas(btx + 4 * cx, bty - 3 * cy, lv))
+    buatBangunan(dunia, tim, 'house', hx, hy, 'aktif')
+
+    for (let k = 0; k < 5; k++) {
+      const [px, py] = P(...lahanBebas(btx + (k - 2), bty + 3 * cy, lv))
+      buatUnit(dunia, tim, 'pawn', px, py)
+    }
+
+    const peran = dunia.tim[tim].heroPilihan
+    const [ux, uy] = P(...lahanBebas(btx + 2 * cx, bty + 4 * cy, lv))
+    const hero = buatUnit(dunia, tim, peran, ux, uy)
+    dunia.tim[tim].heroHidup = hero.id
+  }
+
+  for (const p of data.entitas.pohon) {
+    if (tinggiDi(t, p.tx, p.ty) === TINGGI.air) continue
+    const [wx, wy] = P(p.tx, p.ty)
+    dunia.pohon.push({
+      id: dunia.idBerikut++,
+      x: wx,
+      y: wy,
+      kayu: p.kayu ?? 120,
+      varian: p.varian,
+    })
+  }
+
+  for (const m of data.entitas.tambang) {
+    if (tinggiDi(t, m.tx, m.ty) === TINGGI.air) continue
+    const [wx, wy] = P(m.tx, m.ty)
+    dunia.tambang.push({
+      id: dunia.idBerikut++,
+      jenis: m.jenis === 'mine' ? 'mine' : 'stone',
+      x: wx,
+      y: wy,
+      gold: m.gold ?? (m.jenis === 'mine' ? 3500 : 1200),
+      ...(m.varian !== undefined ? { varian: m.varian } : {}),
+    })
+  }
+
+  for (let i = 0; i < data.entitas.domba.length; i++) {
+    const d = data.entitas.domba[i]!
+    if (tinggiDi(t, d.tx, d.ty) === TINGGI.air) continue
+    const [wx, wy] = P(d.tx, d.ty)
+    dunia.domba.push(buatDomba(dunia.idBerikut++, wx, wy, 45, 1.0 + (i % 5) * 0.8))
+  }
+
+  for (const c of data.entitas.camp) {
+    if (tinggiDi(t, c.tx, c.ty) === TINGGI.air) continue
+    const [wx, wy] = P(c.tx, c.ty)
+    tambahCamp(dunia, c.jenis, wx, wy)
+  }
+
+  for (const bg of data.entitas.bangunan) {
+    if (tinggiDi(t, bg.tx, bg.ty) === TINGGI.air) continue
+    const slotPemilik = bg.slot >= 0
+      ? (daftarSlot.find((s) => s.indeks === bg.slot) ?? daftarSlot[bg.slot] ?? null)
+      : null
+    const tim: Tim = slotPemilik ? slotPemilik.tim : 'neutral'
+    const [wx, wy] = P(bg.tx, bg.ty)
+    const b = buatBangunan(dunia, tim, bg.jenis, wx, wy, 'aktif')
+    if (bg.hancur) {
+      b.fase = 'hancur'
+      b.hp = 0
+    }
+  }
+
+  for (const bn of data.entitas.bonus) {
+    if (tinggiDi(t, bn.tx, bn.ty) === TINGGI.air) continue
+    const [wx, wy] = P(bn.tx, bn.ty)
+    if (bn.jenis === 'daging') {
+      dunia.daging.push({ id: dunia.idBerikut++, x: wx, y: wy, jumlah: bn.jumlah, sisaDetik: 600 })
+    } else if (bn.jenis === 'gold') {
+      dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'stone', x: wx, y: wy, gold: bn.jumlah, varian: 1 })
+    } else {
+      dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: bn.jumlah, varian: 'pinus1' })
+    }
+  }
+
+  segarkanHalangan(dunia)
+}
+
+/**
+ * Mengekspor salinan peta bawaan (`klasik2`, `salib4`, `bintang6`) beserta seluruh hutan, tambang,
+ * domba, & camp Goblin ke format `DataPetaCustom` supaya langsung bisa diedit ulang di Map Editor!
+ */
+export function eksporPetaBawaanKeCustom(
+  peta: JenisPeta,
+  seed = 42,
+  id = `edit-${peta}`,
+  nama = `${INFO_PETA[peta].nama} (Edit)`,
+  diubahPada = 0,
+): DataPetaCustom {
+  const dunia = buatDunia({ seed, peta })
+  const t = dunia.terrain
+  const spawn: SpawnPetaCustom[] = dunia.titik.basis.map((b, idx) => ({
+    slot: idx,
+    tx: b.tx,
+    ty: b.ty,
+  }))
+  const vars = ['pinus1', 'pinus2', 'daun1', 'daun2'] as const
+  const pohon: PohonPetaCustom[] = dunia.pohon.map((p, idx) => ({
+    tx: keTile(p.x),
+    ty: keTile(p.y),
+    varian: p.varian ?? vars[idx % vars.length]!,
+    kayu: Math.round(p.kayu),
+  }))
+  const tambang: TambangPetaCustom[] = dunia.tambang.map((m, idx) => ({
+    tx: keTile(m.x),
+    ty: keTile(m.y),
+    jenis: m.jenis === 'mine' ? 'mine' : 'node',
+    gold: Math.round(m.gold),
+    ...(m.jenis === 'stone' ? { varian: (idx % 6) + 1 } : {}),
+  }))
+  const domba = dunia.domba.map((d) => ({ tx: keTile(d.x), ty: keTile(d.y) }))
+  const camp = dunia.camp.map((c) => ({ tx: keTile(c.x), ty: keTile(c.y), jenis: c.jenis }))
+
+  return {
+    versi: 1,
+    id,
+    nama,
+    bioma: t.bioma ?? 1,
+    kolom: t.kolom,
+    baris: t.baris,
+    tinggiRle: encodeRle(t.tinggi),
+    rampRle: encodeRle(t.ramp),
+    jembatanRle: encodeRle(t.jembatan),
+    jalanRle: encodeRle(t.jalan),
+    entitas: {
+      spawn,
+      pohon,
+      tambang,
+      domba,
+      camp,
+      deko: [],
+      bangunan: [],
+      bonus: [],
+    },
+    diubahPada,
+  }
 }
 
 /**

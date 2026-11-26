@@ -54,7 +54,7 @@ function tandai(dunia: Dunia, fog: Fog, x: number, y: number, radiusPx: number):
   const tx0 = keTile(x)
   const ty0 = keTile(y)
   const akuDi = tinggiDi(t, tx0, ty0)
-  const radius = akuDi === TINGGI.plateau ? radiusPx + BONUS_TANAH_TINGGI.jarakPandangPx : radiusPx
+  const radius = akuDi >= TINGGI.plateau ? radiusPx + BONUS_TANAH_TINGGI.jarakPandangPx : radiusPx
   const r = Math.ceil(radius / TILE)
   const r2 = (radius / TILE) * (radius / TILE)
 

@@ -23,15 +23,21 @@ export const TERRAIN = {
   batuAir4: { file: 'Terrain/Water/Rocks/Rocks_04.png', pack: 'u010', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8 },
 } as const satisfies Record<string, Aset>
 
-const ALASAN_TERRAIN_FREE = 'Free Pack menyediakan tileset tebing bertingkat berumput (rumput di atas tebing batu, lereng miring, & tebing laut) serta awan yang tidak ada di Update 010'
+const ALASAN_TERRAIN_FREE = 'Free Pack menyediakan 5 tema bioma tileset tebing bertingkat berumput (Tilemap_color1..5) serta awan yang tidak ada di Update 010'
 
 export const TERRAIN_FREE = {
   tileHijau: { file: 'Terrain/Tileset/Tilemap_color1.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  tileBioma2: { file: 'Terrain/Tileset/Tilemap_color2.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  tileBioma3: { file: 'Terrain/Tileset/Tilemap_color3.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  tileBioma4: { file: 'Terrain/Tileset/Tilemap_color4.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  tileBioma5: { file: 'Terrain/Tileset/Tilemap_color5.png', pack: 'free', fw: 64, fh: 64, kolom: 9, baris: 6, fps: 0, alasan: ALASAN_TERRAIN_FREE },
   awan1: { file: 'Terrain/Decorations/Clouds/Clouds_01.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
   awan2: { file: 'Terrain/Decorations/Clouds/Clouds_02.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  awan3: { file: 'Terrain/Decorations/Clouds/Clouds_03.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
+  awan4: { file: 'Terrain/Decorations/Clouds/Clouds_04.png', pack: 'free', fw: 576, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_TERRAIN_FREE },
 } as const satisfies Record<string, Aset>
 
-const ALASAN_POHON_FREE = 'Free Pack punya 4 variasi pohon beranimasi (pinus gelap, pinus cerah, birch kuning-hijau, dan daun gugur emas) agar hutan di pojok pulau hidup seperti ilustrasi resmi'
+const ALASAN_POHON_FREE = 'Free Pack punya 4 variasi pohon beranimasi (pinus gelap, pinus cerah, birch kuning-hijau, dan daun gugur emas) serta 4 tunggul agar hutan di peta dan Map Editor kaya variasi'
 
 export const POHON_FREE = {
   pinus1: { file: 'Terrain/Resources/Wood/Trees/Tree1.png', pack: 'free', fw: 192, fh: 256, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
@@ -39,6 +45,61 @@ export const POHON_FREE = {
   daun1: { file: 'Terrain/Resources/Wood/Trees/Tree3.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
   daun2: { file: 'Terrain/Resources/Wood/Trees/Tree4.png', pack: 'free', fw: 192, fh: 192, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_POHON_FREE },
   tunggul: { file: 'Terrain/Resources/Wood/Trees/Stump 1.png', pack: 'free', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_POHON_FREE },
+  tunggul2: { file: 'Terrain/Resources/Wood/Trees/Stump 2.png', pack: 'free', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_POHON_FREE },
+  tunggul3: { file: 'Terrain/Resources/Wood/Trees/Stump 3.png', pack: 'free', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_POHON_FREE },
+  tunggul4: { file: 'Terrain/Resources/Wood/Trees/Stump 4.png', pack: 'free', fw: 192, fh: 256, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_POHON_FREE },
+} as const satisfies Record<string, Aset>
+
+const ALASAN_DEKO_FREE = 'Free Pack melengkapi katalog Map Editor dengan semak beranimasi, batu darat, bongkahan batu emas, efek api obor, dan bebek air yang tidak tersedia di Update 010'
+
+export const DEKO_FREE = {
+  semak1: { file: 'Terrain/Decorations/Bushes/Bushe1.png', pack: 'free', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_DEKO_FREE },
+  semak2: { file: 'Terrain/Decorations/Bushes/Bushe2.png', pack: 'free', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_DEKO_FREE },
+  semak3: { file: 'Terrain/Decorations/Bushes/Bushe3.png', pack: 'free', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_DEKO_FREE },
+  semak4: { file: 'Terrain/Decorations/Bushes/Bushe4.png', pack: 'free', fw: 128, fh: 128, kolom: 8, baris: 1, fps: 8, alasan: ALASAN_DEKO_FREE },
+  batu1: { file: 'Terrain/Decorations/Rocks/Rock1.png', pack: 'free', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batu2: { file: 'Terrain/Decorations/Rocks/Rock2.png', pack: 'free', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batu3: { file: 'Terrain/Decorations/Rocks/Rock3.png', pack: 'free', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batu4: { file: 'Terrain/Decorations/Rocks/Rock4.png', pack: 'free', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas1: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 1.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas2: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 2.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas3: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 3.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas4: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 4.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas5: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 5.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  batuEmas6: { file: 'Terrain/Resources/Gold/Gold Stones/Gold Stone 6.png', pack: 'free', fw: 128, fh: 128, kolom: 1, baris: 1, fps: 0, alasan: ALASAN_DEKO_FREE },
+  api1: { file: 'Particle FX/Fire_01.png', pack: 'free', fw: 64, fh: 64, kolom: 8, baris: 1, fps: 12, alasan: ALASAN_DEKO_FREE },
+  api2: { file: 'Particle FX/Fire_02.png', pack: 'free', fw: 64, fh: 64, kolom: 10, baris: 1, fps: 12, alasan: ALASAN_DEKO_FREE },
+  api3: { file: 'Particle FX/Fire_03.png', pack: 'free', fw: 64, fh: 64, kolom: 12, baris: 1, fps: 12, alasan: ALASAN_DEKO_FREE },
+  bebek: { file: 'Terrain/Decorations/Rubber Duck/Rubber duck.png', pack: 'free', fw: 32, fh: 32, kolom: 3, baris: 1, fps: 5, alasan: ALASAN_DEKO_FREE },
+} as const satisfies Record<string, Aset>
+
+/** Aset tambahan Update 010 (Menara Goblin, Tambang Nonaktif, Varian Goblin, & Tombol UI Editor). */
+export const EDITOR_U010 = {
+  tambangNonaktif: { file: 'Resources/Gold Mine/GoldMine_Inactive.png', pack: 'u010', fw: 192, fh: 128, kolom: 1, baris: 1, fps: 0 },
+  menaraGoblinRed: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Red.png', pack: 'u010', fw: 256, fh: 192, kolom: 4, baris: 1, fps: 8 },
+  menaraGoblinBlue: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Blue.png', pack: 'u010', fw: 256, fh: 192, kolom: 4, baris: 1, fps: 8 },
+  menaraGoblinYellow: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Yellow.png', pack: 'u010', fw: 256, fh: 192, kolom: 4, baris: 1, fps: 8 },
+  menaraGoblinPurple: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Purple.png', pack: 'u010', fw: 256, fh: 192, kolom: 4, baris: 1, fps: 8 },
+  menaraGoblinHancur: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_Destroyed.png', pack: 'u010', fw: 256, fh: 192, kolom: 1, baris: 1, fps: 0 },
+  menaraGoblinKonstruksi: { file: 'Factions/Goblins/Buildings/Wood_Tower/Wood_Tower_InConstruction.png', pack: 'u010', fw: 256, fh: 192, kolom: 1, baris: 1, fps: 0 },
+  torchBlue: { file: 'Factions/Goblins/Troops/Torch/Blue/Torch_Blue.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 5, fps: 10 },
+  torchPurple: { file: 'Factions/Goblins/Troops/Torch/Purple/Torch_Purple.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 5, fps: 10 },
+  torchYellow: { file: 'Factions/Goblins/Troops/Torch/Yellow/Torch_Yellow.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 5, fps: 10 },
+  tntBlue: { file: 'Factions/Goblins/Troops/TNT/Blue/TNT_Blue.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 3, fps: 10 },
+  tntPurple: { file: 'Factions/Goblins/Troops/TNT/Purple/TNT_Purple.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 3, fps: 10 },
+  tntYellow: { file: 'Factions/Goblins/Troops/TNT/Yellow/TNT_Yellow.png', pack: 'u010', fw: 192, fh: 192, kolom: 7, baris: 3, fps: 10 },
+  barrelBlue: { file: 'Factions/Goblins/Troops/Barrel/Blue/Barrel_Blue.png', pack: 'u010', fw: 128, fh: 128, kolom: 6, baris: 6, fps: 10 },
+  barrelPurple: { file: 'Factions/Goblins/Troops/Barrel/Purple/Barrel_Purple.png', pack: 'u010', fw: 128, fh: 128, kolom: 6, baris: 6, fps: 10 },
+  barrelYellow: { file: 'Factions/Goblins/Troops/Barrel/Yellow/Barrel_Yellow.png', pack: 'u010', fw: 128, fh: 128, kolom: 6, baris: 6, fps: 10 },
+  tombolBiru: { file: 'UI/Buttons/Button_Blue.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  tombolBiruTekan: { file: 'UI/Buttons/Button_Blue_Pressed.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  tombolMerah: { file: 'UI/Buttons/Button_Red.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  tombolMerahTekan: { file: 'UI/Buttons/Button_Red_Pressed.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  tombolHover: { file: 'UI/Buttons/Button_Hover.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  tombolNonaktif: { file: 'UI/Buttons/Button_Disable.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  spandukVert: { file: 'UI/Banners/Banner_Vertical.png', pack: 'u010', fw: 192, fh: 192, kolom: 1, baris: 1, fps: 0 },
+  ukirKotak: { file: 'UI/Banners/Carved_Regular.png', pack: 'u010', fw: 64, fh: 64, kolom: 1, baris: 1, fps: 0 },
+  ukir3: { file: 'UI/Banners/Carved_3Slides.png', pack: 'u010', fw: 192, fh: 64, kolom: 1, baris: 1, fps: 0 },
 } as const satisfies Record<string, Aset>
 
 /**
@@ -385,7 +446,8 @@ export const AVATAR = Object.fromEntries(
 /** Semua aset yang dipakai, rata, untuk validator dan preloader. */
 export const SEMUA: Record<string, Aset> = {
   ...pref('terrain', TERRAIN), ...pref('terrainFree', TERRAIN_FREE), ...pref('pohonFree', POHON_FREE),
-  ...pref('deko', DEKO), ...pref('sumber', SUMBER),
+  ...pref('deko', DEKO), ...pref('dekoFree', DEKO_FREE), ...pref('editorU010', EDITOR_U010),
+  ...pref('sumber', SUMBER),
   ...pref('efek', EFEK), ...pref('bgBlue', BANGUNAN_BLUE), ...pref('bgRed', BANGUNAN_RED),
   ...pref('bgPurple', BANGUNAN_U010_WARNA.purple), ...pref('bgYellow', BANGUNAN_U010_WARNA.yellow),
   ...pref('bgFase', BANGUNAN_FASE), ...pref('unitBlue', UNIT_BLUE), ...pref('unitRed', UNIT_RED),

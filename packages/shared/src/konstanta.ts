@@ -1,3 +1,5 @@
+import type { DataPetaCustom } from './peta-custom.js'
+
 // Konstanta dunia — sumber tunggal. Lihat PRD §9.
 
 /** Sisi satu tile dalam piksel. */
@@ -11,8 +13,8 @@ export const PETA_BARIS = 96
 export const DUNIA_W = PETA_KOLOM * TILE
 export const DUNIA_H = PETA_BARIS * TILE
 
-/** Tiga tingkat ketinggian (PRD §9.2). */
-export const TINGGI = { air: 0, dataran: 1, plateau: 2 } as const
+/** Empat tingkat ketinggian: air (0) + 3 tingkat daratan (dataran, plateau, puncak). */
+export const TINGGI = { air: 0, dataran: 1, plateau: 2, puncak: 3 } as const
 export type Tinggi = (typeof TINGGI)[keyof typeof TINGGI]
 
 /** Bonus tanah tinggi (PRD §9.2) — dikumpulkan di sini supaya bisa di-tuning. */
@@ -106,6 +108,8 @@ export interface KonfigMatch {
   peta: JenisPeta
   goldAwal: number
   slot: KonfigSlot[]
+  /** Jika terisi, match memainkan peta buatan Map Editor (sinkron di Solo, LAN, & P2P). */
+  petaCustom?: DataPetaCustom
 }
 
 export const GOLD_AWAL_BAKU = 320

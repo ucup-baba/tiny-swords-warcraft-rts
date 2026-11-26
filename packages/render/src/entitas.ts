@@ -1,9 +1,10 @@
 import {
-  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS, DEKO, EFEK, GOBLIN as ASET_GOBLIN,
-  HERO_BLUE, HERO_RED, PAWN_FREE, POHON_FREE, SUMBER, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA,
+  BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_RED, BANGUNAN_U010_WARNA, BARIS, DEKO, DEKO_FREE,
+  EDITOR_U010, EFEK, GOBLIN as ASET_GOBLIN, HERO_BLUE, HERO_RED, PAWN_FREE, POHON_FREE, SUMBER,
+  TERRAIN, TERRAIN_FREE, UNIT_BLUE, UNIT_RED, UNIT_U010_WARNA,
   frame, jumlahFrameBaris, type Aset,
 } from '@hftf/aset'
-import { WARNA_TIM, type Tim } from '@hftf/shared'
+import { TILE, WARNA_TIM, type JenisDekoCustom, type Tim, type VarianPohonCustom } from '@hftf/shared'
 import {
   AMBANG_API, BANGUNAN, adalahJembatan, adalahRamp, keTile, peranGoblin, pernahLihat, sekutu, terlihatDi, tinggiDi,
   type Bangunan, type Dunia, type Unit,
@@ -24,9 +25,74 @@ const VARIASI_POHON: readonly { aset: Aset; skala: number; pijak: number }[] = [
   { aset: POHON_FREE.daun2, skala: 0.62, pijak: 0.82 },
 ]
 
-function pilihPohonFree(id: number, x: number, y: number): { aset: Aset; skala: number; pijak: number } {
+function pilihPohonFree(id: number, x: number, y: number, varian?: VarianPohonCustom): { aset: Aset; skala: number; pijak: number } {
+  if (varian === 'klasik') return { aset: SUMBER.pohon, skala: 0.72, pijak: 0.84 }
+  if (varian === 'pinus1') return VARIASI_POHON[0]!
+  if (varian === 'pinus2') return VARIASI_POHON[1]!
+  if (varian === 'daun1') return VARIASI_POHON[2]!
+  if (varian === 'daun2') return VARIASI_POHON[3]!
   const h = Math.abs((id * 37 + Math.round(x / 64) * 17 + Math.round(y / 64) * 31)) % VARIASI_POHON.length
   return VARIASI_POHON[h]!
+}
+
+const BATU_EMAS_VARIAN: readonly Aset[] = [
+  DEKO_FREE.batuEmas1, DEKO_FREE.batuEmas2, DEKO_FREE.batuEmas3,
+  DEKO_FREE.batuEmas4, DEKO_FREE.batuEmas5, DEKO_FREE.batuEmas6,
+]
+
+export function infoAsetDekoCustom(jenis: JenisDekoCustom): { aset: Aset; skala: number; pijak: number; alpha?: number } {
+  if (jenis.startsWith('deco')) {
+    const a = DEKO[jenis] ?? DEKO['deco01']!
+    const besar = jenis === 'deco18' ? 0.68 : jenis === 'deco16' || jenis === 'deco17' ? 0.85 : 0.92
+    return { aset: a, skala: besar, pijak: 0.88 }
+  }
+  switch (jenis) {
+    case 'semak1': return { aset: DEKO_FREE.semak1, skala: 0.72, pijak: 0.78 }
+    case 'semak2': return { aset: DEKO_FREE.semak2, skala: 0.72, pijak: 0.78 }
+    case 'semak3': return { aset: DEKO_FREE.semak3, skala: 0.72, pijak: 0.78 }
+    case 'semak4': return { aset: DEKO_FREE.semak4, skala: 0.72, pijak: 0.78 }
+    case 'batu1': return { aset: DEKO_FREE.batu1, skala: 0.92, pijak: 0.82 }
+    case 'batu2': return { aset: DEKO_FREE.batu2, skala: 0.92, pijak: 0.82 }
+    case 'batu3': return { aset: DEKO_FREE.batu3, skala: 0.92, pijak: 0.82 }
+    case 'batu4': return { aset: DEKO_FREE.batu4, skala: 0.92, pijak: 0.82 }
+    case 'batuAir1': return { aset: TERRAIN.batuAir1, skala: 0.72, pijak: 0.55 }
+    case 'batuAir2': return { aset: TERRAIN.batuAir2, skala: 0.72, pijak: 0.55 }
+    case 'batuAir3': return { aset: TERRAIN.batuAir3, skala: 0.72, pijak: 0.55 }
+    case 'batuAir4': return { aset: TERRAIN.batuAir4, skala: 0.72, pijak: 0.55 }
+    case 'tunggul1': return { aset: POHON_FREE.tunggul, skala: 0.56, pijak: 0.84 }
+    case 'tunggul2': return { aset: POHON_FREE.tunggul2, skala: 0.56, pijak: 0.84 }
+    case 'tunggul3': return { aset: POHON_FREE.tunggul3, skala: 0.56, pijak: 0.84 }
+    case 'tunggul4': return { aset: POHON_FREE.tunggul4, skala: 0.56, pijak: 0.84 }
+    case 'awan1': return { aset: TERRAIN_FREE.awan1, skala: 0.52, pijak: 0.5, alpha: 0.68 }
+    case 'awan2': return { aset: TERRAIN_FREE.awan2, skala: 0.52, pijak: 0.5, alpha: 0.68 }
+    case 'awan3': return { aset: TERRAIN_FREE.awan3, skala: 0.52, pijak: 0.5, alpha: 0.68 }
+    case 'awan4': return { aset: TERRAIN_FREE.awan4, skala: 0.52, pijak: 0.5, alpha: 0.68 }
+    case 'api1': return { aset: DEKO_FREE.api1, skala: 0.85, pijak: 0.82 }
+    case 'api2': return { aset: DEKO_FREE.api2, skala: 0.85, pijak: 0.82 }
+    case 'api3': return { aset: DEKO_FREE.api3, skala: 0.85, pijak: 0.82 }
+    case 'bebek': return { aset: DEKO_FREE.bebek, skala: 1.25, pijak: 0.65 }
+    case 'gubukGoblin': return { aset: ASET_GOBLIN.rumah, skala: 0.72, pijak: 0.84 }
+    case 'menaraGoblin': return { aset: EDITOR_U010.menaraGoblinRed, skala: 0.72, pijak: 0.85 }
+    case 'menaraGoblinHancur': return { aset: EDITOR_U010.menaraGoblinHancur, skala: 0.72, pijak: 0.85 }
+    case 'tambangNonaktif': return { aset: EDITOR_U010.tambangNonaktif, skala: 0.88, pijak: 0.82 }
+    default: return { aset: DEKO['deco01']!, skala: 0.92, pijak: 0.88 }
+  }
+}
+
+/** Menggambar satu dekorasi custom dari Map Editor (dipakai baik di gameplay maupun di pratinjau Editor). */
+export function gambarDekoCustom(
+  ctx: CanvasRenderingContext2D, jenis: JenisDekoCustom, wx: number, wy: number, t: number, benih = 0,
+): void {
+  const info = infoAsetDekoCustom(jenis)
+  const fr = info.aset.kolom > 1 ? Math.floor(t * Math.max(1, info.aset.fps) + benih * 0.7) % info.aset.kolom : 0
+  if (info.alpha !== undefined) {
+    ctx.save()
+    ctx.globalAlpha = info.alpha
+    sprite(ctx, info.aset, fr, wx, wy, info.skala, false, info.pijak)
+    ctx.restore()
+    return
+  }
+  sprite(ctx, info.aset, fr, wx, wy, info.skala, false, info.pijak)
 }
 
 function framePohonFree(a: Aset, detik: number, benih: number): number {
@@ -42,7 +108,7 @@ function framePohonFree(a: Aset, detik: number, benih: number): number {
 const PIJAK = 0.68
 
 /** Menggambar satu frame sprite dengan kaki karakter tepat di (x, y). */
-function sprite(
+export function sprite(
   ctx: CanvasRenderingContext2D, a: Aset, indeks: number,
   x: number, y: number, skala = 1, balik = false, pijak = PIJAK, rotasi = 0, tim?: Tim,
 ): void {
@@ -285,6 +351,7 @@ type ItemRender =
   | { jenis: 5; y: number; obj: Bangunan }
   | { jenis: 6; y: number; obj: Unit; x: number; yr: number }
   | { jenis: 7; y: number; obj: Dunia['camp'][number]; hidup: boolean; gx: number; gy: number; tx: number; ty: number }
+  | { jenis: 8; y: number; id: number; dk: NonNullable<Dunia['dekoCustom']>[number] }
 
 const KANDIDAT_GUBUK: readonly [number, number, number, number][] = [
   [-146, -34, 118, 22],
@@ -478,6 +545,17 @@ export function gambarEntitas(
     antrean.push({ jenis: 7, y: pos.gy, obj: c, hidup, gx: pos.gx, gy: pos.gy, tx: pos.tx, ty: pos.ty })
   }
 
+  if (dunia.dekoCustom) {
+    for (let i = 0; i < dunia.dekoCustom.length; i++) {
+      const dk = dunia.dekoCustom[i]!
+      const wx = dk.tx * TILE + TILE / 2
+      const wy = dk.ty * TILE + TILE / 2
+      if (!diingat(wx, wy)) continue
+      const ySort = dk.jenis.startsWith('awan') ? wy + 100_000 : wy
+      antrean.push({ jenis: 8, y: ySort, id: i, dk })
+    }
+  }
+
   for (const u of dunia.unit) {
     if (!sekutu(u.tim, timSaya, dunia) ? !terlihat(u.x, u.y) : !diLayar(u.x, u.y)) continue
     const [rx, ry] = posisiHalus(u.id, u.x, u.y, posLama, alpha)
@@ -511,7 +589,7 @@ export function gambarEntitas(
             kenaSorot ? sorot!.porsi : undefined,
           )
         }
-        const v = pilihPohonFree(o.id, o.x, o.y)
+        const v = pilihPohonFree(o.id, o.x, o.y, o.varian)
         sprite(ctx, v.aset, framePohonFree(v.aset, t, o.id), o.x, o.y, v.skala, false, v.pijak)
         break
       }
@@ -528,7 +606,11 @@ export function gambarEntitas(
             kenaSorot ? sorot!.porsi : undefined,
           )
         }
-        sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82)
+        if (o.jenis === 'stone' && o.varian !== undefined && o.varian >= 1 && o.varian <= 6) {
+          sprite(ctx, BATU_EMAS_VARIAN[o.varian - 1]!, 0, o.x, o.y, 0.78, false, 0.80)
+        } else {
+          sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82)
+        }
         break
       }
       case 3: {
@@ -631,6 +713,13 @@ export function gambarEntitas(
         sprite(ctx, gubuk, 0, item.gx, item.gy, 0.72, false, 0.84)
         const totem = DEKO['deco16']
         if (totem) sprite(ctx, totem, 0, item.tx, item.ty, 0.92, false, 0.88)
+        break
+      }
+      case 8: {
+        const { dk, id } = item
+        const wx = dk.tx * TILE + TILE / 2
+        const wy = dk.ty * TILE + TILE / 2
+        gambarDekoCustom(ctx, dk.jenis, wx, wy, t, id)
         break
       }
     }

@@ -1,4 +1,4 @@
-import { PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type JenisPeta, type Tinggi } from '@hftf/shared'
+import { PETA_BARIS, PETA_KOLOM, TILE, TINGGI, type JenisPeta, type TemaBioma, type Tinggi } from '@hftf/shared'
 import { acakBulat, type Rng } from './rng.js'
 
 /**
@@ -7,7 +7,7 @@ import { acakBulat, type Rng } from './rng.js'
 export interface Terrain {
   kolom: number
   baris: number
-  /** Ketinggian per tile: 0 air, 1 dataran, 2 plateau. */
+  /** Ketinggian per tile: 0 air, 1 dataran, 2 plateau, 3 puncak. */
   tinggi: Uint8Array
   /** 0 = bukan ramp, 1 = tangga N/S, 2 = tangga barat (naik ke timur), 3 = tangga timur (naik ke barat). */
   ramp: Uint8Array
@@ -15,6 +15,8 @@ export interface Terrain {
   jembatan: Uint8Array
   /** 1 = jalan tanah/pasir keemasan penghubung markas, tangga, & jembatan (visual). */
   jalan: Uint8Array
+  /** Tema bioma visual (1..5 -> Tilemap_color1..5 Free Pack). Default 1. */
+  bioma?: TemaBioma
 }
 
 export const indeks = (t: Terrain, tx: number, ty: number): number => ty * t.kolom + tx
@@ -65,7 +67,8 @@ export function bolehLangkah(t: Terrain, dariX: number, dariY: number, keX: numb
   const a = tinggiDi(t, dariX, dariY)
   const b = tinggiDi(t, keX, keY)
   if (a === b) return true
-  // Beda level: salah satu ujungnya harus ramp.
+  if (Math.abs(a - b) > 1) return false
+  // Beda 1 level: salah satu ujungnya harus ramp/tangga.
   return adalahRamp(t, dariX, dariY) || adalahRamp(t, keX, keY)
 }
 

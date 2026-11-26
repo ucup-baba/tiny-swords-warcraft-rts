@@ -14,6 +14,7 @@ export interface AksiMenu {
   suara(): void
   menyerah(): void
   keluar(): void
+  kembaliEditor?(): void
   ubahModeSentuh?(mode: ModeSentuh): void
   layarPenuh?(): void
 }
@@ -90,6 +91,9 @@ export function buatMenuJeda(opsi: {
   aksi.append(tombolBaru(opsi.suaraNyala ? 'Suara: ON' : 'Suara: OFF', false, opsi.aksi.suara))
   if (opsi.aksi.layarPenuh) {
     aksi.append(tombolBaru('⛶ Layar Penuh', false, opsi.aksi.layarPenuh))
+  }
+  if (opsi.aksi.kembaliEditor) {
+    aksi.append(tombolBaru('🗺️ Kembali ke Map Editor', false, opsi.aksi.kembaliEditor))
   }
   aksi.append(tombolBaru('Menyerah', true, opsi.aksi.menyerah))
   aksi.append(tombolBaru('Keluar ke Lobby', true, opsi.aksi.keluar))

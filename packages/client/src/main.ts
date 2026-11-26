@@ -13,7 +13,7 @@ import {
 } from '@hftf/net'
 import {
   DT_TETAP, DUNIA_H, DUNIA_W, GOLD_AWAL_BAKU, WARNA_TIM, buatSlotDefault,
-  type KonfigMatch, type Tim, type TimPemain,
+  type DataPetaCustom, type KonfigMatch, type Tim, type TimPemain,
 } from '@hftf/shared'
 import {
   BANGUNAN, REVIVE, RISET, TINGKAT_MAKS, UNIT, buatAi, buatDunia, buatSnapshot, langkahAi, langkahBanyak,
@@ -26,12 +26,13 @@ import {
   perintahKlikKanan, pilihKursorKonteks, pilihPawnBangun, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
   type JenisKursor,
 } from './input.js'
+import { PengendaliEditor } from './editor.js'
 import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
 const BASIS = ''
 pasangPolyfillP2p()
 
-type Fase = 'muat' | 'lobi' | 'main' | 'selesai'
+type Fase = 'muat' | 'lobi' | 'editor' | 'main' | 'selesai'
 
 class Permainan {
   private fase: Fase = 'muat'
@@ -63,6 +64,8 @@ class Permainan {
   private efek = new Efek()
   private hud: Hud
   private lobi: Lobi
+  private editor: PengendaliEditor
+  private modeUjiEditor = false
   private kursor: HTMLImageElement
   private ctx: CanvasRenderingContext2D | null = null
   private mctx: CanvasRenderingContext2D | null = null
@@ -200,6 +203,7 @@ class Permainan {
         this.perbaruiHud()
       },
       bukaMenu: () => this.bukaMenuJeda(),
+      kembaliEditor: () => this.kembaliKeEditor(),
       layarPenuh: () => void this.mintaLayarPenuh(),
       toggleKotak: () => this.sentuh.toggleKotak(),
       lewatPutar: () => {
@@ -210,11 +214,15 @@ class Permainan {
 
     this.lobi = new Lobi(BASIS, {
       mulaiSolo: (hero, kesulitan) => {
+        this.modeUjiEditor = false
         const slot = buatSlotDefault('klasik2', this.lobi.nama, hero)
         if (slot[1]) slot[1].kesulitanAi = kesulitan === 'sulit' ? 'susah' : 'medium'
         this.mulaiSkirmish({ peta: 'klasik2', goldAwal: GOLD_AWAL_BAKU, slot })
       },
-      mulaiMatch: (konfig) => this.mulaiSkirmish(konfig),
+      mulaiMatch: (konfig) => {
+        this.modeUjiEditor = false
+        this.mulaiSkirmish(konfig)
+      },
       buatRoom: (nama, hero) => {
         if (this.modeStatis) return
         this.pastikanLan(nama)
@@ -237,13 +245,20 @@ class Permainan {
         }
         this.lan?.buatRoom(slotLan[0]?.hero ?? 'king', {
           peta: konfig.peta,
+          ...(konfig.petaCustom ? { petaCustom: konfig.petaCustom } : {}),
           goldAwal: konfig.goldAwal,
           slot: slotLan,
         })
       },
       aturRoom: (konfig) => {
         if (this.modeStatis) return
-        this.lan?.aturRoom(konfig)
+        const k = konfig as KonfigMatch & { petaCustom?: DataPetaCustom | null }
+        this.lan?.aturRoom({
+          peta: k.peta,
+          petaCustom: k.petaCustom ?? null,
+          goldAwal: k.goldAwal,
+          slot: k.slot,
+        })
       },
       ubahSlotTamu: (opsi) => {
         if (this.modeStatis) return
@@ -283,6 +298,25 @@ class Permainan {
       },
       ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
       layarPenuh: () => void this.mintaLayarPenuh(),
+      bukaEditor: (petaAwal) => this.bukaEditor(petaAwal),
+    })
+
+    this.editor = new PengendaliEditor({
+      tutupKeLobi: () => {
+        this.fase = 'lobi'
+        this.lobi.segarkanDaftarPetaCustom()
+        this.lobi.tampil(true)
+      },
+      ujiPeta: (data) => {
+        const n = Math.max(2, Math.min(6, data.entitas.spawn.length))
+        const peta: 'klasik2' | 'salib4' | 'bintang6' = n <= 2 ? 'klasik2' : n <= 4 ? 'salib4' : 'bintang6'
+        const slot = buatSlotDefault(peta, this.lobi.nama, this.lobi.hero)
+        this.modeUjiEditor = true
+        this.mulaiSkirmish({ peta, petaCustom: data, goldAwal: GOLD_AWAL_BAKU, slot })
+      },
+      petaTersimpan: () => {
+        this.lobi.segarkanDaftarPetaCustom()
+      },
     })
 
     const self = this
@@ -566,7 +600,38 @@ class Permainan {
     this.overlayPutus = null
   }
 
+  private bukaEditor(petaAwal?: DataPetaCustom): void {
+    this.tutupMenuJeda()
+    this.sembunyikanPutus()
+    this.dunia = null
+    this.daftarAi = []
+    this.tamuAktif = []
+    this.peran = 'solo'
+    this.modeUjiEditor = false
+    this.fase = 'editor'
+    this.hud.setModeUjiEditor(false)
+    this.lobi.tampil(false)
+    this.kursor.style.display = 'none'
+    this.editor.buka(petaAwal)
+  }
+
+  private kembaliKeEditor(): void {
+    this.dunia = null
+    this.daftarAi = []
+    this.tamuAktif = []
+    this.peran = 'solo'
+    this.modeUjiEditor = false
+    this.fase = 'editor'
+    this.tutupMenuJeda()
+    this.sembunyikanPutus()
+    this.hud.setModeUjiEditor(false)
+    this.lobi.tampil(false)
+    this.kursor.style.display = 'none'
+    this.editor.buka()
+  }
+
   private mulaiLan(seed: number, tim: TimPemain, heroBlue: string, heroRed: string, info?: MulaiLanInfo): void {
+    this.modeUjiEditor = false
     this.timSaya = tim
     this.peran = this.peranLanRoom === 'host' ? 'host' : 'tamu'
     const peta = info?.peta ?? 'klasik2'
@@ -586,6 +651,7 @@ class Permainan {
     this.dunia = buatDunia({
       seed,
       peta,
+      ...(info?.petaCustom ? { petaCustom: info.petaCustom } : {}),
       goldAwal,
       heroBlue: heroBlue as PeranHeroAset,
       heroRed: heroRed as PeranHeroAset,
@@ -620,6 +686,7 @@ class Permainan {
     this.sorotSumber = null
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
+    this.hud.setModeUjiEditor(false)
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
   }
@@ -627,6 +694,7 @@ class Permainan {
   private mulaiSkirmish(konfigMasuk: KonfigMatch): void {
     const konfig: KonfigMatch = {
       peta: konfigMasuk.peta,
+      ...(konfigMasuk.petaCustom ? { petaCustom: konfigMasuk.petaCustom } : {}),
       goldAwal: konfigMasuk.goldAwal,
       slot: konfigMasuk.slot.map((s) => ({ ...s })),
     }
@@ -639,6 +707,7 @@ class Permainan {
     this.dunia = buatDunia({
       seed,
       peta: konfig.peta,
+      ...(konfig.petaCustom ? { petaCustom: konfig.petaCustom } : {}),
       goldAwal: konfig.goldAwal,
       slot: konfig.slot,
     })
@@ -661,6 +730,7 @@ class Permainan {
     this.sorotSumber = null
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
+    this.hud.setModeUjiEditor(this.modeUjiEditor)
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
   }
@@ -1159,7 +1229,9 @@ class Permainan {
     this.hud.langkahToast(dt)
     this.akumulatorMinimap += dt
     const alpha = pakaiInterpolasi ? Math.max(0, Math.min(1, this.akumulator / DT_TETAP)) : 1
-    this.gambar(alpha)
+    if (this.fase !== 'editor') {
+      this.gambar(alpha)
+    }
     if (this.fase === 'main') {
       this.akumulatorHud += dt
       if (this.akumulatorHud >= 0.1) {
@@ -1174,7 +1246,7 @@ class Permainan {
     const ctx = this.ctx
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    if (!this.dunia || this.fase === 'muat' || this.fase === 'lobi') {
+    if (!this.dunia || this.fase === 'muat' || this.fase === 'lobi' || this.fase === 'editor') {
       ctx.fillStyle = '#1d2a33'
       ctx.fillRect(0, 0, this.hud.kanvas.width, this.hud.kanvas.height)
       return
@@ -1290,6 +1362,7 @@ class Permainan {
         layarPenuh: () => void this.mintaLayarPenuh(),
         menyerah: () => this.konfirmasiMenyerah(),
         keluar: () => this.konfirmasiKeluar(),
+        ...(this.modeUjiEditor ? { kembaliEditor: () => this.kembaliKeEditor() } : {}),
       },
     })
     this.hud.akar.querySelector('#panggung')!.append(menu)
@@ -1340,10 +1413,13 @@ class Permainan {
     this.tamuAktif = []
     this.peranLanRoom = null
     this.peran = 'solo'
+    this.modeUjiEditor = false
+    this.hud.setModeUjiEditor(false)
     this.fase = 'lobi'
     this.kursor.style.display = 'none'
     this.sembunyikanPutus()
     this.tutupMenuJeda()
+    this.lobi.segarkanDaftarPetaCustom()
     this.lobi.tampil(true)
     if (bekasLan && !this.modeStatis) {
       this.lobi.keluarDariRoom()
@@ -1379,11 +1455,16 @@ class Permainan {
       `<p>Gold: ${Math.round(s.goldTerkumpul)} • Kayu: ${Math.round(s.kayuTerkumpul)} • Daging: ${Math.round(s.dagingTerkumpul)}</p>` +
       `<p>Sisa: ${Math.round(hero.sumberDaya.gold)}g • ${Math.round(hero.sumberDaya.kayu)}k • ${Math.round(hero.sumberDaya.daging)}d</p>` +
       `<div class="baris">` +
+      (this.modeUjiEditor ? `<button class="tombol-besar" id="kembali-editor">← Editor</button>` : '') +
       `<button class="tombol-besar" id="kembali">Kembali ke Lobby</button>` +
       (this.peran === 'solo' ? `<button class="tombol-besar" id="ulang">Main Lagi</button>` : '') +
       `</div></div>`
     this.hud.akar.querySelector('#panggung')!.append(kotak)
 
+    kotak.querySelector('#kembali-editor')?.addEventListener('click', () => {
+      kotak.remove()
+      this.kembaliKeEditor()
+    })
     kotak.querySelector('#kembali')!.addEventListener('click', () => {
       kotak.remove()
       this.kembaliKeLobby()

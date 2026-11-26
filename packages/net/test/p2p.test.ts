@@ -1,3 +1,4 @@
+import { PETA_BARIS, PETA_KOLOM, TINGGI, encodeRle, type DataPetaCustom } from '@hftf/shared'
 import { describe, expect, it, vi } from 'vitest'
 import { KlienP2p, type PabrikRoomP2p, type RuangP2p, type SaluranP2p } from '../src/p2p.js'
 import type { MulaiLanInfo, PendengarLan, RingkasRoom } from '../src/lan.js'
@@ -215,5 +216,85 @@ describe('KlienP2p — Multiplayer Serverless WebRTC (2–6 Pemain tanpa Server 
     host.tutup()
     for (const t of paraTamu) t.tutup()
     t7.tutup()
+  })
+
+  it('menyinkronkan peta custom 4P ke tamu tanpa mengirim RLE berat pada iklan daftar lobi', async () => {
+    const net = new JaringanP2pSemu()
+    let urut = 5
+    const acak = (n: number) => (urut++ * 11) % n
+    const total = PETA_KOLOM * PETA_BARIS
+    const custom4: DataPetaCustom = {
+      versi: 1,
+      id: 'p2p-custom-4p',
+      nama: 'Pulau P2P 4P',
+      bioma: 5,
+      kolom: PETA_KOLOM,
+      baris: PETA_BARIS,
+      tinggiRle: encodeRle(new Uint8Array(total).fill(TINGGI.dataran)),
+      rampRle: encodeRle(new Uint8Array(total)),
+      jembatanRle: encodeRle(new Uint8Array(total)),
+      jalanRle: encodeRle(new Uint8Array(total)),
+      entitas: {
+        spawn: [
+          { slot: 0, tx: 14, ty: 14 },
+          { slot: 1, tx: 80, ty: 14 },
+          { slot: 2, tx: 14, ty: 80 },
+          { slot: 3, tx: 80, ty: 80 },
+        ],
+        pohon: [],
+        tambang: [{ tx: 18, ty: 16, jenis: 'mine', gold: 3000 }],
+        domba: [],
+        camp: [],
+        deko: [],
+        bangunan: [],
+        bonus: [],
+      },
+      diubahPada: 1_700_000_000_000,
+    }
+
+    let daftarTamu: RingkasRoom[] = []
+    let roomTamu: RingkasRoom | null = null
+    let mulaiTamu: MulaiLanInfo | undefined
+    let kode = ''
+
+    const host = new KlienP2p(
+      { room: (k) => { kode = k } },
+      { pabrik: net.pabrikUntuk('p-h'), acak },
+    )
+    const tamu = new KlienP2p(
+      {
+        daftar: (d) => { daftarTamu = d },
+        room: (_k, _p, _t, ringkas) => { roomTamu = ringkas },
+        mulai: (_s, _t, _hb, _hr, info) => { mulaiTamu = info },
+      },
+      { pabrik: net.pabrikUntuk('p-t'), acak },
+    )
+
+    host.sambung('Host')
+    tamu.sambung('Tamu')
+    await flush()
+
+    host.buatRoom('king', { peta: 'klasik2', petaCustom: custom4, goldAwal: 500 })
+    await flush()
+
+    expect(daftarTamu).toHaveLength(1)
+    expect(daftarTamu[0]!.maksPemain).toBe(4)
+    expect(daftarTamu[0]!.namaPetaCustom).toBe('Pulau P2P 4P')
+    expect(daftarTamu[0]!.petaCustom).toBeUndefined()
+
+    tamu.gabung(kode, 'knight')
+    await flush()
+
+    expect(roomTamu).not.toBeNull()
+    expect(roomTamu!.petaCustom?.id).toBe('p2p-custom-4p')
+    expect(roomTamu!.petaCustom?.bioma).toBe(5)
+
+    host.mulai()
+    await flush()
+
+    expect(mulaiTamu?.petaCustom?.id).toBe('p2p-custom-4p')
+
+    host.tutup()
+    tamu.tutup()
   })
 })

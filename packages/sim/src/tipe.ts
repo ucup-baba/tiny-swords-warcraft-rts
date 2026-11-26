@@ -1,4 +1,4 @@
-import type { JenisPeta, Tim, TimPemain } from '@hftf/shared'
+import type { DekoPetaCustom, JenisPeta, Tim, TimPemain, VarianPohonCustom } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
 import type { JenisCamp } from './definisi/goblin.js'
 import type { JenisRiset } from './definisi/riset.js'
@@ -155,6 +155,8 @@ export interface Pohon {
   x: number
   y: number
   kayu: number
+  /** Variasi sprite pohon pilihan Map Editor (opsional; default acak deterministik). */
+  varian?: VarianPohonCustom
 }
 
 /** Tunggul sisa pohon yang ditebang; otomatis tumbuh kembali menjadi pohon utuh. */
@@ -173,6 +175,8 @@ export interface Tambang {
   gold: number
   /** 'mine' punya cadangan besar, 'stone' kecil. */
   jenis: 'mine' | 'stone'
+  /** Variasi sprite Gold Stone 1..6 dari Free Pack (khusus jenis 'stone'). */
+  varian?: number
 }
 
 export interface Domba {
@@ -292,6 +296,11 @@ export interface Dunia {
   fog: Record<Tim, Fog>
 
   tim: Record<Tim, KeadaanTim>
+
+  /** Dekorasi bebas dari Map Editor (visual saja, dirender Y-sorted). */
+  dekoCustom?: DekoPetaCustom[]
+  /** Nama peta custom apabila match dimainkan dari peta Map Editor. */
+  petaCustomNama?: string
 
   /** Kejadian yang perlu dilihat lapisan render/ui. Dikosongkan tiap langkah. */
   kejadian: Kejadian[]

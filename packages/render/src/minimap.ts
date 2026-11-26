@@ -1,4 +1,4 @@
-import { DUNIA_H, DUNIA_W, TILE, TINGGI, WARNA_TIM, type Tim } from '@hftf/shared'
+import { DUNIA_H, DUNIA_W, INFO_BIOMA, TILE, TINGGI, WARNA_TIM, type Tim } from '@hftf/shared'
 import { pernahLihat, sekutu, terlihatDi, TICK_PER_FOG, type Dunia } from '@hftf/sim'
 import type { Kamera } from './kamera.js'
 
@@ -34,23 +34,26 @@ export class Minimap {
     if (!c) return k
 
     const t = this.dunia.terrain
+    const bioma = INFO_BIOMA[t.bioma ?? 1]
     const sx = w / t.kolom
     const sy = h / t.baris
     for (let ty = 0; ty < t.baris; ty++) {
       for (let tx = 0; tx < t.kolom; tx++) {
         const idx = ty * t.kolom + tx
         const v = t.tinggi[idx]!
-        const bawahPlat = ty > 0 && v !== TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
+        const bawahPuncak = ty > 0 && v < TINGGI.puncak && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.puncak
+        const bawahPlat = ty > 0 && v < TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
         const bawahLaut = ty > 0 && v === TINGGI.air && t.tinggi[(ty - 1) * t.kolom + tx] !== TINGGI.air && (t.jembatan[(ty - 1) * t.kolom + tx] ?? 0) === 0
         c.fillStyle =
           (t.jembatan[idx] ?? 0) > 0 ? '#b87d45'
           : bawahLaut ? '#466c75'
           : v === TINGGI.air ? '#2b6a7a'
           : (t.ramp[idx] ?? 0) > 0 ? '#d4c387'
-          : bawahPlat ? '#53737a'
+          : bawahPuncak || bawahPlat ? '#53737a'
           : (t.jalan?.[idx] ?? 0) === 1 ? '#cfb87c'
-          : v === TINGGI.plateau ? '#86b562'
-          : '#62964c'
+          : v === TINGGI.puncak ? bioma.warnaPuncak
+          : v === TINGGI.plateau ? bioma.warnaPlateau
+          : bioma.warnaDataran
         c.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
       }
     }

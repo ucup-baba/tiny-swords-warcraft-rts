@@ -6,3 +6,4 @@
 
 export * from './konstanta.js'
 export * from './jaringan.js'
+export * from './peta-custom.js'

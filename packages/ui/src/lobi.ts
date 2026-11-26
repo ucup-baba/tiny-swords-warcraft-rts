@@ -1,12 +1,14 @@
 import { HERO_BLUE, type PeranHeroAset } from '@hftf/aset'
 import {
-  GOLD_AWAL_BAKU, GOLD_AWAL_MAKS, GOLD_AWAL_MIN, INFO_PETA, JENIS_PETA, KESULITAN_AI, LABEL_KESULITAN,
-  PRESET_GOLD, TIM_PEMAIN, TINGGI, WARNA_TIM, buatSlotDefault, jepitGoldAwal,
-  type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigMatch, type KonfigSlot, type TimPemain,
+  GOLD_AWAL_BAKU, GOLD_AWAL_MAKS, GOLD_AWAL_MIN, INFO_BIOMA, INFO_PETA, JENIS_PETA, KESULITAN_AI, LABEL_KESULITAN,
+  PRESET_GOLD, TIM_PEMAIN, TINGGI, WARNA_TIM, buatIdPetaCustom, buatSlotDefault, jepitGoldAwal,
+  type DataPetaCustom, type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigMatch,
+  type KonfigSlot, type TimPemain,
 } from '@hftf/shared'
-import { UNIT, buatRng, buatTerrain, type Terrain, type TitikPenting } from '@hftf/sim'
+import { UNIT, buatRng, buatTerrain, buatTerrainDariCustom, eksporPetaBawaanKeCustom, type Terrain, type TitikPenting } from '@hftf/sim'
 import type { ModeSentuh } from './menu.js'
 import { urlAset } from './sembilan.js'
+import { muatDaftarPetaCustom } from './simpan-peta.js'
 
 export type LayarLobi = 'pilih' | 'ai' | 'wifi' | 'room'
 
@@ -30,6 +32,8 @@ export interface RoomLan {
   slotTerbuka?: number
   maksPemain?: number
   peta?: JenisPeta
+  petaCustom?: DataPetaCustom | null
+  namaPetaCustom?: string
   goldAwal?: number
   slot?: SlotRoomLobi[]
 }
@@ -48,6 +52,7 @@ export interface AksiLobi {
   salinLinkRoom?(kode: string): void
   ubahModeSentuh?(mode: ModeSentuh): void
   layarPenuh?(): void
+  bukaEditor?(petaAwal?: DataPetaCustom): void
 }
 
 interface SlotLobi extends KonfigSlot {
@@ -159,6 +164,8 @@ export class Lobi {
   // State internal
   private layar: LayarLobi = 'pilih'
   private petaDipilih: JenisPeta = 'klasik2'
+  private petaCustomDipilih: DataPetaCustom | null = null
+  private daftarPetaCustom: DataPetaCustom[] = []
   private goldAwal = GOLD_AWAL_BAKU
   private slot: SlotLobi[] = buatSlotAiLobi('klasik2', 'Komandan', 'king')
   private diDalamRoom = false
@@ -172,6 +179,7 @@ export class Lobi {
   private alamatLanTeks = '—'
   private roomTersedia: RoomLan[] = []
   private cachePeta = new Map<JenisPeta, { terrain: Terrain; titik: TitikPenting }>()
+  private cacheCustom = new Map<string, { terrain: Terrain; titik: TitikPenting }>()
 
   constructor(private basis: string, private aksi: AksiLobi) {
     this.akar = el('div', 'hamparan')
@@ -277,7 +285,28 @@ export class Lobi {
     bawahWifi.append(this.statusWifiMenu, this.btnPilihWifi)
     kartuWifi.append(isiWifi, bawahWifi)
 
-    gridMode.append(kartuAi, kartuWifi)
+    // Kartu 3: Map Editor
+    const kartuEditor = el('div', 'mode-kartu')
+    const atasEditor = el('div', 'mode-kartu-atas')
+    atasEditor.append(el('span', 'mode-ikon', '🗺️'), el('span', 'mode-lencana editor', 'KREATIF · SEMUA ASET'))
+    const daftarEditor = el('ul', 'mode-daftar')
+    daftarEditor.append(
+      el('li', undefined, '3 tingkat daratan (Lv.1–3) + 5 Bioma & semua dekorasi'),
+      el('li', undefined, 'Kuas Simetri (2x/4x), edit salinan peta bawaan, & Undo/Redo'),
+      el('li', undefined, 'Uji 1 klik, simpan ke Lobi, & sinkron main bareng LAN / P2P'),
+    )
+    const statusEditorMenu = el('div', 'mode-status-bar', '● Buat peta impian Anda atau poles ulang peta bawaan')
+    const btnPilihEditor = el('button', 'tombol-besar cta-mulai', '🗺️ BUKA MAP EDITOR')
+    btnPilihEditor.type = 'button'
+    btnPilihEditor.dataset['pilihMode'] = 'editor'
+    btnPilihEditor.addEventListener('click', () => this.aksi.bukaEditor?.())
+    const isiEditor = el('div')
+    isiEditor.append(atasEditor, el('h2', undefined, 'Map Editor'), daftarEditor)
+    const bawahEditor = el('div', 'lobi-kolom')
+    bawahEditor.append(statusEditorMenu, btnPilihEditor)
+    kartuEditor.append(isiEditor, bawahEditor)
+
+    gridMode.append(kartuAi, kartuWifi, kartuEditor)
     this.layarPilihEl.append(gridMode)
     kotak.append(this.layarPilihEl)
 
@@ -298,15 +327,6 @@ export class Lobi {
       el('p', undefined, 'Pilih peta & gold awal. Semua slot lain otomatis Terbuka untuk teman Wi-Fi (AI bisa ditambah di dalam room).'),
     )
     this.wifiPetaListEl = el('div', 'peta-pilihan')
-    for (const id of JENIS_PETA) {
-      const info = INFO_PETA[id]
-      const btn = el('button', 'peta-btn')
-      btn.type = 'button'
-      btn.dataset['wifiPeta'] = id
-      btn.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
-      btn.addEventListener('click', () => this.ubahPeta(id))
-      this.wifiPetaListEl.append(btn)
-    }
     panelBuat.append(this.wifiPetaListEl)
 
     const wifiPrevBox = el('div', 'wifi-pratinjau')
@@ -342,11 +362,12 @@ export class Lobi {
     this.tombolBuat.addEventListener('click', () => {
       if (this.modeStatis) return
       this.wifiGalatEl.textContent = ''
-      const slotTerbuka = buatSlotLanTerbuka(this.petaDipilih, this.nama, this.hero)
+      const slotTerbuka = this.buatSlotLanAktif()
       const konfig: KonfigMatch = {
         peta: this.petaDipilih,
         goldAwal: this.goldAwal,
         slot: slotTerbuka.map(({ terisi: _t, ...s }) => s),
+        ...(this.petaCustomDipilih ? { petaCustom: this.petaCustomDipilih } : {}),
       }
       this.aksi.ubahNama?.(this.nama)
       if (this.aksi.buatRoomKonfig) this.aksi.buatRoomKonfig(this.nama, konfig)
@@ -444,19 +465,23 @@ export class Lobi {
     const kolKanan = el('div', 'lobi-kolom')
     const boxPeta = el('div', 'lobi-subkotak')
     const headPeta = el('div', 'lobi-subjudul')
-    headPeta.append(el('h2', undefined, 'Pilih Peta Pertempuran'))
+    const btnEditSalinan = el('button', 'btn-kecil', '✎ Edit Salinan')
+    btnEditSalinan.type = 'button'
+    btnEditSalinan.title = 'Buka salinan peta ini di Map Editor'
+    btnEditSalinan.addEventListener('click', () => {
+      if (this.petaCustomDipilih) {
+        this.aksi.bukaEditor?.(this.petaCustomDipilih)
+        return
+      }
+      const salin = eksporPetaBawaanKeCustom(
+        this.petaDipilih, 42, buatIdPetaCustom(), `${INFO_PETA[this.petaDipilih].nama} (Edit)`, Date.now(),
+      )
+      this.aksi.bukaEditor?.(salin)
+    })
+    headPeta.append(el('h2', undefined, 'Pilih Peta Pertempuran'), btnEditSalinan)
     boxPeta.append(headPeta)
 
     this.petaListEl = el('div', 'peta-pilihan')
-    for (const id of JENIS_PETA) {
-      const info = INFO_PETA[id]
-      const btn = el('button', 'peta-btn')
-      btn.type = 'button'
-      btn.dataset['peta'] = id
-      btn.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
-      btn.addEventListener('click', () => this.ubahPeta(id))
-      this.petaListEl.append(btn)
-    }
     boxPeta.append(this.petaListEl)
 
     const bingkaiPreview = el('div', 'peta-pratinjau-bingkai')
@@ -523,8 +548,83 @@ export class Lobi {
     this.akar.append(kotak)
 
     this.setModeSentuh('tapPintar')
+    this.segarkanDaftarPetaCustom()
     this.renderDaftarRoom()
     this.segarkanSemuaUi()
+  }
+
+  /** Memuat ulang daftar peta custom dari localStorage ke pemilih peta Lobi AI & Wi-Fi. */
+  segarkanDaftarPetaCustom(): void {
+    this.daftarPetaCustom = muatDaftarPetaCustom()
+    this.cacheCustom.clear()
+    if (this.petaCustomDipilih) {
+      const terbaru = this.daftarPetaCustom.find((m) => m.id === this.petaCustomDipilih?.id)
+      if (terbaru) this.petaCustomDipilih = terbaru
+    }
+
+    this.petaListEl.textContent = ''
+    this.wifiPetaListEl.textContent = ''
+    for (const id of JENIS_PETA) {
+      const info = INFO_PETA[id]
+      const btnAi = el('button', 'peta-btn')
+      btnAi.type = 'button'
+      btnAi.dataset['peta'] = id
+      btnAi.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
+      btnAi.addEventListener('click', () => this.ubahPeta(id))
+      this.petaListEl.append(btnAi)
+
+      const btnWifi = el('button', 'peta-btn')
+      btnWifi.type = 'button'
+      btnWifi.dataset['wifiPeta'] = id
+      btnWifi.append(el('span', undefined, info.nama), el('span', 'peta-sub', `Maks ${info.maksPemain}P`))
+      btnWifi.addEventListener('click', () => this.ubahPeta(id))
+      this.wifiPetaListEl.append(btnWifi)
+    }
+
+    for (const m of this.daftarPetaCustom) {
+      const maks = Math.max(2, Math.min(6, m.entitas.spawn.length || 2))
+      const buatBaris = (isWifi: boolean): HTMLElement => {
+        const baris = el('div', 'peta-custom-baris')
+        const btn = el('button', 'peta-btn')
+        btn.type = 'button'
+        if (isWifi) btn.dataset['wifiCustomPeta'] = m.id
+        else btn.dataset['customPeta'] = m.id
+        btn.append(el('span', undefined, `🗺️ ${m.nama}`), el('span', 'peta-sub', `Maks ${maks}P`))
+        btn.addEventListener('click', () => this.pilihPetaCustom(m))
+        const btnEdit = el('button', 'peta-edit-mini', '✎')
+        btnEdit.type = 'button'
+        btnEdit.title = `Edit "${m.nama}" di Map Editor`
+        btnEdit.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          this.aksi.bukaEditor?.(m)
+        })
+        baris.append(btn, btnEdit)
+        return baris
+      }
+      this.petaListEl.append(buatBaris(false))
+      this.wifiPetaListEl.append(buatBaris(true))
+    }
+
+    this.segarkanSemuaUi()
+  }
+
+  private maksPemainDariPeta(): number {
+    if (this.petaCustomDipilih) {
+      return Math.max(2, Math.min(6, this.petaCustomDipilih.entitas.spawn.length || 2))
+    }
+    return INFO_PETA[this.petaDipilih].maksPemain
+  }
+
+  private buatSlotAiAktif(): SlotLobi[] {
+    const maks = this.maksPemainDariPeta()
+    const dasar: JenisPeta = maks <= 2 ? 'klasik2' : maks <= 4 ? 'salib4' : 'bintang6'
+    return buatSlotAiLobi(dasar, this.nama, this.hero).slice(0, maks)
+  }
+
+  private buatSlotLanAktif(): SlotLobi[] {
+    const maks = this.maksPemainDariPeta()
+    const dasar: JenisPeta = maks <= 2 ? 'klasik2' : maks <= 4 ? 'salib4' : 'bintang6'
+    return buatSlotLanTerbuka(dasar, this.nama, this.hero).slice(0, maks)
   }
 
   get layarAktif(): LayarLobi {
@@ -581,6 +681,7 @@ export class Lobi {
 
   private ubahPeta(peta: JenisPeta): void {
     if (!this.terbilangHostBebas()) return
+    this.petaCustomDipilih = null
     const maks = INFO_PETA[peta].maksPemain
     const bawaan = this.diDalamRoom
       ? buatSlotLanTerbuka(peta, this.nama, this.hero)
@@ -598,6 +699,27 @@ export class Lobi {
       baru.push(sumber)
     }
     this.petaDipilih = peta
+    this.slot = baru
+    this.segarkanSemuaUi()
+    this.kirimAturRoom()
+  }
+
+  private pilihPetaCustom(data: DataPetaCustom): void {
+    if (!this.terbilangHostBebas()) return
+    this.petaCustomDipilih = data
+    const maks = this.maksPemainDariPeta()
+    const bawaan = this.diDalamRoom ? this.buatSlotLanAktif() : this.buatSlotAiAktif()
+    const baru: SlotLobi[] = []
+    const terpakai = new Set<TimPemain>()
+    for (let i = 0; i < maks; i++) {
+      const lama = this.slot[i]
+      const sumber = lama ? { ...lama, indeks: i } : bawaan[i]!
+      if (terpakai.has(sumber.tim)) {
+        sumber.tim = TIM_PEMAIN.find((c) => !terpakai.has(c)) ?? sumber.tim
+      }
+      terpakai.add(sumber.tim)
+      baru.push(sumber)
+    }
     this.slot = baru
     this.segarkanSemuaUi()
     this.kirimAturRoom()
@@ -645,7 +767,12 @@ export class Lobi {
 
   private kirimAturRoom(): void {
     if (this.diDalamRoom && this.peranLan === 'host') {
-      this.aksi.aturRoom?.(this.getKonfig())
+      const cfg = this.getKonfig()
+      this.aksi.aturRoom?.(
+        this.petaCustomDipilih
+          ? cfg
+          : { ...cfg, petaCustom: null as unknown as DataPetaCustom },
+      )
     }
   }
 
@@ -758,24 +885,39 @@ export class Lobi {
 
     const hostBebas = this.terbilangHostBebas()
     this.goldInput.disabled = !hostBebas
-    for (const b of Array.from(this.petaListEl.children) as HTMLButtonElement[]) {
-      const id = b.dataset['peta'] as JenisPeta
-      b.classList.toggle('aktif', id === this.petaDipilih)
+    for (const b of this.petaListEl.querySelectorAll<HTMLButtonElement>('.peta-btn')) {
+      const id = b.dataset['peta'] as JenisPeta | undefined
+      const cid = b.dataset['customPeta']
+      b.classList.toggle(
+        'aktif',
+        this.petaCustomDipilih ? cid === this.petaCustomDipilih.id : id === this.petaDipilih,
+      )
       b.disabled = !hostBebas
     }
-    for (const b of Array.from(this.wifiPetaListEl.children) as HTMLButtonElement[]) {
-      const id = b.dataset['wifiPeta'] as JenisPeta
-      b.classList.toggle('aktif', id === this.petaDipilih)
+    for (const b of this.wifiPetaListEl.querySelectorAll<HTMLButtonElement>('.peta-btn')) {
+      const id = b.dataset['wifiPeta'] as JenisPeta | undefined
+      const cid = b.dataset['wifiCustomPeta']
+      b.classList.toggle(
+        'aktif',
+        this.petaCustomDipilih ? cid === this.petaCustomDipilih.id : id === this.petaDipilih,
+      )
     }
 
-    this.pratinjauKet.textContent = INFO_PETA[this.petaDipilih].ringkas
-    this.wifiPratinjauInfo.textContent = `${INFO_PETA[this.petaDipilih].nama} · ${INFO_PETA[this.petaDipilih].ringkas}`
+    if (this.petaCustomDipilih) {
+      const m = this.petaCustomDipilih
+      const ket = `Peta Editor · Bioma ${INFO_BIOMA[m.bioma].nama} · ${this.maksPemainDariPeta()} Pemain`
+      this.pratinjauKet.textContent = ket
+      this.wifiPratinjauInfo.textContent = `${m.nama} · ${ket}`
+    } else {
+      this.pratinjauKet.textContent = INFO_PETA[this.petaDipilih].ringkas
+      this.wifiPratinjauInfo.textContent = `${INFO_PETA[this.petaDipilih].nama} · ${INFO_PETA[this.petaDipilih].ringkas}`
+    }
 
     this.segarkanGoldUi()
     this.renderPresetAliansi()
     this.renderTabelSlot()
     this.gambarPratinjauKe(this.pratinjauKanvas, this.slot)
-    this.gambarPratinjauKe(this.wifiPratinjauKanvas, buatSlotLanTerbuka(this.petaDipilih, this.nama, this.hero))
+    this.gambarPratinjauKe(this.wifiPratinjauKanvas, this.buatSlotLanAktif())
     this.tombolMulaiSolo.disabled = this.diDalamRoom
   }
 
@@ -954,7 +1096,9 @@ export class Lobi {
       const maks = r.maksPemain ?? 2
       const terbuka = hitungSlotTerbukaRoom(r)
       const penuh = terbuka <= 0
-      const namaPeta = r.peta ? INFO_PETA[r.peta].nama : 'Lembah Klasik (2P)'
+      const namaPeta = r.namaPetaCustom
+        ? `🗺️ ${r.namaPetaCustom}`
+        : r.peta ? INFO_PETA[r.peta].nama : 'Lembah Klasik (2P)'
       const gold = r.goldAwal ?? GOLD_AWAL_BAKU
 
       const kartu = el('button', 'wifi-room-kartu')
@@ -984,13 +1128,24 @@ export class Lobi {
     const ctx = kanvas.getContext('2d')
     if (!ctx) return
 
-    let data = this.cachePeta.get(this.petaDipilih)
-    if (!data) {
-      data = buatTerrain(buatRng(42), this.petaDipilih)
-      this.cachePeta.set(this.petaDipilih, data)
+    let data: { terrain: Terrain; titik: TitikPenting } | undefined
+    if (this.petaCustomDipilih) {
+      const kunci = `${this.petaCustomDipilih.id}:${this.petaCustomDipilih.diubahPada}`
+      data = this.cacheCustom.get(kunci)
+      if (!data) {
+        data = buatTerrainDariCustom(this.petaCustomDipilih)
+        this.cacheCustom.set(kunci, data)
+      }
+    } else {
+      data = this.cachePeta.get(this.petaDipilih)
+      if (!data) {
+        data = buatTerrain(buatRng(42), this.petaDipilih)
+        this.cachePeta.set(this.petaDipilih, data)
+      }
     }
 
     const { terrain: t, titik } = data
+    const bioma = INFO_BIOMA[t.bioma ?? 1]
     const w = kanvas.width
     const h = kanvas.height
     const sx = w / t.kolom
@@ -1000,17 +1155,19 @@ export class Lobi {
       for (let tx = 0; tx < t.kolom; tx++) {
         const idx = ty * t.kolom + tx
         const v = t.tinggi[idx]!
-        const bawahPlat = ty > 0 && v !== TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
+        const bawahPuncak = ty > 0 && v < TINGGI.puncak && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.puncak
+        const bawahPlat = ty > 0 && v < TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
         const bawahLaut = ty > 0 && v === TINGGI.air && t.tinggi[(ty - 1) * t.kolom + tx] !== TINGGI.air && (t.jembatan[(ty - 1) * t.kolom + tx] ?? 0) === 0
         ctx.fillStyle =
           (t.jembatan[idx] ?? 0) > 0 ? '#b87d45'
           : bawahLaut ? '#466c75'
           : v === TINGGI.air ? '#26697a'
           : (t.ramp[idx] ?? 0) > 0 ? '#dfd095'
-          : bawahPlat ? '#53737a'
+          : bawahPuncak || bawahPlat ? '#53737a'
           : (t.jalan?.[idx] ?? 0) === 1 ? '#d4bd80'
-          : v === TINGGI.plateau ? '#87b862'
-          : '#62964c'
+          : v === TINGGI.puncak ? bioma.warnaPuncak
+          : v === TINGGI.plateau ? bioma.warnaPlateau
+          : bioma.warnaDataran
         ctx.fillRect(tx * sx, ty * sy, Math.ceil(sx), Math.ceil(sy))
       }
     }
@@ -1121,6 +1278,7 @@ export class Lobi {
     this.statusSetupEl.textContent = ''
 
     if (ringkas.peta) this.petaDipilih = ringkas.peta
+    if (ringkas.petaCustom !== undefined) this.petaCustomDipilih = ringkas.petaCustom
     if (ringkas.goldAwal !== undefined) this.goldAwal = ringkas.goldAwal
     if (ringkas.slot && ringkas.slot.length > 0) {
       this.slot = ringkas.slot.map((s) => ({
@@ -1184,6 +1342,7 @@ export class Lobi {
       peta: this.petaDipilih,
       goldAwal: this.goldAwal,
       slot: this.slot.map(({ terisi: _t, ...s }) => ({ ...s })),
+      ...(this.petaCustomDipilih ? { petaCustom: this.petaCustomDipilih } : {}),
     }
   }
 

@@ -2,7 +2,7 @@
 // Lihat PRD §15.3 poin 1, 3, 4.
 
 export const PAPAN = {
-  /** Ukuran pesan lobi paling besar (byte). */
+  /** Ukuran pesan lobi paling besar (byte), PRD §15.3 poin 4. */
   ukuranMaks: 16_384,
   /** Pesan paling banyak per detik per koneksi; lebih dari itu koneksi diputus. */
   pesanPerDetik: 50,

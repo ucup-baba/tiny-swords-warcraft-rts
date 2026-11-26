@@ -1,5 +1,5 @@
 import type {
-  HeroId, JenisPeta, JenisSlot, KesulitanAi, KonfigMatch, KonfigSlot, Tim, TimPemain,
+  DataPetaCustom, HeroId, JenisPeta, JenisSlot, KesulitanAi, KonfigMatch, KonfigSlot, Tim, TimPemain,
 } from '@hftf/shared'
 
 export interface SlotRoom {
@@ -23,12 +23,15 @@ export interface RingkasRoom {
   maksPemain: number
   mulai: boolean
   peta: JenisPeta
+  petaCustom?: DataPetaCustom | null
+  namaPetaCustom?: string
   goldAwal: number
   slot: SlotRoom[]
 }
 
 export interface MulaiLanInfo {
   peta: JenisPeta
+  petaCustom?: DataPetaCustom
   goldAwal: number
   slot: SlotRoom[]
 }
@@ -54,7 +57,12 @@ export interface KlienMultiplayer {
   sambung(nama: string): void
   kirimNama(nama: string): void
   buatRoom(hero: string, opsi?: Partial<KonfigMatch>): void
-  aturRoom(opsi: { peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }): void
+  aturRoom(opsi: {
+    peta?: JenisPeta
+    petaCustom?: DataPetaCustom | null
+    goldAwal?: number
+    slot?: KonfigSlot[]
+  }): void
   ubahSlot(opsi: { hero?: string; aliansi?: number; tim?: TimPemain }): void
   gabung(kode: string, hero: string): void
   keluar(): void
@@ -129,6 +137,7 @@ export class KlienLan implements KlienMultiplayer {
             String(m['heroRed']),
             {
               peta: (m['peta'] as JenisPeta) ?? 'klasik2',
+              ...(m['petaCustom'] ? { petaCustom: m['petaCustom'] as DataPetaCustom } : {}),
               goldAwal: Number(m['goldAwal'] ?? 320),
               slot: (m['slot'] as SlotRoom[]) ?? [],
             },
@@ -186,12 +195,18 @@ export class KlienLan implements KlienMultiplayer {
       t: 'buat-room',
       hero,
       ...(opsi?.peta ? { peta: opsi.peta } : {}),
+      ...(opsi?.petaCustom ? { petaCustom: opsi.petaCustom } : {}),
       ...(opsi?.goldAwal !== undefined ? { goldAwal: opsi.goldAwal } : {}),
       ...(opsi?.slot ? { slot: opsi.slot } : {}),
     })
   }
 
-  aturRoom(opsi: { peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }): void {
+  aturRoom(opsi: {
+    peta?: JenisPeta
+    petaCustom?: DataPetaCustom | null
+    goldAwal?: number
+    slot?: KonfigSlot[]
+  }): void {
     this.kirimMentah({ t: 'atur-room', ...opsi })
   }
 

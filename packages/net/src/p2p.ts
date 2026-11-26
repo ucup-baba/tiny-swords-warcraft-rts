@@ -1,6 +1,6 @@
 import {
-  GOLD_AWAL_BAKU, INFO_PETA, PAPAN, TIM_PEMAIN, jepitGoldAwal,
-  type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigMatch, type KonfigSlot, type TimPemain,
+  GOLD_AWAL_BAKU, INFO_PETA, PAPAN, TIM_PEMAIN, jepitGoldAwal, validasiDataPetaCustom,
+  type DataPetaCustom, type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigMatch, type KonfigSlot, type TimPemain,
 } from '@hftf/shared'
 import { joinRoom, type JsonValue } from 'trystero'
 import type { KlienMultiplayer, PendengarLan, RingkasRoom, SlotRoom } from './lan.js'
@@ -142,6 +142,7 @@ type PesanKontrol =
       heroBlue: string
       heroRed: string
       peta: JenisPeta
+      petaCustom?: DataPetaCustom
       goldAwal: number
       slot: SlotRoom[]
     }
@@ -173,9 +174,20 @@ interface PutusEntri {
   sisaDetik: number
 }
 
+function kapasitasRoom(peta: JenisPeta, petaCustom?: DataPetaCustom): number {
+  if (petaCustom) return Math.max(2, Math.min(6, petaCustom.entitas.spawn.length))
+  return INFO_PETA[peta].maksPemain
+}
+
+function warnaSlotRoom(peta: JenisPeta, petaCustom: DataPetaCustom | undefined, i: number): TimPemain {
+  const daftar = petaCustom ? TIM_PEMAIN : INFO_PETA[peta].warnaDefault
+  return daftar[i] ?? TIM_PEMAIN[i]!
+}
+
 interface RoomHost {
   kode: string
   peta: JenisPeta
+  petaCustom?: DataPetaCustom
   goldAwal: number
   mulai: boolean
   slot: SlotHost[]
@@ -253,7 +265,7 @@ export class KlienP2p implements KlienMultiplayer {
     saluran.padaPesan((msg, peerId) => this.terimaPesanLobi(msg, peerId))
     lobi.padaPeerMasuk((peerId) => {
       if (this.roomHost && !this.roomHost.mulai) {
-        saluran.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost) }, peerId)
+        saluran.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost, false) }, peerId)
       } else {
         saluran.kirim({ t: 'minta' }, peerId)
       }
@@ -299,13 +311,15 @@ export class KlienP2p implements KlienMultiplayer {
     this.heroSaya = hero as HeroId
 
     const peta: JenisPeta = opsi?.peta ?? 'klasik2'
+    const petaCustom = opsi?.petaCustom ? (validasiDataPetaCustom(opsi.petaCustom) ?? undefined) : undefined
     const goldAwal = jepitGoldAwal(opsi?.goldAwal ?? GOLD_AWAL_BAKU)
     const kode = this.buatKodeUnik()
-    const slot = this.buatSlotHost(hero as HeroId, peta, opsi?.slot)
+    const slot = this.buatSlotHost(hero as HeroId, peta, opsi?.slot, petaCustom)
 
     const room: RoomHost = {
       kode,
       peta,
+      ...(petaCustom ? { petaCustom } : {}),
       goldAwal,
       mulai: false,
       slot,
@@ -340,21 +354,44 @@ export class KlienP2p implements KlienMultiplayer {
     this.iklankanRoomHost()
   }
 
-  aturRoom(opsi: { peta?: JenisPeta; goldAwal?: number; slot?: KonfigSlot[] }): void {
+  aturRoom(opsi: {
+    peta?: JenisPeta
+    petaCustom?: DataPetaCustom | null
+    goldAwal?: number
+    slot?: KonfigSlot[]
+  }): void {
     const room = this.roomHost
     if (!room || this.peranAktif !== 'host' || room.mulai) return
 
-    if (opsi.peta && opsi.peta !== room.peta) {
-      const info = INFO_PETA[opsi.peta]
+    const targetPeta = opsi.peta ?? room.peta
+    let targetCustom = room.petaCustom
+    let customBerubah = false
+    if (opsi.petaCustom === null) {
+      if (room.petaCustom !== undefined) customBerubah = true
+      targetCustom = undefined
+    } else if (opsi.petaCustom !== undefined) {
+      const sah = validasiDataPetaCustom(opsi.petaCustom)
+      if (sah) {
+        targetCustom = sah
+        customBerubah = true
+      }
+    } else if (opsi.peta && opsi.peta !== room.peta && room.petaCustom !== undefined) {
+      targetCustom = undefined
+      customBerubah = true
+    }
+
+    const maksLama = kapasitasRoom(room.peta, room.petaCustom)
+    const maksBaru = kapasitasRoom(targetPeta, targetCustom)
+    if (targetPeta !== room.peta || customBerubah || maksBaru !== room.slot.length || maksBaru !== maksLama) {
       const baru: SlotHost[] = []
-      for (let i = 0; i < info.maksPemain; i++) {
+      for (let i = 0; i < maksBaru; i++) {
         const lama = room.slot[i]
         if (lama && lama.peerId) {
           baru.push({ ...lama, indeks: i })
         } else {
           baru.push({
             indeks: i,
-            tim: info.warnaDefault[i]!,
+            tim: warnaSlotRoom(targetPeta, targetCustom, i),
             jenis: 'manusia',
             aliansi: i + 1,
             hero: 'champion',
@@ -365,13 +402,15 @@ export class KlienP2p implements KlienMultiplayer {
           })
         }
       }
-      for (let i = info.maksPemain; i < room.slot.length; i++) {
+      for (let i = maksBaru; i < room.slot.length; i++) {
         const lebih = room.slot[i]
         if (lebih?.peerId && lebih.peerId !== HOST_ID) {
           this.saluranKontrol?.kirim({ t: 'room-keluar', pesan: 'Host mengecilkan kapasitas peta' }, lebih.peerId)
         }
       }
-      room.peta = opsi.peta
+      room.peta = targetPeta
+      if (targetCustom) room.petaCustom = targetCustom
+      else delete room.petaCustom
       room.slot = baru
     }
 
@@ -543,6 +582,7 @@ export class KlienP2p implements KlienMultiplayer {
           heroBlue: hostSlot.hero,
           heroRed: redSlot.hero,
           peta: room.peta,
+          ...(room.petaCustom ? { petaCustom: room.petaCustom } : {}),
           goldAwal: room.goldAwal,
           slot: slotKirim,
         },
@@ -552,6 +592,7 @@ export class KlienP2p implements KlienMultiplayer {
 
     this.pendengar.mulai?.(seed, hostSlot.tim, hostSlot.hero, redSlot.hero, {
       peta: room.peta,
+      ...(room.petaCustom ? { petaCustom: room.petaCustom } : {}),
       goldAwal: room.goldAwal,
       slot: slotKirim,
     })
@@ -607,7 +648,7 @@ export class KlienP2p implements KlienMultiplayer {
   private terimaPesanLobi(msg: PesanLobi, peerId: string): void {
     if (msg.t === 'minta') {
       if (this.roomHost && !this.roomHost.mulai) {
-        this.saluranLobi?.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost) }, peerId)
+        this.saluranLobi?.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost, false) }, peerId)
       }
       return
     }
@@ -650,7 +691,7 @@ export class KlienP2p implements KlienMultiplayer {
 
   private iklankanRoomHost(): void {
     if (!this.roomHost || this.roomHost.mulai || !this.saluranLobi) return
-    this.saluranLobi.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost) })
+    this.saluranLobi.kirim({ t: 'iklan', ringkas: this.ringkasHost(this.roomHost, false) })
   }
 
   private terimaKontrolHost(msg: PesanKontrol, peerId: string): void {
@@ -825,6 +866,7 @@ export class KlienP2p implements KlienMultiplayer {
         this.sedangMain = true
         this.pendengar.mulai?.(msg.seed, msg.tim, msg.heroBlue, msg.heroRed, {
           peta: msg.peta,
+          ...(msg.petaCustom ? { petaCustom: msg.petaCustom } : {}),
           goldAwal: msg.goldAwal,
           slot: msg.slot,
         })
@@ -850,7 +892,7 @@ export class KlienP2p implements KlienMultiplayer {
     }
   }
 
-  private ringkasHost(room: RoomHost): RingkasRoom {
+  private ringkasHost(room: RoomHost, sertakanDataCustom = true): RingkasRoom {
     const jumlahManusia = room.slot.filter((s) => s.jenis === 'manusia' && s.peerId !== null).length
     const jumlahAi = room.slot.filter((s) => s.jenis === 'ai').length
     const slotTerbuka = room.slot.filter((s) => s.indeks > 0 && s.jenis === 'manusia' && s.peerId === null).length
@@ -874,9 +916,11 @@ export class KlienP2p implements KlienMultiplayer {
       jumlah: Math.max(1, jumlahManusia + jumlahAi),
       jumlahManusia,
       slotTerbuka,
-      maksPemain: INFO_PETA[room.peta].maksPemain,
+      maksPemain: kapasitasRoom(room.peta, room.petaCustom),
       mulai: room.mulai,
       peta: room.peta,
+      ...(room.petaCustom ? { namaPetaCustom: room.petaCustom.nama } : {}),
+      ...(sertakanDataCustom ? { petaCustom: room.petaCustom ?? null } : {}),
       goldAwal: room.goldAwal,
       slot,
     }
@@ -898,14 +942,19 @@ export class KlienP2p implements KlienMultiplayer {
     }
   }
 
-  private buatSlotHost(hero: HeroId, peta: JenisPeta, masuk?: KonfigSlot[]): SlotHost[] {
-    const info = INFO_PETA[peta]
+  private buatSlotHost(
+    hero: HeroId,
+    peta: JenisPeta,
+    masuk?: KonfigSlot[],
+    petaCustom?: DataPetaCustom,
+  ): SlotHost[] {
+    const maksPemain = kapasitasRoom(peta, petaCustom)
     const hasil: SlotHost[] = []
     const dipakai = new Set<TimPemain>()
 
-    for (let i = 0; i < info.maksPemain; i++) {
+    for (let i = 0; i < maksPemain; i++) {
       const m = masuk?.[i]
-      let tim: TimPemain = m?.tim ?? info.warnaDefault[i]!
+      let tim: TimPemain = m?.tim ?? warnaSlotRoom(peta, petaCustom, i)
       if (dipakai.has(tim)) tim = TIM_PEMAIN.find((c) => !dipakai.has(c)) ?? tim
       dipakai.add(tim)
       const jenis: JenisSlot = i === 0 ? 'manusia' : (m?.jenis ?? 'manusia')

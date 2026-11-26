@@ -35,6 +35,7 @@ export interface AksiHud {
   perintahUnit?(perintah: PerintahKartu): void
   fokusUnit?(unitId: number): void
   bukaMenu?(): void
+  kembaliEditor?(): void
   layarPenuh?(): void
   toggleKotak?(): void
   lewatPutar?(): void
@@ -93,6 +94,7 @@ export class Hud {
   readonly petaMini: HTMLCanvasElement
   readonly tombolKotak: HTMLButtonElement
   readonly tombolFullscreen: HTMLButtonElement
+  readonly tombolKembaliEditor: HTMLButtonElement
   readonly tombolMenu: HTMLButtonElement
   readonly joystickEl: HTMLElement
   readonly joystickKenop: HTMLElement
@@ -193,12 +195,18 @@ export class Hud {
     this.tombolFullscreen.title = 'Layar Penuh (Landscape)'
     this.tombolFullscreen.addEventListener('click', () => this.aksi.layarPenuh?.())
 
+    this.tombolKembaliEditor = el('button', 'btn-util', '← Editor')
+    this.tombolKembaliEditor.type = 'button'
+    this.tombolKembaliEditor.style.display = 'none'
+    this.tombolKembaliEditor.title = 'Kembali mengedit peta di Map Editor'
+    this.tombolKembaliEditor.addEventListener('click', () => this.aksi.kembaliEditor?.())
+
     this.tombolMenu = el('button', 'btn-util', '☰ Menu')
     this.tombolMenu.type = 'button'
     this.tombolMenu.title = 'Menu Jeda & Pengaturan Kontrol'
     this.tombolMenu.addEventListener('click', () => this.aksi.bukaMenu?.())
 
-    tombolAtas.append(this.tombolKotak, this.tombolFullscreen, this.tombolMenu)
+    tombolAtas.append(this.tombolKotak, this.tombolFullscreen, this.tombolKembaliEditor, this.tombolMenu)
     panggung.append(tombolAtas)
 
     // Virtual Joystick untuk Mode 3 (Joystick + Seret Seleksi)
@@ -337,6 +345,10 @@ export class Hud {
 
   setLayarPutar(tampil: boolean): void {
     this.layarPutar.classList.toggle('tampil', tampil)
+  }
+
+  setModeUjiEditor(aktif: boolean): void {
+    this.tombolKembaliEditor.style.display = aktif ? 'inline-flex' : 'none'
   }
 
   tampilkanToast(pesan: string, peringatan = false): void {

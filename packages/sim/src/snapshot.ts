@@ -20,9 +20,9 @@ export interface Snapshot {
   sumberDaya: { gold: number; kayu: number; daging: number }
   riset?: Record<JenisRiset, number>
   /** Sumber daya di peta; jumlahnya kecil dan berubah lambat. */
-  pohon: { id: number; x: number; y: number; kayu?: number }[]
+  pohon: { id: number; x: number; y: number; kayu?: number; varian?: Dunia['pohon'][number]['varian'] }[]
   tunggul?: { id: number; x: number; y: number; sisaTumbuh: number }[]
-  tambang: { id: number; x: number; y: number; jenis: 'mine' | 'stone'; gold?: number }[]
+  tambang: { id: number; x: number; y: number; jenis: 'mine' | 'stone'; gold?: number; varian?: number }[]
   domba: { id: number; x: number; y: number; daging?: number; bergerak?: boolean; arah?: 1 | -1 }[]
   daging: { id: number; x: number; y: number; jumlah?: number }[]
   camp?: { id: number; respawn: number }[]
@@ -92,9 +92,15 @@ export function buatSnapshot(dunia: Dunia, untuk: Tim): Snapshot {
     ]),
     sumberDaya: { ...dunia.tim[untuk].sumberDaya },
     riset: { ...dunia.tim[untuk].riset },
-    pohon: dunia.pohon.map((p) => ({ id: p.id, x: p.x, y: p.y, kayu: Math.round(p.kayu) })),
+    pohon: dunia.pohon.map((p) => ({
+      id: p.id, x: p.x, y: p.y, kayu: Math.round(p.kayu),
+      ...(p.varian ? { varian: p.varian } : {}),
+    })),
     tunggul: dunia.tunggul.map((tg) => ({ id: tg.id, x: tg.x, y: tg.y, sisaTumbuh: Math.ceil(tg.sisaTumbuh) })),
-    tambang: dunia.tambang.map((t) => ({ id: t.id, x: t.x, y: t.y, jenis: t.jenis, gold: Math.round(t.gold) })),
+    tambang: dunia.tambang.map((t) => ({
+      id: t.id, x: t.x, y: t.y, jenis: t.jenis, gold: Math.round(t.gold),
+      ...(t.varian !== undefined ? { varian: t.varian } : {}),
+    })),
     domba: dunia.domba.map((d) => ({ id: d.id, x: bulat(d.x), y: bulat(d.y), daging: d.daging, bergerak: d.bergerak, arah: d.arah })),
     daging: dunia.daging.map((d) => ({ id: d.id, x: d.x, y: d.y, jumlah: d.jumlah })),
     camp: dunia.camp.map((c) => ({ id: c.id, respawn: Math.ceil(c.respawn) })),
@@ -194,9 +200,17 @@ export function terapkanSnapshot(dunia: Dunia, s: Snapshot, lamaUnit: Map<number
     dunia.tim[timTarget].riset = { ...s.riset }
   }
 
-  dunia.pohon = s.pohon.map((p) => ({ id: p.id, x: p.x, y: p.y, kayu: p.kayu ?? 120 }))
+  const lamaPohon = new Map(dunia.pohon.map((p) => [p.id, p.varian]))
+  const lamaTambang = new Map(dunia.tambang.map((t) => [t.id, t.varian]))
+  dunia.pohon = s.pohon.map((p) => {
+    const varian = p.varian ?? lamaPohon.get(p.id)
+    return { id: p.id, x: p.x, y: p.y, kayu: p.kayu ?? 120, ...(varian ? { varian } : {}) }
+  })
   dunia.tunggul = (s.tunggul ?? []).map((tg) => ({ ...tg }))
-  dunia.tambang = s.tambang.map((t) => ({ id: t.id, x: t.x, y: t.y, jenis: t.jenis, gold: t.gold ?? 1000 }))
+  dunia.tambang = s.tambang.map((t) => {
+    const varian = t.varian ?? lamaTambang.get(t.id)
+    return { id: t.id, x: t.x, y: t.y, jenis: t.jenis, gold: t.gold ?? 1000, ...(varian !== undefined ? { varian } : {}) }
+  })
   dunia.domba = s.domba.map((d) => ({
     id: d.id, x: d.x, y: d.y, daging: d.daging ?? 45,
     asalX: d.x, asalY: d.y, tx: d.x, ty: d.y, jedaJalan: 2,

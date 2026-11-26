@@ -1,6 +1,6 @@
 import {
   GOLD_AWAL_BAKU, INFO_PETA, PAPAN, TIM_PEMAIN, jepitGoldAwal, kelompokWifi,
-  type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigSlot, type TimPemain,
+  type DataPetaCustom, type HeroId, type JenisPeta, type JenisSlot, type KesulitanAi, type KonfigSlot, type TimPemain,
 } from '@hftf/shared'
 import type { DariPapan, KePapan, RingkasRoom, SlotRoom } from './protokol.js'
 
@@ -41,12 +41,23 @@ interface PutusSlot {
   sisaDetik: number
 }
 
+function kapasitasRoom(peta: JenisPeta, petaCustom?: DataPetaCustom): number {
+  if (petaCustom) return Math.max(2, Math.min(6, petaCustom.entitas.spawn.length))
+  return INFO_PETA[peta].maksPemain
+}
+
+function warnaSlotRoom(peta: JenisPeta, petaCustom: DataPetaCustom | undefined, i: number): TimPemain {
+  const daftar = petaCustom ? TIM_PEMAIN : INFO_PETA[peta].warnaDefault
+  return daftar[i] ?? TIM_PEMAIN[i]!
+}
+
 interface Room {
   kode: string
   hostId: string
   mulai: boolean
   kelompok: string
   peta: JenisPeta
+  petaCustom?: DataPetaCustom
   goldAwal: number
   slot: SlotInternal[]
   /** Token pemain yang sedang putus, untuk sambung ulang (PRD §15.2). */
@@ -176,10 +187,10 @@ export class PapanInti {
       case 'denyut':
         return true
       case 'buat-room':
-        this.buatRoom(p, mentah.hero, mentah.peta, mentah.goldAwal, mentah.slot)
+        this.buatRoom(p, mentah.hero, mentah.peta, mentah.goldAwal, mentah.slot, mentah.petaCustom)
         return true
       case 'atur-room':
-        this.aturRoom(p, mentah.peta, mentah.goldAwal, mentah.slot)
+        this.aturRoom(p, mentah.peta, mentah.goldAwal, mentah.slot, mentah.petaCustom)
         return true
       case 'ubah-slot':
         this.ubahSlot(p, mentah.hero, mentah.aliansi, mentah.tim)
@@ -246,7 +257,7 @@ export class PapanInti {
     throw new Error('Gagal membuat kode room yang unik')
   }
 
-  private ringkas(r: Room): RingkasRoom {
+  private ringkas(r: Room, sertakanDataCustom = true): RingkasRoom {
     const host = this.perangkat.get(r.hostId)
     const tamu = r.slot.find((s) => s.perangkatId && s.perangkatId !== r.hostId)
     const devTamu = tamu?.perangkatId ? this.perangkat.get(tamu.perangkatId) : null
@@ -272,9 +283,11 @@ export class PapanInti {
       jumlah: Math.max(1, jumlahManusia + jumlahAi),
       jumlahManusia,
       slotTerbuka,
-      maksPemain: INFO_PETA[r.peta].maksPemain,
+      maksPemain: kapasitasRoom(r.peta, r.petaCustom),
       mulai: r.mulai,
       peta: r.peta,
+      ...(r.petaCustom ? { namaPetaCustom: r.petaCustom.nama } : {}),
+      ...(sertakanDataCustom ? { petaCustom: r.petaCustom ?? null } : {}),
       goldAwal: r.goldAwal,
       slot,
     }
@@ -284,7 +297,7 @@ export class PapanInti {
     const hasil: RingkasRoom[] = []
     for (const r of this.room.values()) {
       if (r.kelompok !== kelompok || r.mulai) continue
-      hasil.push(this.ringkas(r))
+      hasil.push(this.ringkas(r, false))
     }
     return hasil
   }
@@ -307,14 +320,20 @@ export class PapanInti {
     }
   }
 
-  private buatSlotRoomDefault(p: Perangkat, hero: string, peta: JenisPeta, masuk?: KonfigSlot[]): SlotInternal[] {
-    const info = INFO_PETA[peta]
+  private buatSlotRoomDefault(
+    p: Perangkat,
+    hero: string,
+    peta: JenisPeta,
+    masuk?: KonfigSlot[],
+    petaCustom?: DataPetaCustom,
+  ): SlotInternal[] {
+    const maksPemain = kapasitasRoom(peta, petaCustom)
     const hasil: SlotInternal[] = []
     const dipakai = new Set<TimPemain>()
 
-    for (let i = 0; i < info.maksPemain; i++) {
+    for (let i = 0; i < maksPemain; i++) {
       const m = masuk?.[i]
-      let tim: TimPemain = m?.tim ?? info.warnaDefault[i]!
+      let tim: TimPemain = m?.tim ?? warnaSlotRoom(peta, petaCustom, i)
       if (dipakai.has(tim)) {
         tim = TIM_PEMAIN.find((c) => !dipakai.has(c)) ?? tim
       }
@@ -335,7 +354,14 @@ export class PapanInti {
     return hasil
   }
 
-  private buatRoom(p: Perangkat, hero: string, petaMasuk?: JenisPeta, goldMasuk?: number, slotMasuk?: KonfigSlot[]): void {
+  private buatRoom(
+    p: Perangkat,
+    hero: string,
+    petaMasuk?: JenisPeta,
+    goldMasuk?: number,
+    slotMasuk?: KonfigSlot[],
+    petaCustomMasuk?: DataPetaCustom,
+  ): void {
     if (p.kode) {
       const lama = this.room.get(p.kode)
       if (lama) this.bubarkan(lama, p.id)
@@ -343,13 +369,14 @@ export class PapanInti {
     const peta: JenisPeta = petaMasuk ?? 'klasik2'
     const goldAwal = jepitGoldAwal(goldMasuk ?? GOLD_AWAL_BAKU)
     const kode = this.buatKode()
-    const slot = this.buatSlotRoomDefault(p, hero, peta, slotMasuk)
+    const slot = this.buatSlotRoomDefault(p, hero, peta, slotMasuk, petaCustomMasuk)
     const room: Room = {
       kode,
       hostId: p.id,
       mulai: false,
       kelompok: p.kelompok,
       peta,
+      ...(petaCustomMasuk ? { petaCustom: petaCustomMasuk } : {}),
       goldAwal,
       slot,
       putus: new Map(),
@@ -361,21 +388,42 @@ export class PapanInti {
     this.umumkan(p.kelompok)
   }
 
-  private aturRoom(p: Perangkat, petaMasuk?: JenisPeta, goldMasuk?: number, slotMasuk?: KonfigSlot[]): void {
+  private aturRoom(
+    p: Perangkat,
+    petaMasuk?: JenisPeta,
+    goldMasuk?: number,
+    slotMasuk?: KonfigSlot[],
+    petaCustomMasuk?: DataPetaCustom | null,
+  ): void {
     const room = p.kode ? this.room.get(p.kode) : null
     if (!room || room.hostId !== p.id || room.mulai) return
 
-    if (petaMasuk && petaMasuk !== room.peta) {
-      const info = INFO_PETA[petaMasuk]
+    const targetPeta = petaMasuk ?? room.peta
+    let targetCustom = room.petaCustom
+    let customBerubah = false
+    if (petaCustomMasuk === null) {
+      if (room.petaCustom !== undefined) customBerubah = true
+      targetCustom = undefined
+    } else if (petaCustomMasuk !== undefined) {
+      targetCustom = petaCustomMasuk
+      customBerubah = true
+    } else if (petaMasuk && petaMasuk !== room.peta && room.petaCustom !== undefined) {
+      targetCustom = undefined
+      customBerubah = true
+    }
+
+    const maksLama = kapasitasRoom(room.peta, room.petaCustom)
+    const maksBaru = kapasitasRoom(targetPeta, targetCustom)
+    if (targetPeta !== room.peta || customBerubah || maksBaru !== room.slot.length || maksBaru !== maksLama) {
       const baru: SlotInternal[] = []
-      for (let i = 0; i < info.maksPemain; i++) {
+      for (let i = 0; i < maksBaru; i++) {
         const lama = room.slot[i]
         if (lama && lama.perangkatId) {
           baru.push({ ...lama, indeks: i })
         } else {
           baru.push({
             indeks: i,
-            tim: info.warnaDefault[i]!,
+            tim: warnaSlotRoom(targetPeta, targetCustom, i),
             jenis: i === 0 ? 'manusia' : 'manusia',
             aliansi: i + 1,
             hero: 'champion',
@@ -386,7 +434,7 @@ export class PapanInti {
         }
       }
       // Putuskan tamu yang melebihi kapasitas peta baru bila mengecil (mis. 6P -> 2P)
-      for (let i = info.maksPemain; i < room.slot.length; i++) {
+      for (let i = maksBaru; i < room.slot.length; i++) {
         const lebih = room.slot[i]
         if (lebih?.perangkatId) {
           const dev = this.perangkat.get(lebih.perangkatId)
@@ -396,7 +444,9 @@ export class PapanInti {
           }
         }
       }
-      room.peta = petaMasuk
+      room.peta = targetPeta
+      if (targetCustom) room.petaCustom = targetCustom
+      else delete room.petaCustom
       room.slot = baru
     }
 
@@ -565,6 +615,7 @@ export class PapanInti {
         heroBlue: hostSlot.hero,
         heroRed: redSlot.hero,
         peta: room.peta,
+        ...(room.petaCustom ? { petaCustom: room.petaCustom } : {}),
         goldAwal: room.goldAwal,
         slot: slotKirim,
       })

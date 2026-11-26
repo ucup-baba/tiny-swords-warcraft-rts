@@ -1,4 +1,4 @@
-import { PAPAN } from '@hftf/shared'
+import { PAPAN, PETA_BARIS, PETA_KOLOM, TINGGI, encodeRle, type DataPetaCustom } from '@hftf/shared'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PapanInti } from '../src/papan.js'
 import { pesanSah } from '../src/protokol.js'
@@ -337,5 +337,98 @@ describe('Multipemain LAN 2–6 Pemain, Peta, Custom Gold, & Slot AI', () => {
     kirim(p, host.id, { t: 'keluar-room' })
     expect(terakhir(tamu, 'room-keluar')).toBeDefined()
     expect(terakhir(tamu, 'daftar')!.room).toHaveLength(0)
+  })
+})
+
+function buatPetaCustomUji(jumlahSpawn = 4): DataPetaCustom {
+  const total = PETA_KOLOM * PETA_BARIS
+  const tinggi = new Uint8Array(total).fill(TINGGI.dataran)
+  const kosong = new Uint8Array(total)
+  const spawn = Array.from({ length: jumlahSpawn }, (_, slot) => ({
+    slot,
+    tx: 12 + slot * 16,
+    ty: 20 + slot * 12,
+  }))
+  return {
+    versi: 1,
+    id: `uji-lan-${jumlahSpawn}p`,
+    nama: `Arena Uji ${jumlahSpawn}P`,
+    bioma: 3,
+    kolom: PETA_KOLOM,
+    baris: PETA_BARIS,
+    tinggiRle: encodeRle(tinggi),
+    rampRle: encodeRle(kosong),
+    jembatanRle: encodeRle(kosong),
+    jalanRle: encodeRle(kosong),
+    entitas: {
+      spawn,
+      pohon: [{ tx: 20, ty: 20, varian: 'pinus1', kayu: 100 }],
+      tambang: [{ tx: 16, ty: 22, jenis: 'mine', gold: 3000 }],
+      domba: [{ tx: 14, ty: 18 }],
+      camp: [{ tx: 48, ty: 48, jenis: 'kecil' }],
+      deko: [{ tx: 30, ty: 30, jenis: 'api1' }],
+      bangunan: [],
+      bonus: [],
+    },
+    diubahPada: 1_700_000_000_000,
+  }
+}
+
+describe('Sinkronisasi Peta Custom LAN (@hftf/server)', () => {
+  it('pesanSah menolak petaCustom cacat namun menerima petaCustom sah & reset atur-room null', () => {
+    const sah = buatPetaCustomUji(4)
+    expect(pesanSah({ t: 'buat-room', hero: 'king', petaCustom: { versi: 2 } })).toBeNull()
+    expect(pesanSah({ t: 'atur-room', petaCustom: 'bukan-objek' })).toBeNull()
+
+    const buat = pesanSah({ t: 'buat-room', hero: 'king', peta: 'salib4', petaCustom: sah })
+    expect(buat).not.toBeNull()
+    expect(buat!.t).toBe('buat-room')
+
+    const reset = pesanSah({ t: 'atur-room', peta: 'klasik2', petaCustom: null })
+    expect(reset).toEqual({ t: 'atur-room', peta: 'klasik2', petaCustom: null })
+  })
+
+  it('PapanInti menyimpan petaCustom 4P, meringkas daftar tanpa RLE, menyiarkan data penuh di room & mulai, serta mereset dengan null', () => {
+    const p = papanBaru()
+    const host = sambung(p, 'h')
+    const tamu = sambung(p, 't')
+    const pengamat = sambung(p, 'obs')
+    const custom4 = buatPetaCustomUji(4)
+
+    pengamat.kotak.length = 0
+    kirim(p, host.id, { t: 'buat-room', hero: 'king', peta: 'klasik2', petaCustom: custom4 })
+
+    const roomHost = terakhir(host, 'room')!
+    expect(roomHost.ringkas.maksPemain).toBe(4)
+    expect(roomHost.ringkas.namaPetaCustom).toBe('Arena Uji 4P')
+    expect(roomHost.ringkas.petaCustom?.id).toBe('uji-lan-4p')
+
+    // Daftar room tidak membawa payload RLE berat namun tetap menampilkan namaPetaCustom
+    const daftarObs = terakhir(pengamat, 'daftar')!.room
+    expect(daftarObs).toHaveLength(1)
+    expect(daftarObs[0]!.namaPetaCustom).toBe('Arena Uji 4P')
+    expect(daftarObs[0]!.petaCustom).toBeUndefined()
+
+    // Tamu bergabung -> menerima petaCustom lengkap di room
+    kirim(p, tamu.id, { t: 'gabung-room', kode: roomHost.kode, hero: 'knight' })
+    const roomTamu = terakhir(tamu, 'room')!
+    expect(roomTamu.ringkas.petaCustom?.id).toBe('uji-lan-4p')
+
+    // Host mulai -> host & tamu menerima petaCustom lengkap di pesan mulai
+    kirim(p, host.id, { t: 'mulai' })
+    expect(terakhir(host, 'mulai')!.petaCustom?.id).toBe('uji-lan-4p')
+    expect(terakhir(tamu, 'mulai')!.petaCustom?.id).toBe('uji-lan-4p')
+
+    // Uji atur-room petaCustom: null menghapus petaCustom pada room baru
+    const host2 = sambung(p, 'h2')
+    const tamu2 = sambung(p, 't2')
+    kirim(p, host2.id, { t: 'buat-room', hero: 'king', peta: 'klasik2', petaCustom: custom4 })
+    kirim(p, tamu2.id, { t: 'gabung-room', kode: terakhir(host2, 'room')!.kode, hero: 'knight' })
+    kirim(p, host2.id, { t: 'atur-room', peta: 'klasik2', petaCustom: null })
+
+    const sesudahReset = terakhir(tamu2, 'room')!.ringkas
+    expect(sesudahReset.maksPemain).toBe(2)
+    expect(sesudahReset.petaCustom).toBeNull()
+    expect(sesudahReset.namaPetaCustom).toBeUndefined()
   })
 })

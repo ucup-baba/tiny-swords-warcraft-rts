@@ -1,6 +1,16 @@
 import { DEKO, TERRAIN, TERRAIN_FREE, frame, url, type Aset } from '@hftf/aset'
-import { TILE, TINGGI } from '@hftf/shared'
+import { TILE, TINGGI, type TemaBioma } from '@hftf/shared'
 import type { Terrain } from '@hftf/sim'
+
+function asetBioma(bioma?: TemaBioma): Aset {
+  switch (bioma) {
+    case 2: return TERRAIN_FREE.tileBioma2
+    case 3: return TERRAIN_FREE.tileBioma3
+    case 4: return TERRAIN_FREE.tileBioma4
+    case 5: return TERRAIN_FREE.tileBioma5
+    default: return TERRAIN_FREE.tileHijau
+  }
+}
 import { BARIS_ELEV, GUGUS_FLAT, selAutotile } from './autotile.js'
 import { gambarDari } from './gambar.js'
 import type { Kamera } from './kamera.js'
@@ -57,41 +67,56 @@ interface AwanPos {
   skala: number
 }
 
+export interface OpsiRenderTerrain {
+  /** Matikan dekorasi prosedural (dipakai pada peta custom & Map Editor agar 100% WYSIWYG). */
+  tanpaDekoAcak?: boolean
+}
+
 /**
- * Perender terrain bertingkat bergaya Tiny Swords resmi (Free Pack Tilemap_color1 + Update 010):
+ * Perender terrain bertingkat 3 level bergaya Tiny Swords resmi (5 tema bioma Tilemap_color1..5 + Update 010):
  * - Pulau Level 1 (dataran) duduk di atas tebing batu laut + busa pantai lembut.
- * - Benteng & Plateau Level 2 duduk di atas tebing batu berumput + bayangan tebing + tangga batu / lereng ramp.
- * - Jalan tanah/pasir keemasan menghubungkan Castle -> Tangga -> Jembatan -> Pusat.
- * - Jembatan kayu dirender utuh dalam 1 pass khusus di atas sambungan chunk tanpa sela air 1 piksel pun.
- * - Batu air beranimasi & awan lembut melayang di pinggir laut — tetap 60 FPS di HP.
+ * - Benteng & Plateau Level 2 duduk di atas tebing batu + bayangan tebing + tangga batu N/S/W/E.
+ * - Puncak Level 3 duduk bertumpuk rapi di atas Level 2 dengan tebing, tangga, & highlight puncak cerah.
+ * - Jalan tanah/pasir keemasan, jembatan kayu tanpa sela air, batu air beranimasi, & awan lembut.
  */
 export class PeremajaTerrain {
   private readonly kolom: number
   private readonly baris: number
   private readonly kolomChunk: number
   private readonly barisChunk: number
+  private tanpaDekoAcak: boolean
   private readonly butuhAir: Uint8Array
   private readonly busaPantai: Uint8Array
-  /** Level 1 (dataran) pakai blok elevated Tilemap_color1 (kol 5..8, bar 0..3). */
+  /** Level 1 (dataran) pakai blok elevated Tilemap_color1..5 (kol 5..8, bar 0..3). */
   private readonly daratKol: Int8Array
   private readonly daratBar: Int8Array
   /** Tebing laut jatuh ke tile air (tx, ty+1): nilai 0..3 = kol (5+k, bar 5). */
   private readonly tebingLautKol: Int8Array
-  /** Jalan pasir pada dataran & plateau (Tilemap_Flat kol 5..8). */
+  /** Jalan pasir pada seluruh level permukaan (Tilemap_Flat kol 5..8). */
   private readonly jalanSx: Int16Array
   private readonly jalanSy: Int16Array
   /** Level 2 (plateau) permukaan rumput bertingkat (kol 5..8, bar 0..3). */
   private readonly platKol: Int8Array
   private readonly platBar: Int8Array
-  /** Tebing plateau jatuh ke tile (tx, ty+1): kol 0..3, baris 4 (di atas rumput) atau 5 (di atas air). */
+  /** Tebing plateau Lv.2 jatuh ke tile (tx, ty+1): kol 0..3, baris 4 (di atas rumput) atau 5 (di atas air). */
   private readonly tebingPlatKol: Int8Array
   private readonly tebingPlatBar: Int8Array
-  /** Ramp: 0=bukan, 1=tangga vertikal (N/S), 2=tangga barat (turun ke barat), 3=tangga timur (turun ke timur). */
+  /** Ramp Lv.1 <-> Lv.2: 0=bukan, 1=N/S, 2=barat, 3=timur. */
   private readonly jenisRamp: Uint8Array
   private readonly rampKol: Int8Array
   private readonly rampBar: Int8Array
-  /** Tangga lanjutan di kaki tebing selatan ramp N/S (ty+1). */
+  /** Tangga lanjutan di kaki tebing selatan ramp Lv.2 (ty+1). */
   private readonly tanggaBawahKol: Int8Array
+  /** Level 3 (puncak) permukaan tertinggi bertumpuk di atas Level 2. */
+  private readonly puncakKol: Int8Array
+  private readonly puncakBar: Int8Array
+  private readonly tebingPuncakKol: Int8Array
+  private readonly tebingPuncakBar: Int8Array
+  /** Ramp Lv.2 <-> Lv.3: 0=bukan, 1=N/S, 2=barat, 3=timur. */
+  private readonly jenisRamp3: Uint8Array
+  private readonly ramp3Kol: Int8Array
+  private readonly ramp3Bar: Int8Array
+  private readonly tangga3BawahKol: Int8Array
   private readonly dekoIdx: Int8Array
 
   private daftarJembatan: RentangJembatan[] = []
@@ -102,11 +127,12 @@ export class PeremajaTerrain {
   private readonly chunk = new Map<string, Chunk>()
   private urutanPakai = 0
 
-  constructor(private terrain: Terrain) {
+  constructor(private terrain: Terrain, opsi: OpsiRenderTerrain = {}) {
     this.kolom = terrain.kolom
     this.baris = terrain.baris
     this.kolomChunk = Math.ceil(this.kolom / TILE_PER_CHUNK)
     this.barisChunk = Math.ceil(this.baris / TILE_PER_CHUNK)
+    this.tanpaDekoAcak = opsi.tanpaDekoAcak ?? false
     const total = this.kolom * this.baris
     this.butuhAir = new Uint8Array(total)
     this.busaPantai = new Uint8Array(total)
@@ -123,6 +149,14 @@ export class PeremajaTerrain {
     this.rampKol = new Int8Array(total).fill(-1)
     this.rampBar = new Int8Array(total).fill(-1)
     this.tanggaBawahKol = new Int8Array(total).fill(-1)
+    this.puncakKol = new Int8Array(total).fill(-1)
+    this.puncakBar = new Int8Array(total).fill(-1)
+    this.tebingPuncakKol = new Int8Array(total).fill(-1)
+    this.tebingPuncakBar = new Int8Array(total).fill(-1)
+    this.jenisRamp3 = new Uint8Array(total)
+    this.ramp3Kol = new Int8Array(total).fill(-1)
+    this.ramp3Bar = new Int8Array(total).fill(-1)
+    this.tangga3BawahKol = new Int8Array(total).fill(-1)
     this.dekoIdx = new Int8Array(total).fill(-1)
     this.bangunTabel()
   }
@@ -131,6 +165,28 @@ export class PeremajaTerrain {
   kotorkanSemua(): void {
     this.bangunTabel()
     for (const c of this.chunk.values()) c.bersih = false
+  }
+
+  /** Memperbarui hanya chunk yang menyentuh kotak tile [tx1..tx2, ty1..ty2] (cepat untuk kuas Editor!). */
+  kotorkanArea(tx1: number, ty1: number, tx2: number, ty2: number): void {
+    this.bangunTabel()
+    const cx1 = Math.max(0, Math.floor((Math.min(tx1, tx2) - 2) / TILE_PER_CHUNK))
+    const cy1 = Math.max(0, Math.floor((Math.min(ty1, ty2) - 2) / TILE_PER_CHUNK))
+    const cx2 = Math.min(this.kolomChunk - 1, Math.floor((Math.max(tx1, tx2) + 2) / TILE_PER_CHUNK))
+    const cy2 = Math.min(this.barisChunk - 1, Math.floor((Math.max(ty1, ty2) + 2) / TILE_PER_CHUNK))
+    for (let cy = cy1; cy <= cy2; cy++) {
+      for (let cx = cx1; cx <= cx2; cx++) {
+        const c = this.chunk.get(`${cx},${cy}`)
+        if (c) c.bersih = false
+      }
+    }
+  }
+
+  /** Mengganti referensi Terrain (mis. undo/redo atau buka template baru di Editor). */
+  setTerrain(terrain: Terrain, tanpaDekoAcak?: boolean): void {
+    this.terrain = terrain
+    if (tanpaDekoAcak !== undefined) this.tanpaDekoAcak = tanpaDekoAcak
+    this.kotorkanSemua()
   }
 
   private bangunTabel(): void {
@@ -149,7 +205,9 @@ export class PeremajaTerrain {
     const jln = (tx: number, ty: number): boolean =>
       tx >= 0 && ty >= 0 && tx < kol && ty < bar && (t.jalan?.[ty * kol + tx] ?? 0) === 1
     const darat = (tx: number, ty: number): boolean => h(tx, ty) !== TINGGI.air && jemb(tx, ty) === 0
-    const atas = (tx: number, ty: number): boolean => h(tx, ty) === TINGGI.plateau
+    const atas2 = (tx: number, ty: number): boolean => h(tx, ty) >= TINGGI.plateau
+    const atas3 = (tx: number, ty: number): boolean => h(tx, ty) >= TINGGI.puncak
+    const isRampLv = (tx: number, ty: number, lv: number): boolean => h(tx, ty) === lv && rampVal(tx, ty) > 0
 
     this.butuhAir.fill(0)
     this.busaPantai.fill(0)
@@ -166,6 +224,14 @@ export class PeremajaTerrain {
     this.rampKol.fill(-1)
     this.rampBar.fill(-1)
     this.tanggaBawahKol.fill(-1)
+    this.puncakKol.fill(-1)
+    this.puncakBar.fill(-1)
+    this.tebingPuncakKol.fill(-1)
+    this.tebingPuncakBar.fill(-1)
+    this.jenisRamp3.fill(0)
+    this.ramp3Kol.fill(-1)
+    this.ramp3Bar.fill(-1)
+    this.tangga3BawahKol.fill(-1)
     this.dekoIdx.fill(-1)
     this.daftarJembatan = []
     this.daftarBatuAir = []
@@ -210,6 +276,7 @@ export class PeremajaTerrain {
           this.butuhAir[i] = 1
           // Batu air dekoratif di perairan terbuka (jauh dari jembatan & tebing selatan)
           if (
+            !this.tanpaDekoAcak &&
             hv === TINGGI.air &&
             !darat(tx, ty - 1) && !darat(tx, ty - 2) &&
             !darat(tx - 1, ty) && !darat(tx + 1, ty) && !darat(tx, ty + 1) &&
@@ -257,82 +324,118 @@ export class PeremajaTerrain {
           this.jalanSy[i] = sj.bar * TILE
         }
 
-        // Level 2: Plateau & Ramp / Tangga batu berarah eksplisit (1=N/S, 2=Barat, 3=Timur)
-        if (hv === TINGGI.plateau) {
-          const rv = rampVal(tx, ty)
-          if (rv === 1) {
-            // Tangga batu Utara / Selatan (horizontal treads)
-            const sr = selAutotile(rampVal(tx - 1, ty) === 1, rampVal(tx + 1, ty) === 1, true, true)
+        // Level 2: Plateau & Ramp / Tangga batu Lv.1 <-> Lv.2
+        if (hv >= TINGGI.plateau) {
+          const rv2 = hv === TINGGI.plateau ? rampVal(tx, ty) : 0
+          if (rv2 === 1) {
+            const sr = selAutotile(isRampLv(tx - 1, ty, TINGGI.plateau) && rampVal(tx - 1, ty) === 1, isRampLv(tx + 1, ty, TINGGI.plateau) && rampVal(tx + 1, ty) === 1, true, true)
             this.jenisRamp[i] = 1
             this.rampKol[i] = sr.kol
             if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.dataran && !isRamp(tx, ty + 1)) {
               this.tanggaBawahKol[(ty + 1) * kol + tx] = sr.kol
             }
-          } else if (rv === 2 || rv === 3) {
-            // Tangga batu Barat / Timur (diputar 90 derajat dari Tilemap_Elevation baris 7 -> serasi sempurna!)
-            const sb = selAutotile(true, true, rampVal(tx, ty - 1) === rv, rampVal(tx, ty + 1) === rv)
-            this.jenisRamp[i] = rv
+          } else if (rv2 === 2 || rv2 === 3) {
+            const sb = selAutotile(true, true, isRampLv(tx, ty - 1, TINGGI.plateau) && rampVal(tx, ty - 1) === rv2, isRampLv(tx, ty + 1, TINGGI.plateau) && rampVal(tx, ty + 1) === rv2)
+            this.jenisRamp[i] = rv2
             this.rampBar[i] = sb.bar
-            // Jika bagian bawah tangga E/W langsung menghadap dataran, tutup dengan tebing batu rumput rapi
-            if (ty + 1 < bar && !atas(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.plateau)) {
               const idxBawah = (ty + 1) * kol + tx
-              const kiriPlat = atas(tx - 1, ty)
-              const kananPlat = atas(tx + 1, ty)
+              const kiriPlat = atas2(tx - 1, ty)
+              const kananPlat = atas2(tx + 1, ty)
               this.tebingPlatKol[idxBawah] = kiriPlat && kananPlat ? 1 : kiriPlat ? 2 : kananPlat ? 0 : 3
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
             }
           } else {
             const sp = selAutotile(
-              atas(tx - 1, ty), atas(tx + 1, ty), atas(tx, ty - 1), atas(tx, ty + 1),
+              atas2(tx - 1, ty), atas2(tx + 1, ty), atas2(tx, ty - 1), atas2(tx, ty + 1),
             )
             this.platKol[i] = sp.kol
             this.platBar[i] = sp.bar
-            // Tebing batu plateau jatuh ke selatan (ty + 1)
-            if (ty + 1 < bar && !atas(tx, ty + 1) && !isRamp(tx, ty + 1)) {
+            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.plateau)) {
               const idxBawah = (ty + 1) * kol + tx
               this.tebingPlatKol[idxBawah] = sp.kol
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
             }
           }
         }
+
+        // Level 3: Puncak tertinggi & Ramp / Tangga batu Lv.2 <-> Lv.3
+        if (hv === TINGGI.puncak) {
+          const rv3 = rampVal(tx, ty)
+          if (rv3 === 1) {
+            const sr3 = selAutotile(isRampLv(tx - 1, ty, TINGGI.puncak) && rampVal(tx - 1, ty) === 1, isRampLv(tx + 1, ty, TINGGI.puncak) && rampVal(tx + 1, ty) === 1, true, true)
+            this.jenisRamp3[i] = 1
+            this.ramp3Kol[i] = sr3.kol
+            if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.plateau && !isRamp(tx, ty + 1)) {
+              this.tangga3BawahKol[(ty + 1) * kol + tx] = sr3.kol
+            }
+          } else if (rv3 === 2 || rv3 === 3) {
+            const sb3 = selAutotile(true, true, isRampLv(tx, ty - 1, TINGGI.puncak) && rampVal(tx, ty - 1) === rv3, isRampLv(tx, ty + 1, TINGGI.puncak) && rampVal(tx, ty + 1) === rv3)
+            this.jenisRamp3[i] = rv3
+            this.ramp3Bar[i] = sb3.bar
+            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.puncak)) {
+              const idxBawah = (ty + 1) * kol + tx
+              const kiriP = atas3(tx - 1, ty)
+              const kananP = atas3(tx + 1, ty)
+              this.tebingPuncakKol[idxBawah] = kiriP && kananP ? 1 : kiriP ? 2 : kananP ? 0 : 3
+              this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+            }
+          } else {
+            const s3 = selAutotile(
+              atas3(tx - 1, ty), atas3(tx + 1, ty), atas3(tx, ty - 1), atas3(tx, ty + 1),
+            )
+            this.puncakKol[i] = s3.kol
+            this.puncakBar[i] = s3.bar
+            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.puncak)) {
+              const idxBawah = (ty + 1) * kol + tx
+              this.tebingPuncakKol[idxBawah] = s3.kol
+              this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+            }
+          }
+        }
       }
     }
 
-    // 3. Dekorasi rumput/bunga/jamur/batu hanya di rumput terbuka (bukan di jalan, ramp, atau kaki tebing).
-    for (let ty = 0; ty < bar; ty++) {
-      const off = ty * kol
-      for (let tx = 0; tx < kol; tx++) {
-        const i = off + tx
-        if (!darat(tx, ty)) continue
-        if (isRamp(tx, ty) || jln(tx, ty)) continue
-        if (this.tebingPlatKol[i]! >= 0 || this.tanggaBawahKol[i]! >= 0) continue
-        const acak = cakar(tx, ty)
-        if (acak % 9 === 0) this.dekoIdx[i] = (acak >> 4) % 15
+    // 3. Dekorasi rumput/bunga/jamur/batu prosedural (hanya untuk peta bawaan, bukan peta custom WYSIWYG).
+    if (!this.tanpaDekoAcak) {
+      for (let ty = 0; ty < bar; ty++) {
+        const off = ty * kol
+        for (let tx = 0; tx < kol; tx++) {
+          const i = off + tx
+          if (!darat(tx, ty)) continue
+          if (isRamp(tx, ty) || jln(tx, ty)) continue
+          if (
+            this.tebingPlatKol[i]! >= 0 || this.tanggaBawahKol[i]! >= 0 ||
+            this.tebingPuncakKol[i]! >= 0 || this.tangga3BawahKol[i]! >= 0
+          ) continue
+          const acak = cakar(tx, ty)
+          if (acak % 9 === 0) this.dekoIdx[i] = (acak >> 4) % 15
+        }
       }
-    }
 
-    // 4. Awan dekoratif lembut melayang di pinggiran laut luar peta (seperti ilustrasi Free Pack).
-    const duniaW = kol * TILE
-    const duniaH = bar * TILE
-    for (let k = 0; k < 10; k++) {
-      const sisiAtasBawah = k < 6
-      const y = sisiAtasBawah
-        ? (k % 2 === 0 ? 110 + k * 28 : duniaH - 170 - (k % 3) * 32)
-        : 900 + (k - 6) * 1150
-      const x0 = sisiAtasBawah
-        ? ((k * 1070) % duniaW)
-        : (k % 2 === 0 ? 90 : duniaW - 260)
-      this.daftarAwan.push({
-        x0,
-        y,
-        varian: (k % 2) as 0 | 1,
-        kecepatan: 10 + (k % 4) * 4,
-        skala: 0.45 + (k % 3) * 0.12,
-      })
+      // 4. Awan dekoratif lembut melayang di pinggiran laut luar peta (seperti ilustrasi Free Pack).
+      const duniaW = kol * TILE
+      const duniaH = bar * TILE
+      for (let k = 0; k < 10; k++) {
+        const sisiAtasBawah = k < 6
+        const y = sisiAtasBawah
+          ? (k % 2 === 0 ? 110 + k * 28 : duniaH - 170 - (k % 3) * 32)
+          : 900 + (k - 6) * 1150
+        const x0 = sisiAtasBawah
+          ? ((k * 1070) % duniaW)
+          : (k % 2 === 0 ? 90 : duniaW - 260)
+        this.daftarAwan.push({
+          x0,
+          y,
+          varian: (k % 2) as 0 | 1,
+          kecepatan: 10 + (k % 4) * 4,
+          skala: 0.45 + (k % 3) * 0.12,
+        })
+      }
     }
   }
 
-  gambar(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number): void {
+  gambar(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number, cepat = false): void {
     const p = pandangan(kam, TILE * 2)
     const cx1 = Math.max(0, Math.floor(p.x1 / UKURAN_CHUNK))
     const cy1 = Math.max(0, Math.floor(p.y1 / UKURAN_CHUNK))
@@ -341,6 +444,7 @@ export class PeremajaTerrain {
 
     this.urutanPakai++
     let jumlahBake = 0
+    const batasBake = cepat ? 8 : MAKS_BAKE_PER_FRAME
     for (let cy = cy1; cy <= cy2; cy++) {
       for (let cx = cx1; cx <= cx2; cx++) {
         const kunci = `${cx},${cy}`
@@ -350,7 +454,7 @@ export class PeremajaTerrain {
           ctx.drawImage(ada.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK, UKURAN_CHUNK + 0.75, UKURAN_CHUNK + 0.75)
           continue
         }
-        if (jumlahBake < MAKS_BAKE_PER_FRAME) {
+        if (jumlahBake < batasBake) {
           const c = this.ambilAtauDaurChunk(kunci)
           this.gambarRentangTile(c.ctx!, cx * TILE_PER_CHUNK, cy * TILE_PER_CHUNK, 0, 0)
           c.bersih = true
@@ -588,7 +692,7 @@ export class PeremajaTerrain {
     const datar = gambarDari(TERRAIN.tanahDatar)
     const tinggiU010 = gambarDari(TERRAIN.tanahTinggi)
     const bayang = gambarDari(TERRAIN.bayangTanah)
-    const tileFree = gambarDari(TERRAIN_FREE.tileHijau)
+    const tileFree = gambarDari(asetBioma(this.terrain.bioma))
 
     // Pass 0: Air laut turquoise.
     if (air) {
@@ -653,15 +757,14 @@ export class PeremajaTerrain {
         for (let tx = tx0; tx <= tx2; tx++) {
           const i = off + tx
           const jsx = this.jalanSx[i]!
-          if (jsx >= 0 && this.platKol[i]! < 0 && this.jenisRamp[i] === 0) {
+          if (jsx >= 0 && this.platKol[i]! < 0 && this.puncakKol[i]! < 0 && this.jenisRamp[i] === 0 && this.jenisRamp3[i] === 0) {
             ctx.drawImage(datar, jsx, this.jalanSy[i]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
           }
         }
       }
     }
 
-    // Pass 2: Bayangan tebing, Tebing Batu Plateau (baris 4 di atas rumput / baris 5 di atas air),
-    // Tangga batu & lereng ramp, serta permukaan Plateau Level 2!
+    // Pass 2: Tebing Batu Plateau Lv.2, tangga batu Lv.2, & permukaan Plateau Level 2!
     for (let ty = ty0; ty <= ty2; ty++) {
       const off = ty * kol
       const py = asalPxY + (ty - ty0) * TILE
@@ -669,7 +772,7 @@ export class PeremajaTerrain {
         const i = off + tx
         const px = asalPxX + (tx - tx0) * TILE
 
-        // 2a. Tebing batu plateau di atas rumput / air + bayangan jatuh di kakinya
+        // 2a. Tebing batu plateau Lv.2 di atas rumput / air + bayangan jatuh di kakinya
         const tpk = this.tebingPlatKol[i]!
         if (tpk >= 0) {
           const tpb = this.tebingPlatBar[i]!
@@ -686,13 +789,13 @@ export class PeremajaTerrain {
           }
         }
 
-        // 2b. Lanjutan kaki tangga selatan (turun dari tebing ke jalan bawah)
+        // 2b. Lanjutan kaki tangga selatan Lv.2
         const tbk = this.tanggaBawahKol[i]!
         if (tbk >= 0 && tinggiU010) {
           ctx.drawImage(tinggiU010, tbk * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
         }
 
-        // 2c. Permukaan Plateau Level 2 (rumput hijau bertingkat Tilemap_color1 kol 5..8)
+        // 2c. Permukaan Plateau Level 2
         const pk = this.platKol[i]!
         if (pk >= 0) {
           const pb = this.platBar[i]!
@@ -701,14 +804,13 @@ export class PeremajaTerrain {
           } else if (tinggiU010) {
             ctx.drawImage(tinggiU010, pk * TILE, Math.min(pb, BARIS_ELEV.permukaanBawah) * TILE, TILE, TILE, px, py, TILE, TILE)
           }
-          // Jalan pasir di atas Plateau Level 2
           const jsx = this.jalanSx[i]!
-          if (jsx >= 0 && datar) {
+          if (jsx >= 0 && datar && this.puncakKol[i]! < 0 && this.jenisRamp3[i] === 0) {
             ctx.drawImage(datar, jsx, this.jalanSy[i]!, TILE, TILE, px, py, TILE, TILE)
           }
         }
 
-        // 2d. Tile Ramp / Tangga batu (penghubung naik-turun antar level, serasi N/S/W/E)
+        // 2d. Tile Ramp / Tangga batu Lv.1 <-> Lv.2
         const jr = this.jenisRamp[i]!
         if (jr === 1 && tinggiU010) {
           ctx.drawImage(tinggiU010, this.rampKol[i]! * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
@@ -716,6 +818,63 @@ export class PeremajaTerrain {
           const strip = this.ambilTanggaEW(tinggiU010, jr)
           if (strip) {
             ctx.drawImage(strip, 0, this.rampBar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+      }
+    }
+
+    // Pass 2.5: Tebing Batu Puncak Lv.3, tangga batu Lv.3, & permukaan Puncak Level 3!
+    for (let ty = ty0; ty <= ty2; ty++) {
+      const off = ty * kol
+      const py = asalPxY + (ty - ty0) * TILE
+      for (let tx = tx0; tx <= tx2; tx++) {
+        const i = off + tx
+        const px = asalPxX + (tx - tx0) * TILE
+
+        const tp3k = this.tebingPuncakKol[i]!
+        if (tp3k >= 0) {
+          const tp3b = this.tebingPuncakBar[i]!
+          if (tp3b === 4 && bayang) {
+            ctx.save()
+            ctx.globalAlpha = 0.45
+            ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
+            ctx.restore()
+          }
+          if (tileFree) {
+            ctx.drawImage(tileFree, (5 + tp3k) * TILE, tp3b * TILE, TILE, TILE, px, py, TILE, TILE)
+          } else if (tinggiU010) {
+            ctx.drawImage(tinggiU010, tp3k * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+
+        const tb3k = this.tangga3BawahKol[i]!
+        if (tb3k >= 0 && tinggiU010) {
+          ctx.drawImage(tinggiU010, tb3k * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
+        }
+
+        const p3k = this.puncakKol[i]!
+        if (p3k >= 0) {
+          const p3b = this.puncakBar[i]!
+          if (tileFree) {
+            ctx.drawImage(tileFree, (5 + p3k) * TILE, p3b * TILE, TILE, TILE, px, py, TILE, TILE)
+            ctx.fillStyle = 'rgba(255, 252, 214, 0.11)'
+            ctx.fillRect(px, py, TILE, TILE)
+          } else if (tinggiU010) {
+            ctx.drawImage(tinggiU010, p3k * TILE, Math.min(p3b, BARIS_ELEV.permukaanBawah) * TILE, TILE, TILE, px, py, TILE, TILE)
+          }
+          const jsx = this.jalanSx[i]!
+          if (jsx >= 0 && datar) {
+            ctx.drawImage(datar, jsx, this.jalanSy[i]!, TILE, TILE, px, py, TILE, TILE)
+          }
+        }
+
+        const jr3 = this.jenisRamp3[i]!
+        if (jr3 === 1 && tinggiU010) {
+          ctx.drawImage(tinggiU010, this.ramp3Kol[i]! * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
+        } else if ((jr3 === 2 || jr3 === 3) && tinggiU010) {
+          const strip = this.ambilTanggaEW(tinggiU010, jr3)
+          if (strip) {
+            ctx.drawImage(strip, 0, this.ramp3Bar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
           }
         }
       }
