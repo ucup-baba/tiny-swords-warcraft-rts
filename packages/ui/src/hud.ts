@@ -361,16 +361,18 @@ export class Hud {
     this.pita.classList.toggle('red', tim === 'red')
   }
 
-  perbaruiPita(dunia: Dunia, tim: Tim, mode: string): void {
+  perbaruiPita(dunia: Dunia, tim: Tim, mode: string, fps?: number): void {
     const detik = Math.floor(dunia.tick / 60)
     const mm = String(Math.floor(detik / 60)).padStart(2, '0')
     const ss = String(detik % 60).padStart(2, '0')
     const nama = tim === 'blue' ? 'BLUE KINGDOM' : 'RED EMPIRE'
-    const kunci = `${nama}|${mm}:${ss}|${mode}`
+    const labelFps = fps && fps > 0 ? `${Math.round(fps)} FPS` : ''
+    const kunci = `${nama}|${mm}:${ss}|${mode}|${labelFps}`
     if (kunci === this.kunciPita) return
     this.kunciPita = kunci
     this.pita.textContent = ''
-    for (const [i, bagian] of [nama, `${mm}:${ss}`, mode].entries()) {
+    const bagianDaftar = labelFps ? [nama, `${mm}:${ss}`, mode, labelFps] : [nama, `${mm}:${ss}`, mode]
+    for (const [i, bagian] of bagianDaftar.entries()) {
       if (i > 0) this.pita.append(el('span', 'pisah', '•'))
       this.pita.append(el('span', undefined, bagian))
     }

@@ -30,11 +30,21 @@ export async function muatSemuaAset(
       (u) =>
         new Promise<void>((selesai) => {
           const im = new Image()
+          im.decoding = 'async'
           im.onload = () => {
-            cache.set(u, im)
-            k.selesai++
-            lapor?.(k)
-            selesai()
+            // Decode PNG di background thread saat layar muat, supaya drawImage()
+            // pertama kali di tengah permainan tidak membekukan main thread 100-200ms!
+            const simpan = (): void => {
+              cache.set(u, im)
+              k.selesai++
+              lapor?.(k)
+              selesai()
+            }
+            if (typeof im.decode === 'function') {
+              im.decode().then(simpan, simpan)
+            } else {
+              simpan()
+            }
           }
           im.onerror = () => {
             k.gagal.push(u)

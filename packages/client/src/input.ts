@@ -132,9 +132,9 @@ export function seleksiKotak(dunia: Dunia, tim: Tim, k: KeadaanInput): number[] 
  * tidak bentrok saat memberi perintah pasukan ala Warcraft III.
  */
 export function gulirKamera(
-  kam: Kamera, tombol: ReadonlySet<string>, k: KeadaanInput,
+  kam: Kamera, tombol: ReadonlySet<string>, k: KeadaanInput, dt = DT_TETAP,
 ): void {
-  const laju = 900 * DT_TETAP * (tombol.has('ShiftLeft') ? 2 : 1)
+  const laju = 900 * dt * (tombol.has('ShiftLeft') ? 2 : 1)
   let dx = 0
   let dy = 0
   if (tombol.has('ArrowLeft')) dx -= laju

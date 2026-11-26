@@ -1,4 +1,4 @@
-import { DEKO, TERRAIN, frame, url } from '@hftf/aset'
+import { DEKO, TERRAIN, frame, url, type Aset } from '@hftf/aset'
 import { TILE, TINGGI } from '@hftf/shared'
 import type { Terrain } from '@hftf/sim'
 import { BARIS_ELEV, GUGUS_FLAT, selAutotile } from './autotile.js'
@@ -6,189 +6,277 @@ import { gambarDari } from './gambar.js'
 import type { Kamera } from './kamera.js'
 import { pandangan } from './kamera.js'
 
-/**
- * Terrain digambar per CHUNK ke canvas offscreen lalu di-blit.
- *
- * Peta 96x96 = 9.216 tile; menggambar tile satu per satu tiap frame membuat
- * peta sebesar ini tidak mungkin 60 fps. Chunk hanya digambar ulang kalau
- * datanya berubah.
- */
-const TILE_PER_CHUNK = 16
+const TILE_PER_CHUNK = 8
+const UKURAN_CHUNK = TILE_PER_CHUNK * TILE
+const MAKS_CHUNK = 20
+/** Batas chunk baru yang dipanggang per frame agar geser kamera cepat tetap 60 FPS mulus. */
+const MAKS_BAKE_PER_FRAME = 1
 
-/** Hash koordinat -> angka. Deterministik, jadi chunk selalu digambar sama. */
+/** Hash koordinat -> angka. Deterministik, jadi dekorasi selalu sama persis. */
 function cakar(x: number, y: number): number {
   let n = (x * 73856093) ^ (y * 19349663)
   n = (n ^ (n >>> 13)) >>> 0
   return (Math.imul(n, 1274126177) >>> 0) % 100000
 }
-const UKURAN_CHUNK = TILE_PER_CHUNK * TILE
+
+const DAFTAR_DEKO: readonly (Aset | undefined)[] = Array.from({ length: 15 }, (_, i) =>
+  DEKO[`deco${String(i + 1).padStart(2, '0')}`],
+)
 
 interface Chunk {
   kanvas: HTMLCanvasElement
+  ctx: CanvasRenderingContext2D | null
   bersih: boolean
+  pakaiKe: number
 }
 
+/**
+ * Perender terrain hibrida (Chunk 512x512 buram + budget panggang 1 chunk/frame):
+ * - Saat normal: hanya 4–6 drawImage chunk buram (~0.2 ms, 60 FPS terkunci di HP).
+ * - Saat geser kamera cepat: paling banyak 1 chunk dipanggang per frame (nol freeze);
+ *   chunk sisanya digambar langsung untuk 1 frame dari tabel autotile datar lalu menyusul.
+ * - Pool LRU maks 20 chunk (~20 MB VRAM) agar Chrome Android tidak pernah turun ke software.
+ */
 export class PeremajaTerrain {
-  private chunk = new Map<string, Chunk>()
-  private kolomChunk: number
-  private barisChunk: number
-  private polaAir: CanvasPattern | null = null
-  private ctxAir: CanvasRenderingContext2D | null = null
-  private imgAir: HTMLImageElement | null = null
+  private readonly kolom: number
+  private readonly baris: number
+  private readonly kolomChunk: number
+  private readonly barisChunk: number
+  private readonly butuhAir: Uint8Array
+  private readonly flatSx: Int16Array
+  private readonly flatSy: Int16Array
+  private readonly elevSx: Int16Array
+  private readonly elevSy: Int16Array
+  private readonly tebingSx: Int16Array
+  private readonly dekoIdx: Int8Array
+  private readonly chunk = new Map<string, Chunk>()
+  private urutanPakai = 0
 
   constructor(private terrain: Terrain) {
-    this.kolomChunk = Math.ceil(terrain.kolom / TILE_PER_CHUNK)
-    this.barisChunk = Math.ceil(terrain.baris / TILE_PER_CHUNK)
+    this.kolom = terrain.kolom
+    this.baris = terrain.baris
+    this.kolomChunk = Math.ceil(this.kolom / TILE_PER_CHUNK)
+    this.barisChunk = Math.ceil(this.baris / TILE_PER_CHUNK)
+    const total = this.kolom * this.baris
+    this.butuhAir = new Uint8Array(total)
+    this.flatSx = new Int16Array(total).fill(-1)
+    this.flatSy = new Int16Array(total).fill(-1)
+    this.elevSx = new Int16Array(total).fill(-1)
+    this.elevSy = new Int16Array(total).fill(-1)
+    this.tebingSx = new Int16Array(total).fill(-1)
+    this.dekoIdx = new Int8Array(total).fill(-1)
+    this.bangunTabel()
   }
 
-  /** Menandai seluruh chunk perlu digambar ulang (mis. setelah aset selesai dimuat). */
+  /** Membangun ulang tabel autotile & menandai seluruh chunk perlu dipanggang ulang. */
   kotorkanSemua(): void {
+    this.bangunTabel()
     for (const c of this.chunk.values()) c.bersih = false
   }
 
+  private bangunTabel(): void {
+    const t = this.terrain
+    const kol = this.kolom
+    const bar = this.baris
+    const h = (tx: number, ty: number): number => {
+      if (tx < 0 || ty < 0 || tx >= kol || ty >= bar) return TINGGI.air
+      return t.tinggi[ty * kol + tx]!
+    }
+    const ramp = (tx: number, ty: number): boolean =>
+      tx >= 0 && ty >= 0 && tx < kol && ty < bar && t.ramp[ty * kol + tx] === 1
+    const darat = (tx: number, ty: number): boolean => h(tx, ty) !== TINGGI.air
+    const atas = (tx: number, ty: number): boolean => h(tx, ty) === TINGGI.plateau
+
+    this.butuhAir.fill(0)
+    this.flatSx.fill(-1)
+    this.flatSy.fill(-1)
+    this.elevSx.fill(-1)
+    this.elevSy.fill(-1)
+    this.tebingSx.fill(-1)
+    this.dekoIdx.fill(-1)
+
+    for (let ty = 0; ty < bar; ty++) {
+      const barisOff = ty * kol
+      for (let tx = 0; tx < kol; tx++) {
+        const i = barisOff + tx
+        const hv = h(tx, ty)
+        if (hv === TINGGI.air) {
+          this.butuhAir[i] = 1
+          continue
+        }
+
+        // 1. Rumput datar (tepi pantai butuh latar air di bawah sudut bulatnya).
+        const sel = selAutotile(darat(tx - 1, ty), darat(tx + 1, ty), darat(tx, ty - 1), darat(tx, ty + 1))
+        this.flatSx[i] = (GUGUS_FLAT.rumput + sel.kol) * TILE
+        this.flatSy[i] = sel.bar * TILE
+        if (sel.kol !== 1 || sel.bar !== 1) this.butuhAir[i] = 1
+
+        // 2. Plateau / ramp + muka tebing jatuh ke tile (tx, ty + 1).
+        if (hv === TINGGI.plateau) {
+          if (ramp(tx, ty)) {
+            const sr = selAutotile(ramp(tx - 1, ty), ramp(tx + 1, ty), true, true)
+            this.elevSx[i] = sr.kol * TILE
+            this.elevSy[i] = BARIS_ELEV.ramp * TILE
+          } else {
+            const sp = selAutotile(atas(tx - 1, ty), atas(tx + 1, ty), atas(tx, ty - 1), atas(tx, ty + 1))
+            this.elevSx[i] = sp.kol * TILE
+            this.elevSy[i] = Math.min(sp.bar, BARIS_ELEV.permukaanBawah) * TILE
+            if (!atas(tx, ty + 1) && ty + 1 < bar) {
+              this.tebingSx[(ty + 1) * kol + tx] = sp.kol * TILE
+            }
+          }
+        }
+
+        // 3. Dekorasi deterministik.
+        if (!ramp(tx, ty)) {
+          const acak = cakar(tx, ty)
+          if (acak % 11 === 0) this.dekoIdx[i] = (acak >> 4) % 15
+        }
+      }
+    }
+  }
+
   gambar(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number): void {
-    const p = pandangan(kam, UKURAN_CHUNK)
+    const p = pandangan(kam, TILE)
     const cx1 = Math.max(0, Math.floor(p.x1 / UKURAN_CHUNK))
     const cy1 = Math.max(0, Math.floor(p.y1 / UKURAN_CHUNK))
     const cx2 = Math.min(this.kolomChunk - 1, Math.floor(p.x2 / UKURAN_CHUNK))
     const cy2 = Math.min(this.barisChunk - 1, Math.floor(p.y2 / UKURAN_CHUNK))
 
-    this.gambarAir(ctx, kam, waktu)
-
+    this.urutanPakai++
+    let jumlahBake = 0
     for (let cy = cy1; cy <= cy2; cy++) {
       for (let cx = cx1; cx <= cx2; cx++) {
-        const c = this.chunkDi(cx, cy)
-        ctx.drawImage(c.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+        const kunci = `${cx},${cy}`
+        const ada = this.chunk.get(kunci)
+        if (ada && ada.bersih) {
+          ada.pakaiKe = this.urutanPakai
+          ctx.drawImage(ada.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+          continue
+        }
+        // Saat geser cepat, panggang maksimal 1 chunk/frame; sisanya gambar langsung 1 frame.
+        if (jumlahBake < MAKS_BAKE_PER_FRAME) {
+          const c = this.ambilAtauDaurChunk(kunci)
+          this.gambarRentangTile(c.ctx!, cx * TILE_PER_CHUNK, cy * TILE_PER_CHUNK, 0, 0)
+          c.bersih = true
+          c.pakaiKe = this.urutanPakai
+          ctx.drawImage(c.kanvas, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+          jumlahBake++
+        } else {
+          this.gambarRentangTile(ctx, cx * TILE_PER_CHUNK, cy * TILE_PER_CHUNK, cx * UKURAN_CHUNK, cy * UKURAN_CHUNK)
+        }
       }
     }
-  }
-
-  /** Air sebagai pola berulang (di-cache agar tidak memanggil createPattern 60x/detik). */
-  private gambarAir(ctx: CanvasRenderingContext2D, kam: Kamera, waktu: number): void {
-    const air = gambarDari(TERRAIN.air)
-    const p = pandangan(kam)
-    if (air) {
-      if (!this.polaAir || this.ctxAir !== ctx || this.imgAir !== air) {
-        this.polaAir = ctx.createPattern(air, 'repeat')
-        this.ctxAir = ctx
-        this.imgAir = air
-      }
-      if (this.polaAir) {
-        ctx.fillStyle = this.polaAir
-        ctx.fillRect(p.x1, p.y1, p.x2 - p.x1, p.y2 - p.y1)
-        return
-      }
-    }
-    ctx.fillStyle = '#3d7a8c'
-    ctx.fillRect(p.x1, p.y1, p.x2 - p.x1, p.y2 - p.y1)
+    void url
     void waktu
   }
 
-  private chunkDi(cx: number, cy: number): Chunk {
-    const kunci = `${cx},${cy}`
+  private ambilAtauDaurChunk(kunci: string): Chunk {
     let c = this.chunk.get(kunci)
+    if (c) return c
+    if (this.chunk.size >= MAKS_CHUNK) {
+      let kunciLama = ''
+      let pakaiMin = Infinity
+      let daur: Chunk | null = null
+      for (const [k, item] of this.chunk) {
+        if (item.pakaiKe < pakaiMin) {
+          pakaiMin = item.pakaiKe
+          kunciLama = k
+          daur = item
+        }
+      }
+      if (daur && kunciLama) {
+        this.chunk.delete(kunciLama)
+        daur.bersih = false
+        c = daur
+      }
+    }
     if (!c) {
       const kanvas = document.createElement('canvas')
       kanvas.width = UKURAN_CHUNK
       kanvas.height = UKURAN_CHUNK
-      c = { kanvas, bersih: false }
-      this.chunk.set(kunci, c)
+      c = {
+        kanvas,
+        ctx: kanvas.getContext('2d', { alpha: false }),
+        bersih: false,
+        pakaiKe: this.urutanPakai,
+      }
     }
-    if (!c.bersih) {
-      this.gambarChunk(c, cx, cy)
-      c.bersih = true
-    }
+    this.chunk.set(kunci, c)
     return c
   }
 
-  private gambarChunk(c: Chunk, cx: number, cy: number): void {
-    const ctx = c.kanvas.getContext('2d')
-    if (!ctx) return
+  private gambarRentangTile(
+    ctx: CanvasRenderingContext2D, tx0: number, ty0: number, asalPxX: number, asalPxY: number,
+  ): void {
     ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, UKURAN_CHUNK, UKURAN_CHUNK)
-
-    const t = this.terrain
+    const kol = this.kolom
+    const tx2 = Math.min(this.kolom - 1, tx0 + TILE_PER_CHUNK - 1)
+    const ty2 = Math.min(this.baris - 1, ty0 + TILE_PER_CHUNK - 1)
+    const air = gambarDari(TERRAIN.air)
     const datar = gambarDari(TERRAIN.tanahDatar)
     const tinggi = gambarDari(TERRAIN.tanahTinggi)
-    const tx0 = cx * TILE_PER_CHUNK
-    const ty0 = cy * TILE_PER_CHUNK
 
-    const h = (tx: number, ty: number): number => {
-      if (tx < 0 || ty < 0 || tx >= t.kolom || ty >= t.baris) return TINGGI.air
-      return t.tinggi[ty * t.kolom + tx]!
+    // Pass 0: Air hanya di tile air / tepi pantai.
+    if (air) {
+      for (let ty = ty0; ty <= ty2; ty++) {
+        const off = ty * kol
+        const py = asalPxY + (ty - ty0) * TILE
+        for (let tx = tx0; tx <= tx2; tx++) {
+          if (this.butuhAir[off + tx] === 1) {
+            ctx.drawImage(air, 0, 0, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
+          }
+        }
+      }
+    } else {
+      ctx.fillStyle = '#3d7a8c'
+      ctx.fillRect(asalPxX, asalPxY, UKURAN_CHUNK, UKURAN_CHUNK)
     }
-    const ramp = (tx: number, ty: number): boolean =>
-      tx >= 0 && ty >= 0 && tx < t.kolom && ty < t.baris && t.ramp[ty * t.kolom + tx] === 1
 
-    // 1. Lapisan tanah: semua tile bukan air memakai autotile rumput.
+    // Pass 1: Rumput datar.
     if (datar) {
-      for (let dy = 0; dy < TILE_PER_CHUNK; dy++) {
-        for (let dx = 0; dx < TILE_PER_CHUNK; dx++) {
-          const tx = tx0 + dx
-          const ty = ty0 + dy
-          if (h(tx, ty) === TINGGI.air) continue
-          const darat = (a: number, b: number): boolean => h(a, b) !== TINGGI.air
-          const { kol, bar } = selAutotile(darat(tx - 1, ty), darat(tx + 1, ty), darat(tx, ty - 1), darat(tx, ty + 1))
-          ctx.drawImage(
-            datar,
-            (GUGUS_FLAT.rumput + kol) * TILE, bar * TILE, TILE, TILE,
-            dx * TILE, dy * TILE, TILE, TILE,
-          )
+      for (let ty = ty0; ty <= ty2; ty++) {
+        const off = ty * kol
+        const py = asalPxY + (ty - ty0) * TILE
+        for (let tx = tx0; tx <= tx2; tx++) {
+          const sx = this.flatSx[off + tx]!
+          if (sx >= 0) {
+            ctx.drawImage(datar, sx, this.flatSy[off + tx]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
+          }
         }
       }
     }
 
-    // 2. Lapisan plateau + muka tebing + anak tangga ramp.
+    // Pass 2: Plateau, ramp, & muka tebing.
     if (tinggi) {
-      for (let dy = 0; dy < TILE_PER_CHUNK; dy++) {
-        for (let dx = 0; dx < TILE_PER_CHUNK; dx++) {
-          const tx = tx0 + dx
-          const ty = ty0 + dy
-          if (h(tx, ty) !== TINGGI.plateau) continue
-
-          if (ramp(tx, ty)) {
-            const { kol } = selAutotile(ramp(tx - 1, ty), ramp(tx + 1, ty), true, true)
-            ctx.drawImage(tinggi, kol * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, dx * TILE, dy * TILE, TILE, TILE)
-            continue
-          }
-
-          const atas = (a: number, b: number): boolean => h(a, b) === TINGGI.plateau
-          const { kol, bar } = selAutotile(atas(tx - 1, ty), atas(tx + 1, ty), atas(tx, ty - 1), atas(tx, ty + 1))
-          const barPermukaan = Math.min(bar, BARIS_ELEV.permukaanBawah)
-          ctx.drawImage(tinggi, kol * TILE, barPermukaan * TILE, TILE, TILE, dx * TILE, dy * TILE, TILE, TILE)
-
-          // Muka tebing menggantung di bawah tepi bawah plateau.
-          if (!atas(tx, ty + 1)) {
-            ctx.drawImage(
-              tinggi, kol * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE,
-              dx * TILE, (dy + 1) * TILE, TILE, TILE,
-            )
-          }
+      const tebingSy = BARIS_ELEV.tebing * TILE
+      for (let ty = ty0; ty <= ty2; ty++) {
+        const off = ty * kol
+        const py = asalPxY + (ty - ty0) * TILE
+        for (let tx = tx0; tx <= tx2; tx++) {
+          const i = off + tx
+          const tsx = this.tebingSx[i]!
+          if (tsx >= 0) ctx.drawImage(tinggi, tsx, tebingSy, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
+          const esx = this.elevSx[i]!
+          if (esx >= 0) ctx.drawImage(tinggi, esx, this.elevSy[i]!, TILE, TILE, asalPxX + (tx - tx0) * TILE, py, TILE, TILE)
         }
       }
     }
 
-    // 3. Dekorasi: rumput, batu, semak. Ditaruh deterministik dari koordinat
-    //    tile supaya chunk yang digambar ulang selalu sama persis.
-    for (let dy = 0; dy < TILE_PER_CHUNK; dy++) {
-      for (let dx = 0; dx < TILE_PER_CHUNK; dx++) {
-        const tx = tx0 + dx
-        const ty = ty0 + dy
-        if (h(tx, ty) === TINGGI.air || ramp(tx, ty)) continue
-        const acak = cakar(tx, ty)
-        if (acak % 11 !== 0) continue
-        const nomor = String((acak >> 4) % 15 + 1).padStart(2, '0')
-        const deko = DEKO[`deco${nomor}`]
+    // Pass 3: Dekorasi rumput/batu/semak.
+    for (let ty = ty0; ty <= ty2; ty++) {
+      const off = ty * kol
+      const py = asalPxY + (ty - ty0) * TILE
+      for (let tx = tx0; tx <= tx2; tx++) {
+        const dIdx = this.dekoIdx[off + tx]!
+        if (dIdx < 0) continue
+        const deko = DAFTAR_DEKO[dIdx]
         if (!deko) continue
         const im = gambarDari(deko)
         if (!im) continue
         const f = frame(deko, 0)
-        ctx.drawImage(
-          im, f.sx, f.sy, f.sw, f.sh,
-          dx * TILE, dy * TILE + TILE - f.sh, f.sw, f.sh,
-        )
+        ctx.drawImage(im, f.sx, f.sy, f.sw, f.sh, asalPxX + (tx - tx0) * TILE, py + TILE - f.sh, f.sw, f.sh)
       }
     }
-    void url
   }
 }

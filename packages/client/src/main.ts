@@ -44,10 +44,15 @@ class Permainan {
   private lobi: Lobi
   private kursor: HTMLImageElement
   private ctx: CanvasRenderingContext2D | null = null
+  private mctx: CanvasRenderingContext2D | null = null
   private akumulator = 0
   private akumulatorHud = 1
   private akumulatorMinimap = 1
   private waktuTerakhir = 0
+  private posLama = new Map<number, { x: number; y: number }>()
+  private fpsHitung = 0
+  private fpsWaktu = 0
+  private fpsTampil = 0
   private klikTerakhir = { waktu: 0, id: -1 }
   private geserTengah = { aktif: false, x: 0, y: 0 }
   private kursorPotong = new Map<string, string>()
@@ -231,7 +236,8 @@ class Permainan {
     this.hud.akar.append(this.lobi.akar)
     this.hud.akar.querySelector('#panggung')!.append(this.kursor)
 
-    this.ctx = this.hud.kanvas.getContext('2d')
+    this.ctx = this.hud.kanvas.getContext('2d', { alpha: false })
+    this.mctx = this.hud.petaMini.getContext('2d', { alpha: false })
     // Kait debug: memeriksa state dari console tanpa membongkar bundel.
     ;(window as unknown as Record<string, unknown>)['__hftf'] = this
     this.pasangInput()
@@ -438,6 +444,7 @@ class Permainan {
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.posLama.clear()
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
@@ -460,6 +467,7 @@ class Permainan {
     this.lobi.tampil(false)
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.posLama.clear()
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
@@ -877,12 +885,42 @@ class Permainan {
   // Loop
   // -------------------------------------------------------------------------
 
-  private bingkai(t: number): void {
-    const dt = Math.min(0.1, (t - this.waktuTerakhir) / 1000 || 0)
-    this.waktuTerakhir = t
+  /** Menyimpan posisi unit & domba tepat sebelum tick sim untuk interpolasi 60/90/120Hz mulus. */
+  private rekamPosisiLama(): void {
+    const d = this.dunia
+    if (!d) return
+    if (d.tick % 180 === 0) this.posLama.clear()
+    for (let i = 0; i < d.unit.length; i++) {
+      const u = d.unit[i]!
+      const ada = this.posLama.get(u.id)
+      if (ada) { ada.x = u.x; ada.y = u.y }
+      else this.posLama.set(u.id, { x: u.x, y: u.y })
+    }
+    for (let i = 0; i < d.domba.length; i++) {
+      const mbek = d.domba[i]!
+      const ada = this.posLama.get(mbek.id)
+      if (ada) { ada.x = mbek.x; ada.y = mbek.y }
+      else this.posLama.set(mbek.id, { x: mbek.x, y: mbek.y })
+    }
+  }
 
+  private bingkai(t: number): void {
+    let dt = Math.min(0.1, (t - this.waktuTerakhir) / 1000 || 0)
+    this.waktuTerakhir = t
+    // Ukur FPS aktual per detik untuk diagnostik di pita status.
+    this.fpsHitung++
+    if (this.fpsWaktu === 0) this.fpsWaktu = t
+    else if (t - this.fpsWaktu >= 1000) {
+      this.fpsTampil = Math.round((this.fpsHitung * 1000) / (t - this.fpsWaktu))
+      this.fpsHitung = 0
+      this.fpsWaktu = t
+    }
+    // Redam jitter kecil rAF di layar 60Hz (mis. 16.4ms -> 16.67ms) agar tidak selang-seling 0/2 tick.
+    if (Math.abs(dt - DT_TETAP) < 0.0015) dt = DT_TETAP
+
+    let pakaiInterpolasi = false
     if (this.fase === 'main' && this.dunia) {
-      gulirKamera(this.kam, this.tombol, this.input)
+      gulirKamera(this.kam, this.tombol, this.input, dt)
       this.sentuh.langkahJoystick(dt)
       batasiKamera(this.kam)
 
@@ -892,11 +930,13 @@ class Permainan {
       const bolehJalan = this.peran !== 'tamu' && this.overlayPutus === null && !jedaSolo
 
       if (bolehJalan) {
+        pakaiInterpolasi = true
         // Langkah tetap: simulasi TIDAK boleh bergantung pada fps.
         // Batas 4 langkah/frame mencegah spiral lag di CPU HP saat ada lonjakan frame.
         this.akumulator += dt
         let langkah = 0
         while (this.akumulator >= DT_TETAP && langkah < 4) {
+          this.rekamPosisiLama()
           if (this.ai && this.dunia.hasil.jenis === 'berlangsung') {
             for (const p of langkahAi(this.dunia, this.ai)) terapkanPerintah(this.dunia, 'red', p)
           }
@@ -924,7 +964,8 @@ class Permainan {
     this.efek.langkah(dt)
     this.hud.langkahToast(dt)
     this.akumulatorMinimap += dt
-    this.gambar()
+    const alpha = pakaiInterpolasi ? Math.max(0, Math.min(1, this.akumulator / DT_TETAP)) : 1
+    this.gambar(alpha)
     if (this.fase === 'main') {
       this.akumulatorHud += dt
       if (this.akumulatorHud >= 0.1) {
@@ -935,11 +976,10 @@ class Permainan {
     requestAnimationFrame((n) => this.bingkai(n))
   }
 
-  private gambar(): void {
+  private gambar(alpha = 1): void {
     const ctx = this.ctx
     if (!ctx) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.clearRect(0, 0, this.hud.kanvas.width, this.hud.kanvas.height)
     if (!this.dunia || this.fase === 'muat' || this.fase === 'lobi') {
       ctx.fillStyle = '#1d2a33'
       ctx.fillRect(0, 0, this.hud.kanvas.width, this.hud.kanvas.height)
@@ -961,6 +1001,8 @@ class Permainan {
       hoverSumber: this.input.sumberHover,
       timSaya: this.timSaya,
       fog: true,
+      posLama: this.posLama,
+      alpha,
     })
 
     this.efek.gambar(ctx)
@@ -996,9 +1038,11 @@ class Permainan {
 
     if (this.akumulatorMinimap >= 0.066) {
       this.akumulatorMinimap = 0
-      const mctx = this.hud.petaMini.getContext('2d')
-      if (mctx && this.minimap) {
-        this.minimap.gambar(mctx, this.kam, this.hud.petaMini.width, this.hud.petaMini.height, this.timSaya)
+      if (this.mctx && this.minimap) {
+        this.minimap.gambar(
+          this.mctx, this.kam, this.hud.petaMini.width, this.hud.petaMini.height,
+          this.timSaya, this.fog?.kanvas,
+        )
       }
     }
   }
@@ -1007,8 +1051,11 @@ class Permainan {
     if (!this.dunia) return
     const unit = this.unitTerpilih()
     const bg = this.bangunanTerpilih()
-    this.hud.perbaruiPita(this.dunia, this.timSaya,
-      this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)')
+    this.hud.perbaruiPita(
+      this.dunia, this.timSaya,
+      this.peran === 'solo' ? 'SOLO vs AI' : this.peran === 'host' ? 'LAN (HOST)' : 'LAN (GUEST)',
+      this.fpsTampil,
+    )
     this.hud.perbaruiSumberDaya(this.dunia, this.timSaya)
     this.hud.perbaruiTabUnit(this.dunia, this.timSaya, unit)
     this.hud.perbaruiSeleksi(

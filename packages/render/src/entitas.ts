@@ -232,6 +232,30 @@ export interface OpsiGambar {
   timSaya: Tim
   /** Fog aktif? Solo tetap memakainya; mematikannya hanya untuk debug. */
   fog: boolean
+  /** Posisi tick sebelumnya + fraksi interpolasi [0..1] agar 90/120Hz mulus tanpa patah-patah. */
+  posLama?: ReadonlyMap<number, { x: number; y: number }>
+  alpha?: number
+}
+
+type ItemRender =
+  | { jenis: 0; y: number; obj: Dunia['tunggul'][number] }
+  | { jenis: 1; y: number; obj: Dunia['pohon'][number] }
+  | { jenis: 2; y: number; obj: Dunia['tambang'][number] }
+  | { jenis: 3; y: number; obj: Dunia['domba'][number]; x: number; yr: number }
+  | { jenis: 4; y: number; obj: Dunia['daging'][number] }
+  | { jenis: 5; y: number; obj: Bangunan }
+  | { jenis: 6; y: number; obj: Unit; x: number; yr: number }
+
+const antreanBersama: ItemRender[] = []
+
+function posisiHalus(
+  id: number, x: number, y: number,
+  posLama: ReadonlyMap<number, { x: number; y: number }> | undefined, alpha: number,
+): [number, number] {
+  if (!posLama || alpha >= 0.999) return [x, y]
+  const lama = posLama.get(id)
+  if (!lama || Math.abs(x - lama.x) > 64 || Math.abs(y - lama.y) > 64) return [x, y]
+  return [lama.x + (x - lama.x) * alpha, lama.y + (y - lama.y) * alpha]
 }
 
 const cocokSumber = (a: SumberVisual | null | undefined, jenis: SumberVisual['jenis'], id: number): boolean =>
@@ -272,118 +296,126 @@ function gambarCincinSumber(
 }
 
 /**
- * Menggambar seluruh entitas dengan urutan kedalaman berdasarkan y — supaya
- * yang di depan menutupi yang di belakang, bukan menurut urutan array.
+ * Menggambar seluruh entitas dengan urutan kedalaman berdasarkan y — tanpa alokasi
+ * closure per-entitas tiap frame (bebas jeda GC di HP).
  */
 export function gambarEntitas(
   ctx: CanvasRenderingContext2D, dunia: Dunia, kam: Kamera, opsi: OpsiGambar,
 ): void {
   const p = pandangan(kam)
   const t = performance.now() / 1000
+  const alpha = opsi.alpha ?? 1
+  const posLama = opsi.posLama
 
-  type Item = { y: number; gambar: () => void }
-  const antrean: Item[] = []
-  const diLayar = (x: number, y: number): boolean => x > p.x1 && x < p.x2 && y > p.y1 && y < p.y2
-  /** Terlihat SEKARANG — unit musuh hanya boleh tampak di sini (PRD §12.1). */
+  const antrean = antreanBersama
+  antrean.length = 0
+  const x1 = p.x1, x2 = p.x2, y1 = p.y1, y2 = p.y2
+  const fogAktif = opsi.fog
+  const timSaya = opsi.timSaya
+  const diLayar = (x: number, y: number): boolean => x > x1 && x < x2 && y > y1 && y < y2
   const terlihat = (x: number, y: number): boolean =>
-    diLayar(x, y) && (!opsi.fog || terlihatDi(dunia, opsi.timSaya, x, y))
-  /** Pernah dilihat — terrain & bangunan diingat bentuk terakhirnya. */
+    diLayar(x, y) && (!fogAktif || terlihatDi(dunia, timSaya, x, y))
   const diingat = (x: number, y: number): boolean =>
-    diLayar(x, y) && (!opsi.fog || pernahLihat(dunia, opsi.timSaya, x, y))
+    diLayar(x, y) && (!fogAktif || pernahLihat(dunia, timSaya, x, y))
 
-  // Tunggul pohon (Tree.png baris 2 kolom 0 = frame 8), tumbuh kembali otomatis
   for (const tg of dunia.tunggul) {
-    if (!diingat(tg.x, tg.y)) continue
-    const ter = cocokSumber(opsi.terpilihSumber, 'tunggul', tg.id)
-    const hov = cocokSumber(opsi.hoverSumber, 'tunggul', tg.id)
-    antrean.push({
-      y: tg.y - 4,
-      gambar: () => {
+    if (diingat(tg.x, tg.y)) antrean.push({ jenis: 0, y: tg.y - 4, obj: tg })
+  }
+  for (const o of dunia.pohon) {
+    if (diingat(o.x, o.y)) antrean.push({ jenis: 1, y: o.y, obj: o })
+  }
+  for (const o of dunia.tambang) {
+    if (diingat(o.x, o.y)) antrean.push({ jenis: 2, y: o.y, obj: o })
+  }
+  for (const o of dunia.domba) {
+    if (!diingat(o.x, o.y)) continue
+    const [rx, ry] = posisiHalus(o.id, o.x, o.y, posLama, alpha)
+    antrean.push({ jenis: 3, y: ry, obj: o, x: rx, yr: ry })
+  }
+  for (const o of dunia.daging) {
+    if (diingat(o.x, o.y)) antrean.push({ jenis: 4, y: o.y, obj: o })
+  }
+
+  let rallyAktif: Bangunan | null = null
+  for (const b of dunia.bangunan) {
+    if (b.tim !== timSaya ? !diingat(b.x, b.y) : !diLayar(b.x, b.y)) continue
+    if (
+      opsi.terpilihBangunan === b.id &&
+      b.tim === timSaya &&
+      b.fase === 'aktif' &&
+      (BANGUNAN[b.jenis].melatih.length > 0 || b.jenis === 'altar')
+    ) {
+      rallyAktif = b
+    }
+    antrean.push({ jenis: 5, y: b.y, obj: b })
+  }
+
+  for (const u of dunia.unit) {
+    if (u.tim !== timSaya ? !terlihat(u.x, u.y) : !diLayar(u.x, u.y)) continue
+    const [rx, ry] = posisiHalus(u.id, u.x, u.y, posLama, alpha)
+    antrean.push({ jenis: 6, y: ry, obj: u, x: rx, yr: ry })
+  }
+
+  antrean.sort((a, b) => a.y - b.y)
+
+  for (let i = 0; i < antrean.length; i++) {
+    const item = antrean[i]!
+    switch (item.jenis) {
+      case 0: {
+        const tg = item.obj
+        const ter = cocokSumber(opsi.terpilihSumber, 'tunggul', tg.id)
+        const hov = cocokSumber(opsi.hoverSumber, 'tunggul', tg.id)
         if (ter || hov) {
           gambarCincinSumber(ctx, tg.x, tg.y, 24, '#d4b07a', ter, `Tumbuh ${Math.max(1, Math.ceil(tg.sisaTumbuh))}s`, tg.y - 26)
         }
         sprite(ctx, SUMBER.pohon, 8, tg.x, tg.y, 0.62, false, 0.78)
-      },
-    })
-  }
-
-  // Pohon, tambang, domba, daging
-  for (const o of dunia.pohon) {
-    if (!diingat(o.x, o.y)) continue
-    const ter = cocokSumber(opsi.terpilihSumber, 'pohon', o.id)
-    const hov = cocokSumber(opsi.hoverSumber, 'pohon', o.id)
-    antrean.push({
-      y: o.y,
-      gambar: () => {
+        break
+      }
+      case 1: {
+        const o = item.obj
+        const ter = cocokSumber(opsi.terpilihSumber, 'pohon', o.id)
+        const hov = cocokSumber(opsi.hoverSumber, 'pohon', o.id)
         if (ter || hov) {
           gambarCincinSumber(ctx, o.x, o.y, 32, '#6ff088', ter, `${Math.round(o.kayu)} Kayu`, o.y - 84)
         }
         sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78)
-      },
-    })
-  }
-  for (const o of dunia.tambang) {
-    if (!diingat(o.x, o.y)) continue
-    const ter = cocokSumber(opsi.terpilihSumber, 'tambang', o.id)
-    const hov = cocokSumber(opsi.hoverSumber, 'tambang', o.id)
-    const rx = o.jenis === 'mine' ? 62 : 34
-    antrean.push({
-      y: o.y,
-      gambar: () => {
+        break
+      }
+      case 2: {
+        const o = item.obj
+        const ter = cocokSumber(opsi.terpilihSumber, 'tambang', o.id)
+        const hov = cocokSumber(opsi.hoverSumber, 'tambang', o.id)
         if (ter || hov) {
+          const rx = o.jenis === 'mine' ? 62 : 34
           gambarCincinSumber(ctx, o.x, o.y, rx, '#ffd86b', ter, `${Math.round(o.gold)} Gold`, o.y - (o.jenis === 'mine' ? 76 : 48))
         }
         sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82)
-      },
-    })
-  }
-  for (const o of dunia.domba) {
-    if (!diingat(o.x, o.y)) continue
-    const ter = cocokSumber(opsi.terpilihSumber, 'domba', o.id)
-    const hov = cocokSumber(opsi.hoverSumber, 'domba', o.id)
-    antrean.push({
-      y: o.y,
-      gambar: () => {
+        break
+      }
+      case 3: {
+        const o = item.obj
+        const ter = cocokSumber(opsi.terpilihSumber, 'domba', o.id)
+        const hov = cocokSumber(opsi.hoverSumber, 'domba', o.id)
         if (ter || hov) {
-          gambarCincinSumber(ctx, o.x, o.y, 24, '#ff9eb5', ter, `Domba • ${o.daging} Daging`, o.y - 38)
+          gambarCincinSumber(ctx, item.x, item.yr, 24, '#ff9eb5', ter, `Domba • ${o.daging} Daging`, item.yr - 38)
         }
-        bayangan(ctx, o.x, o.y, 12)
+        bayangan(ctx, item.x, item.yr, 12)
         const a = o.bergerak ? SUMBER.dombaLompat : SUMBER.dombaDiam
-        sprite(ctx, a, Math.floor(t * a.fps + o.id) % a.kolom, o.x, o.y, 0.56, o.arah < 0, 0.74)
-      },
-    })
-  }
-  for (const o of dunia.daging) {
-    if (!diingat(o.x, o.y)) continue
-    const ter = cocokSumber(opsi.terpilihSumber, 'daging', o.id)
-    const hov = cocokSumber(opsi.hoverSumber, 'daging', o.id)
-    antrean.push({
-      y: o.y,
-      gambar: () => {
+        sprite(ctx, a, Math.floor(t * a.fps + o.id) % a.kolom, item.x, item.yr, 0.56, o.arah < 0, 0.74)
+        break
+      }
+      case 4: {
+        const o = item.obj
+        const ter = cocokSumber(opsi.terpilihSumber, 'daging', o.id)
+        const hov = cocokSumber(opsi.hoverSumber, 'daging', o.id)
         if (ter || hov) {
           gambarCincinSumber(ctx, o.x, o.y, 22, '#ff8a8a', ter, `+${o.jumlah} Daging`, o.y - 30)
         }
         sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.52, false, 0.74)
-      },
-    })
-  }
-
-  // Bangunan
-  let rallyAktif: { b: Bangunan } | null = null
-  for (const b of dunia.bangunan) {
-    if (b.tim !== opsi.timSaya && !diingat(b.x, b.y)) continue
-    if (b.tim === opsi.timSaya && !diLayar(b.x, b.y)) continue
-    if (
-      opsi.terpilihBangunan === b.id &&
-      b.tim === opsi.timSaya &&
-      b.fase === 'aktif' &&
-      (BANGUNAN[b.jenis].melatih.length > 0 || b.jenis === 'altar')
-    ) {
-      rallyAktif = { b }
-    }
-    antrean.push({
-      y: b.y,
-      gambar: () => {
+        break
+      }
+      case 5: {
+        const b = item.obj
         const def = BANGUNAN[b.jenis]
         if (b.fase !== 'hancur') bayangan(ctx, b.x, b.y, def.w * 0.38)
         const a = asetBangunan(b, b.tim)
@@ -395,74 +427,66 @@ export function gambarEntitas(
           ctx.strokeRect(b.x - def.w / 2, b.y - def.h * 0.55, def.w, def.h * 0.7)
         }
 
-        // Api sesuai ambang PRD §3: <65% satu titik, <35% berkobar.
         if (b.fase === 'aktif' && b.hp < b.hpMaks * AMBANG_API.satuTitik) {
           const titik = b.hp < b.hpMaks * AMBANG_API.berkobar ? 3 : 1
-          for (let i = 0; i < titik; i++) {
-            const ox = (i - (titik - 1) / 2) * def.w * 0.28
-            sprite(ctx, EFEK.api, Math.floor(t * EFEK.api.fps + i * 3), b.x + ox, b.y - def.h * 0.25, 0.6)
+          for (let j = 0; j < titik; j++) {
+            const ox = (j - (titik - 1) / 2) * def.w * 0.28
+            sprite(ctx, EFEK.api, Math.floor(t * EFEK.api.fps + j * 3), b.x + ox, b.y - def.h * 0.25, 0.6)
           }
         }
 
         if (b.fase !== 'hancur' && b.hp < b.hpMaks) {
           barHp(ctx, b.x, b.y - def.h * 0.62, def.w * 0.7, b.hp / b.hpMaks, b.tim)
         }
-      },
-    })
-  }
-
-  // Unit
-  for (const u of dunia.unit) {
-    if (u.tim !== opsi.timSaya && !terlihat(u.x, u.y)) continue
-    if (u.tim === opsi.timSaya && !diLayar(u.x, u.y)) continue
-    antrean.push({
-      y: u.y,
-      gambar: () => {
+        break
+      }
+      case 6: {
+        const u = item.obj
+        const ux = item.x
+        const uy = item.yr
         const terpilih = opsi.terpilihUnit.has(u.id)
         if (terpilih) {
-          ctx.strokeStyle = u.tim === opsi.timSaya ? '#8ef08e' : '#f08e8e'
+          ctx.strokeStyle = u.tim === timSaya ? '#8ef08e' : '#f08e8e'
           ctx.lineWidth = 2
           ctx.beginPath()
-          ctx.ellipse(u.x, u.y + 4, 22, 10, 0, 0, Math.PI * 2)
+          ctx.ellipse(ux, uy + 4, 22, 10, 0, 0, Math.PI * 2)
           ctx.stroke()
         }
         if (u.hero && u.campId === null) {
           ctx.fillStyle = 'rgba(255,214,107,0.25)'
           ctx.beginPath()
-          ctx.ellipse(u.x, u.y + 4, 26, 12, 0, 0, Math.PI * 2)
+          ctx.ellipse(ux, uy + 4, 26, 12, 0, 0, Math.PI * 2)
           ctx.fill()
         }
 
-        bayangan(ctx, u.x, u.y, u.hero ? 20 : 15)
+        bayangan(ctx, ux, uy, u.hero ? 20 : 15)
         const { aset, indeks, skala } = asetUnit(u, u.tim, t)
-        sprite(ctx, aset, indeks, u.x, u.y, skala, u.arah < 0)
+        sprite(ctx, aset, indeks, ux, uy, skala, u.arah < 0)
 
-        // Pawn membawa resource di atas tangan (emas/kayu/daging)
         if (u.peran === 'pawn' && u.bawaanJenis) {
           const asetBawa = u.bawaanJenis === 'gold'
             ? SUMBER.goldDiam
             : u.bawaanJenis === 'kayu' ? SUMBER.kayuDiam : SUMBER.dagingDiam
           const ayun = u.aksi === 'bawaLari' ? Math.sin(t * 14) * 2 : 0
-          sprite(ctx, asetBawa, 0, u.x, u.y - 36 + ayun, 0.42, false, 0.6)
+          sprite(ctx, asetBawa, 0, ux, uy - 36 + ayun, 0.42, false, 0.6)
         }
 
-        if (u.hp < u.hpMaks || terpilih) barHp(ctx, u.x, u.y - 62, 40, u.hp / u.hpMaks, u.tim)
+        if (u.hp < u.hpMaks || terpilih) barHp(ctx, ux, uy - 62, 40, u.hp / u.hpMaks, u.tim)
         if (u.hero && u.campId === null) {
           ctx.fillStyle = '#ffd86b'
           ctx.font = "bold 12px 'Pixelify Sans', system-ui"
           ctx.textAlign = 'center'
-          ctx.fillText(`Lv${u.level}`, u.x, u.y - 70)
+          ctx.fillText(`Lv${u.level}`, ux, uy - 70)
         }
-      },
-    })
+        break
+      }
+    }
   }
-
-  antrean.sort((a, b) => a.y - b.y)
-  for (const item of antrean) item.gambar()
+  antrean.length = 0
 
   // Garis & Bendera Rally Point bangunan yang sedang dipilih
   if (rallyAktif) {
-    const { b } = rallyAktif
+    const b = rallyAktif
     ctx.save()
     ctx.setLineDash([7, 5])
     ctx.strokeStyle = 'rgba(255, 216, 107, 0.85)'
@@ -478,7 +502,7 @@ export function gambarEntitas(
 
   // Proyektil di atas semuanya
   for (const pr of dunia.proyektil) {
-    if (opsi.fog && !terlihatDi(dunia, opsi.timSaya, pr.x, pr.y)) continue
+    if (fogAktif && !terlihatDi(dunia, timSaya, pr.x, pr.y)) continue
     const U = asetTim(pr.tim, UNIT_BLUE, UNIT_RED)
     const a = pr.jenis === 'panah' ? U.panah : U.mageOrb
     const rot = pr.jenis === 'panah' ? Math.atan2(pr.ty - pr.y, pr.tx - pr.x) : 0

@@ -61,7 +61,6 @@ img, canvas { image-rendering: pixelated; }
   overflow: hidden;
   transform-origin: center center;
   transform: translate(-50%, -50%);
-  will-change: transform;
   outline: 2px solid #090705;
 }
 
@@ -179,7 +178,7 @@ img, canvas { image-rendering: pixelated; }
   color: var(--tinta); min-height: 38px;
   ${tigaIris(UI.pitaBlue, 18, basis)};
   z-index: 12;
-  contain: layout style;
+  contain: layout paint style;
 }
 #pita-status.red { ${tigaIris(UI.pitaRed, 18, basis)}; }
 #pita-status .pisah { opacity: 0.45; }
@@ -197,7 +196,7 @@ img, canvas { image-rendering: pixelated; }
   ${sembilanIris(UI.panelUkir, 16, basis, 10)};
   background: var(--kayu-gelap);
   overflow: hidden;
-  contain: layout style;
+  contain: layout paint style;
 }
 #sisi > *, #tab > *, #kisi-produksi > * { min-width: 0; }
 
@@ -258,7 +257,6 @@ img, canvas { image-rendering: pixelated; }
   background: rgba(16, 11, 7, 0.62);
   pointer-events: none;
   border-radius: 2px;
-  transition: height 0.08s linear;
 }
 .badge-persen {
   position: absolute;
@@ -323,7 +321,7 @@ img, canvas { image-rendering: pixelated; }
   background: var(--kayu-gelap);
   overflow: hidden;
   z-index: 11;
-  contain: layout style;
+  contain: layout paint style;
 }
 
 #seleksi-kiri {
@@ -352,7 +350,7 @@ img, canvas { image-rendering: pixelated; }
   border-radius: 3px;
   overflow: hidden;
 }
-.hp-isi { height: 100%; background: #52c95f; transition: width 0.08s linear; }
+.hp-isi { height: 100%; background: #52c95f; }
 .hp-teks {
   position: absolute; inset: 0;
   display: grid; place-items: center;
@@ -413,7 +411,7 @@ img, canvas { image-rendering: pixelated; }
 .progres-atas { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 700; color: var(--tinta); }
 .progres-persen { color: #7a2d00; font-size: 13px; }
 .progres-bar { width: 100%; height: 10px; background: #21160e; border: 1px solid #593b20; border-radius: 3px; overflow: hidden; }
-.progres-isi { height: 100%; background: linear-gradient(90deg, #d89b28, #ffe066); transition: width 0.08s linear; }
+.progres-isi { height: 100%; background: linear-gradient(90deg, #d89b28, #ffe066); }
 .antrean-baris { display: flex; gap: 4px; margin-top: 2px; flex-wrap: nowrap; }
 .antrean-slot {
   display: inline-flex; align-items: center; gap: 3px;

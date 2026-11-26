@@ -30,7 +30,7 @@ export class Minimap {
     const k = document.createElement('canvas')
     k.width = w
     k.height = h
-    const c = k.getContext('2d')
+    const c = k.getContext('2d', { alpha: false })
     if (!c) return k
 
     const t = this.dunia.terrain
@@ -50,11 +50,13 @@ export class Minimap {
     return k
   }
 
-  gambar(ctx: CanvasRenderingContext2D, kam: Kamera, w: number, h: number, timSaya: Tim): void {
+  gambar(
+    ctx: CanvasRenderingContext2D, kam: Kamera, w: number, h: number, timSaya: Tim,
+    fogBersama?: HTMLCanvasElement | null,
+  ): void {
     if (!this.latar || this.latar.width !== w || this.latar.height !== h) {
       this.latar = this.buatLatar(w, h)
     }
-    ctx.clearRect(0, 0, w, h)
     ctx.drawImage(this.latar, 0, 0)
 
     const px = (x: number): number => (x / DUNIA_W) * w
@@ -91,36 +93,41 @@ export class Minimap {
       ctx.stroke()
     }
 
-    // Lapisan fog di minimap memakai tekstur offscreen 96x96 (1x drawImage, bukan 9.216 fillRect!).
-    const t2 = this.dunia.terrain
-    if (!this.fogKanvas || this.fogKanvas.width !== t2.kolom || this.fogKanvas.height !== t2.baris) {
-      this.fogKanvas = document.createElement('canvas')
-      this.fogKanvas.width = t2.kolom
-      this.fogKanvas.height = t2.baris
-      this.fogCtx = this.fogKanvas.getContext('2d')
-      this.fogData = this.fogCtx ? this.fogCtx.createImageData(t2.kolom, t2.baris) : null
-      this.slotFogTerakhir = -1
-    }
-    const slotFog = Math.floor(this.dunia.tick / TICK_PER_FOG)
-    if (this.fogCtx && this.fogData && (slotFog !== this.slotFogTerakhir || timSaya !== this.timFogTerakhir)) {
-      this.slotFogTerakhir = slotFog
-      this.timFogTerakhir = timSaya
-      const fog = this.dunia.fog[timSaya]
-      const pxFog = this.fogData.data
-      const total = t2.kolom * t2.baris
-      for (let i = 0; i < total; i++) {
-        const o = i * 4
-        pxFog[o] = 6
-        pxFog[o + 1] = 8
-        pxFog[o + 2] = 14
-        pxFog[o + 3] = fog.kini[i] === 1 ? 0 : fog.pernah[i] === 1 ? 115 : 242
+    // Lapisan fog di minimap: pakai tekstur fogBersama dari LapisanFog (nol putImageData duplikat!)
+    // atau fallback ke tekstur offscreen internal jika dipanggil mandiri.
+    let sumberFog: HTMLCanvasElement | null = fogBersama ?? null
+    if (!sumberFog) {
+      const t2 = this.dunia.terrain
+      if (!this.fogKanvas || this.fogKanvas.width !== t2.kolom || this.fogKanvas.height !== t2.baris) {
+        this.fogKanvas = document.createElement('canvas')
+        this.fogKanvas.width = t2.kolom
+        this.fogKanvas.height = t2.baris
+        this.fogCtx = this.fogKanvas.getContext('2d')
+        this.fogData = this.fogCtx ? this.fogCtx.createImageData(t2.kolom, t2.baris) : null
+        this.slotFogTerakhir = -1
       }
-      this.fogCtx.putImageData(this.fogData, 0, 0)
+      const slotFog = Math.floor(this.dunia.tick / TICK_PER_FOG)
+      if (this.fogCtx && this.fogData && (slotFog !== this.slotFogTerakhir || timSaya !== this.timFogTerakhir)) {
+        this.slotFogTerakhir = slotFog
+        this.timFogTerakhir = timSaya
+        const fog = this.dunia.fog[timSaya]
+        const pxFog = this.fogData.data
+        const total = t2.kolom * t2.baris
+        for (let i = 0; i < total; i++) {
+          const o = i * 4
+          pxFog[o] = 6
+          pxFog[o + 1] = 8
+          pxFog[o + 2] = 14
+          pxFog[o + 3] = fog.kini[i] === 1 ? 0 : fog.pernah[i] === 1 ? 115 : 242
+        }
+        this.fogCtx.putImageData(this.fogData, 0, 0)
+      }
+      sumberFog = this.fogKanvas
     }
-    if (this.fogKanvas) {
+    if (sumberFog) {
       const halus = ctx.imageSmoothingEnabled
       ctx.imageSmoothingEnabled = true
-      ctx.drawImage(this.fogKanvas, 0, 0, w, h)
+      ctx.drawImage(sumberFog, 0, 0, w, h)
       ctx.imageSmoothingEnabled = halus
     }
 
