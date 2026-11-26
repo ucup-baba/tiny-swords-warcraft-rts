@@ -23,13 +23,13 @@ export function buatTerrainDariCustom(data: DataPetaCustom): { terrain: Terrain;
     bioma: data.bioma,
   }
 
-  // Pastikan setiap jembatan bisa diinjak (>= dataran) walaupun data lama sempat berbeda
+  // Pastikan setiap jembatan bisa diinjak (>= dataran) dan ramp tidak berada di atas air
   for (let i = 0; i < total; i++) {
     if (t.jembatan[i]! > 0 && t.tinggi[i] === TINGGI.air) {
       t.tinggi[i] = TINGGI.dataran
     }
-    if (t.ramp[i]! > 0 && t.tinggi[i]! < TINGGI.plateau) {
-      t.tinggi[i] = TINGGI.plateau
+    if (t.ramp[i]! > 0 && t.tinggi[i] === TINGGI.air) {
+      t.tinggi[i] = TINGGI.dataran
     }
   }
 
@@ -45,9 +45,9 @@ export function buatTerrainDariCustom(data: DataPetaCustom): { terrain: Terrain;
   }))
 
   const ramp: { tx: number; ty: number }[] = []
-  for (let ty = 0; ty < bar; ty++) {
-    for (let tx = 0; tx < kol; tx++) {
-      if (t.ramp[ty * kol + tx]! > 0 && tx % 2 === 0 && ty % 2 === 0) {
+  for (let ty = 0; ty < bar && ramp.length < 64; ty++) {
+    for (let tx = 0; tx < kol && ramp.length < 64; tx++) {
+      if (t.ramp[ty * kol + tx]! > 0) {
         ramp.push({ tx, ty })
       }
     }
@@ -228,8 +228,8 @@ export function buatTemplatePetaCustom(
     lingkaran(48, 48, 6, TINGGI.air)
     kotak(42, 23, 54, 34, TINGGI.plateau)
     kotak(42, 62, 54, 73, TINGGI.plateau)
-    rampKotak(47, 23, 49, 24, TINGGI.plateau, 1)
-    rampKotak(47, 72, 49, 73, TINGGI.plateau, 1)
+    rampKotak(47, 23, 49, 23, TINGGI.plateau, 1)
+    rampKotak(47, 74, 49, 74, TINGGI.dataran, 1)
     jalan(20, 74, 48, 28)
     jalan(75, 21, 48, 67)
     spawn.push({ slot: 0, tx: 19, ty: 75 }, { slot: 1, tx: 76, ty: 20 })
@@ -290,43 +290,41 @@ export function buatTemplatePetaCustom(
   kotak(36, 19, 59, 30, TINGGI.dataran)
   kotak(36, 65, 59, 76, TINGGI.dataran)
 
-  // Tangga sudut Lv.2 -> Lv.1
-  rampKotak(19, 22, 21, 23, TINGGI.plateau, 1)
-  rampKotak(22, 19, 23, 21, TINGGI.plateau, 3)
-  rampKotak(74, 22, 76, 23, TINGGI.plateau, 1)
-  rampKotak(72, 19, 73, 21, TINGGI.plateau, 2)
-  rampKotak(19, 72, 21, 73, TINGGI.plateau, 1)
-  rampKotak(22, 74, 23, 76, TINGGI.plateau, 3)
-  rampKotak(74, 72, 76, 73, TINGGI.plateau, 1)
-  rampKotak(72, 74, 73, 76, TINGGI.plateau, 2)
+  // Tangga sudut 1-baris (selatan rata dinding tebing Lv.2)
+  rampKotak(19, 24, 21, 24, TINGGI.dataran, 1)
+  rampKotak(23, 19, 23, 21, TINGGI.plateau, 3)
+  rampKotak(74, 24, 76, 24, TINGGI.dataran, 1)
+  rampKotak(72, 19, 72, 21, TINGGI.plateau, 2)
+  rampKotak(19, 72, 21, 72, TINGGI.plateau, 1)
+  rampKotak(23, 74, 23, 76, TINGGI.plateau, 3)
+  rampKotak(74, 72, 76, 72, TINGGI.plateau, 1)
+  rampKotak(72, 74, 72, 76, TINGGI.plateau, 2)
 
-  // Tangga pusat Lv.1 -> Lv.2
-  rampKotak(46, 37, 49, 38, TINGGI.plateau, 1)
-  rampKotak(46, 57, 49, 58, TINGGI.plateau, 1)
-  rampKotak(37, 46, 38, 49, TINGGI.plateau, 2)
-  rampKotak(57, 46, 58, 49, TINGGI.plateau, 3)
+  // Tangga pusat Lv.1 <-> Lv.2 (1 baris)
+  rampKotak(46, 37, 49, 37, TINGGI.plateau, 1)
+  rampKotak(46, 59, 49, 59, TINGGI.dataran, 1)
+  rampKotak(37, 46, 37, 49, TINGGI.plateau, 2)
+  rampKotak(58, 46, 58, 49, TINGGI.plateau, 3)
 
-  // Tangga puncak Lv.2 -> Lv.3 (Puncak Tertinggi!)
-  rampKotak(47, 43, 48, 44, TINGGI.puncak, 1)
-  rampKotak(47, 51, 48, 52, TINGGI.puncak, 1)
-  rampKotak(43, 47, 44, 48, TINGGI.puncak, 2)
-  rampKotak(51, 47, 52, 48, TINGGI.puncak, 3)
+  // Tangga puncak Lv.2 <-> Lv.3 (Puncak Tertinggi, 1 baris!)
+  rampKotak(47, 43, 48, 43, TINGGI.puncak, 1)
+  rampKotak(47, 53, 48, 53, TINGGI.plateau, 1)
+  rampKotak(43, 47, 43, 48, TINGGI.puncak, 2)
+  rampKotak(52, 47, 52, 48, TINGGI.puncak, 3)
 
-  // Jalan pasir
+  // Jalan pasir menerus menempel ke kedua ujung jembatan & tangga
   jalan(14, 14, 20, 20)
   jalan(81, 14, 75, 20)
   jalan(14, 81, 20, 75)
   jalan(81, 81, 75, 75)
   jalan(48, 20, 48, 75)
   jalan(20, 48, 75, 48)
-  jalan(20, 24, 20, 48)
-  jalan(75, 24, 75, 48)
-  jalan(20, 48, 20, 71)
-  jalan(75, 48, 75, 71)
-  jalan(24, 20, 48, 20)
-  jalan(48, 20, 71, 20)
-  jalan(24, 75, 48, 75)
-  jalan(48, 75, 71, 75)
+  jalan(20, 20, 20, 48)
+  jalan(75, 20, 75, 48)
+  jalan(20, 48, 20, 75)
+  jalan(75, 48, 75, 75)
+  jalan(20, 20, 75, 20)
+  jalan(20, 75, 75, 75)
 
   spawn.push(
     { slot: 0, tx: 14, ty: 14 },

@@ -4,8 +4,8 @@ import {
 } from '@hftf/shared'
 import { describe, expect, it } from 'vitest'
 import {
-  bolehLangkah, buatDunia, buatTemplatePetaCustom, eksporPetaBawaanKeCustom, hashDunia,
-  langkahBanyak, type Terrain,
+  bolehLangkah, buatDunia, buatTemplatePetaCustom, buatTerrainDariCustom, cariJalur,
+  eksporPetaBawaanKeCustom, hashDunia, keTengahPiksel, keTile, langkahBanyak, type Terrain,
 } from '../src/index.js'
 
 function buatTerrainDatar(): Terrain {
@@ -216,5 +216,72 @@ describe('Terrain 3-Tingkat, Template, & Ekspor Peta Bawaan (@hftf/sim)', () => 
       langkahBanyak(d, 60)
       expect(d.bangunan.filter((b) => b.jenis === 'castle')).toHaveLength(jumlahSpawn)
     }
+  })
+
+  it('tangga tunggal 1x1 di tebing selatan Lv.2 (h=1) & Lv.3 (h=2) mempertahankan ketinggian, valid, & dilalui A* tepat lewat 1 sel tersebut', () => {
+    const total = PETA_KOLOM * PETA_BARIS
+    const tinggi = new Uint8Array(total).fill(TINGGI.dataran)
+    const ramp = new Uint8Array(total)
+    const kosong = new Uint8Array(total)
+
+    // Benteng Lv.2 di [20..30, 20..30] & Puncak Lv.3 di [22..28, 22..26]
+    for (let ty = 20; ty <= 30; ty++) {
+      for (let tx = 20; tx <= 30; tx++) tinggi[ty * PETA_KOLOM + tx] = TINGGI.plateau
+    }
+    for (let ty = 22; ty <= 26; ty++) {
+      for (let tx = 22; tx <= 28; tx++) tinggi[ty * PETA_KOLOM + tx] = TINGGI.puncak
+    }
+
+    // Pasang tepat SATU tile tangga 1x1 di tebing selatan Lv.2 (25, 31) pada h=1
+    // dan SATU tile tangga 1x1 di tebing selatan Lv.3 (25, 27) pada h=2
+    ramp[31 * PETA_KOLOM + 25] = 1
+    ramp[27 * PETA_KOLOM + 25] = 1
+
+    const data: DataPetaCustom = {
+      versi: 1,
+      id: 'tangga-1x1',
+      nama: 'Tangga 1x1 Murni',
+      bioma: 1,
+      kolom: PETA_KOLOM,
+      baris: PETA_BARIS,
+      tinggiRle: encodeRle(tinggi),
+      rampRle: encodeRle(ramp),
+      jembatanRle: encodeRle(kosong),
+      jalanRle: encodeRle(kosong),
+      entitas: {
+        spawn: [
+          { slot: 0, tx: 14, ty: 35 },
+          { slot: 1, tx: 25, ty: 24 },
+        ],
+        pohon: [],
+        tambang: [],
+        domba: [],
+        camp: [],
+        deko: [],
+        bangunan: [],
+        bonus: [],
+      },
+      diubahPada: 1,
+    }
+
+    const hasil = buatTerrainDariCustom(data)
+    const t = hasil.terrain
+    // Tinggi tile tangga 1x1 tidak dipaksa naik ke plateau
+    expect(t.tinggi[31 * PETA_KOLOM + 25]).toBe(TINGGI.dataran)
+    expect(t.ramp[31 * PETA_KOLOM + 25]).toBe(1)
+    expect(t.tinggi[27 * PETA_KOLOM + 25]).toBe(TINGGI.plateau)
+    expect(t.ramp[27 * PETA_KOLOM + 25]).toBe(1)
+
+    // Tebing di sebelah kiri/kanan tangga 1x1 tetap tidak bisa dipanjat
+    expect(bolehLangkah(t, 24, 31, 24, 30)).toBe(false)
+    expect(bolehLangkah(t, 26, 27, 26, 26)).toBe(false)
+    expect(bolehLangkah(t, 25, 31, 25, 30)).toBe(true)
+    expect(bolehLangkah(t, 25, 27, 25, 26)).toBe(true)
+
+    expect(cekValidasiPeta(data).siapMain).toBe(true)
+    const jalur = cariJalur(t, keTengahPiksel(14), keTengahPiksel(35), keTengahPiksel(25), keTengahPiksel(24))
+    expect(jalur).not.toBeNull()
+    expect(jalur!.titik.some((p) => keTile(p.x) === 25 && keTile(p.y) === 31)).toBe(true)
+    expect(jalur!.titik.some((p) => keTile(p.x) === 25 && keTile(p.y) === 27)).toBe(true)
   })
 })

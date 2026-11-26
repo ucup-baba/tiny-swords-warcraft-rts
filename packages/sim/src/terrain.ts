@@ -154,13 +154,13 @@ function gambarJalanGaris(t: Terrain, x1: number, y1: number, x2: number, y2: nu
 
 function pasangRampKotak(
   t: Terrain, ramp: { tx: number; ty: number }[],
-  x1: number, y1: number, x2: number, y2: number, arah: 1 | 2 | 3 = 1,
+  x1: number, y1: number, x2: number, y2: number, arah: 1 | 2 | 3 = 1, tinggi: Tinggi = TINGGI.plateau,
 ): void {
   for (let ty = y1; ty <= y2; ty++) {
     for (let tx = x1; tx <= x2; tx++) {
       if (!diDalam(t, tx, ty)) continue
       const idx = indeks(t, tx, ty)
-      t.tinggi[idx] = TINGGI.plateau
+      t.tinggi[idx] = tinggi
       t.ramp[idx] = arah
     }
   }
@@ -375,48 +375,48 @@ function buatTerrainSalib4(_rng: Rng): { terrain: Terrain; titik: TitikPenting }
   pasangJembatanHorizontal(t, 30, 33, 75)
   pasangJembatanHorizontal(t, 62, 65, 75)
 
-  // 5. Tangga batu (ramp) turun dari keempat benteng pulau menuju teras jembatan (arah 1=N/S, 2=Barat, 3=Timur)
+  // 5. Tangga batu 1-baris (ramp) turun dari keempat benteng pulau menuju teras jembatan (selatan rata dinding tebing)
   const ramp: { tx: number; ty: number }[] = []
   // NW citadel -> jembatan selatan (x=20) & jembatan timur (y=20)
-  pasangRampKotak(t, ramp, 19, 22, 21, 23, 1)
-  pasangRampKotak(t, ramp, 22, 19, 23, 21, 3)
+  pasangRampKotak(t, ramp, 19, 24, 21, 24, 1, TINGGI.dataran)
+  pasangRampKotak(t, ramp, 23, 19, 23, 21, 3, TINGGI.plateau)
   // NE citadel -> jembatan selatan (x=75) & jembatan barat (y=20)
-  pasangRampKotak(t, ramp, 74, 22, 76, 23, 1)
-  pasangRampKotak(t, ramp, 72, 19, 73, 21, 2)
+  pasangRampKotak(t, ramp, 74, 24, 76, 24, 1, TINGGI.dataran)
+  pasangRampKotak(t, ramp, 72, 19, 72, 21, 2, TINGGI.plateau)
   // SW citadel -> jembatan utara (x=20) & jembatan timur (y=75)
-  pasangRampKotak(t, ramp, 19, 72, 21, 73, 1)
-  pasangRampKotak(t, ramp, 22, 74, 23, 76, 3)
+  pasangRampKotak(t, ramp, 19, 72, 21, 72, 1, TINGGI.plateau)
+  pasangRampKotak(t, ramp, 23, 74, 23, 76, 3, TINGGI.plateau)
   // SE citadel -> jembatan utara (x=75) & jembatan barat (y=75)
-  pasangRampKotak(t, ramp, 74, 72, 76, 73, 1)
-  pasangRampKotak(t, ramp, 72, 74, 73, 76, 2)
+  pasangRampKotak(t, ramp, 74, 72, 76, 72, 1, TINGGI.plateau)
+  pasangRampKotak(t, ramp, 72, 74, 72, 76, 2, TINGGI.plateau)
 
-  // 6. Plateau obelisk pusat bertebing lurus rapi (bulat sudut r=2) dengan 4 tangga batu simetris (N, S, W, E)
+  // 6. Plateau obelisk pusat bertebing lurus rapi (bulat sudut r=2) dengan 4 tangga batu 1-baris simetris (N, S, W, E)
   const pusat = { tx: 48, ty: 48 }
   isiKotak(t, 41, 41, 55, 55, 0, TINGGI.plateau)
-  pasangRampKotak(t, ramp, 47, 41, 49, 42, 1) // Utara
-  pasangRampKotak(t, ramp, 47, 54, 49, 55, 1) // Selatan
-  pasangRampKotak(t, ramp, 41, 47, 42, 49, 2) // Barat
-  pasangRampKotak(t, ramp, 54, 47, 55, 49, 3) // Timur
+  pasangRampKotak(t, ramp, 47, 41, 49, 41, 1, TINGGI.plateau) // Utara
+  pasangRampKotak(t, ramp, 47, 56, 49, 56, 1, TINGGI.dataran) // Selatan
+  pasangRampKotak(t, ramp, 41, 47, 41, 49, 2, TINGGI.plateau) // Barat
+  pasangRampKotak(t, ramp, 55, 47, 55, 49, 3, TINGGI.plateau) // Timur
 
   rapikanPlateau(t)
 
   // 7. Jalan pasir keemasan menghubungkan seluruh Castle -> Tangga -> Jembatan -> Pusat
-  // Jalan di tiap pulau
+  // Jalan di tiap pulau (menerus hingga menyentuh kedua sisi tangga & jembatan)
   gambarJalanGaris(t, 14, 14, 20, 20, 1)
-  gambarJalanGaris(t, 20, 24, 20, 29, 1)
-  gambarJalanGaris(t, 24, 20, 29, 20, 1)
+  gambarJalanGaris(t, 20, 20, 20, 29, 1)
+  gambarJalanGaris(t, 20, 20, 29, 20, 1)
 
   gambarJalanGaris(t, 81, 14, 75, 20, 1)
-  gambarJalanGaris(t, 75, 24, 75, 29, 1)
-  gambarJalanGaris(t, 66, 20, 71, 20, 1)
+  gambarJalanGaris(t, 75, 20, 75, 29, 1)
+  gambarJalanGaris(t, 66, 20, 75, 20, 1)
 
   gambarJalanGaris(t, 14, 81, 20, 75, 1)
-  gambarJalanGaris(t, 20, 66, 20, 71, 1)
-  gambarJalanGaris(t, 24, 75, 29, 75, 1)
+  gambarJalanGaris(t, 20, 66, 20, 75, 1)
+  gambarJalanGaris(t, 20, 75, 29, 75, 1)
 
   gambarJalanGaris(t, 81, 81, 75, 75, 1)
-  gambarJalanGaris(t, 75, 66, 75, 71, 1)
-  gambarJalanGaris(t, 66, 75, 71, 75, 1)
+  gambarJalanGaris(t, 75, 66, 75, 75, 1)
+  gambarJalanGaris(t, 66, 75, 75, 75, 1)
 
   // Jalan silang utama di arena tengah + jalur penghubung jembatan
   gambarJalanGaris(t, 20, 48, 75, 48, 1)
@@ -532,56 +532,56 @@ function buatTerrainBintang6(_rng: Rng): { terrain: Terrain; titik: TitikPenting
   pasangJembatanHorizontal(t, 28, 35, 80) // SW <-> S
   pasangJembatanHorizontal(t, 60, 67, 80) // S  <-> SE
 
-  // 6. Tangga batu (ramp) turun dari keenam benteng pulau (arah 1=N/S, 2=Barat, 3=Timur)
+  // 6. Tangga batu 1-baris (ramp) turun dari keenam benteng pulau (selatan rata dinding tebing)
   const ramp: { tx: number; ty: number }[] = []
-  pasangRampKotak(t, ramp, 19, 20, 21, 21, 1) // NW selatan
-  pasangRampKotak(t, ramp, 21, 14, 22, 16, 3) // NW timur
-  pasangRampKotak(t, ramp, 46, 20, 48, 21, 1) // N selatan
-  pasangRampKotak(t, ramp, 39, 14, 40, 16, 2) // N barat
-  pasangRampKotak(t, ramp, 55, 14, 56, 16, 3) // N timur
-  pasangRampKotak(t, ramp, 74, 20, 76, 21, 1) // NE selatan
-  pasangRampKotak(t, ramp, 73, 14, 74, 16, 2) // NE barat
+  pasangRampKotak(t, ramp, 19, 22, 21, 22, 1, TINGGI.dataran) // NW selatan
+  pasangRampKotak(t, ramp, 22, 14, 22, 16, 3, TINGGI.plateau) // NW timur
+  pasangRampKotak(t, ramp, 46, 22, 48, 22, 1, TINGGI.dataran) // N selatan
+  pasangRampKotak(t, ramp, 39, 14, 39, 16, 2, TINGGI.plateau) // N barat
+  pasangRampKotak(t, ramp, 56, 14, 56, 16, 3, TINGGI.plateau) // N timur
+  pasangRampKotak(t, ramp, 74, 22, 76, 22, 1, TINGGI.dataran) // NE selatan
+  pasangRampKotak(t, ramp, 73, 14, 73, 16, 2, TINGGI.plateau) // NE barat
 
-  pasangRampKotak(t, ramp, 19, 74, 21, 75, 1) // SW utara
-  pasangRampKotak(t, ramp, 21, 79, 22, 81, 3) // SW timur
-  pasangRampKotak(t, ramp, 46, 74, 48, 75, 1) // S utara
-  pasangRampKotak(t, ramp, 39, 79, 40, 81, 2) // S barat
-  pasangRampKotak(t, ramp, 55, 79, 56, 81, 3) // S timur
-  pasangRampKotak(t, ramp, 74, 74, 76, 75, 1) // SE utara
-  pasangRampKotak(t, ramp, 73, 79, 74, 81, 2) // SE barat
+  pasangRampKotak(t, ramp, 19, 74, 21, 74, 1, TINGGI.plateau) // SW utara
+  pasangRampKotak(t, ramp, 22, 79, 22, 81, 3, TINGGI.plateau) // SW timur
+  pasangRampKotak(t, ramp, 46, 74, 48, 74, 1, TINGGI.plateau) // S utara
+  pasangRampKotak(t, ramp, 39, 79, 39, 81, 2, TINGGI.plateau) // S barat
+  pasangRampKotak(t, ramp, 56, 79, 56, 81, 3, TINGGI.plateau) // S timur
+  pasangRampKotak(t, ramp, 74, 74, 76, 74, 1, TINGGI.plateau) // SE utara
+  pasangRampKotak(t, ramp, 73, 79, 73, 81, 2, TINGGI.plateau) // SE barat
 
-  // 7. Plateau pusat bertebing lurus rapi (r=2) dengan 4 tangga batu simetris (N, S, W, E)
+  // 7. Plateau pusat bertebing lurus rapi (r=2) dengan 4 tangga batu 1-baris simetris (N, S, W, E)
   const pusat = { tx: 48, ty: 48 }
   isiKotak(t, 42, 42, 54, 54, 0, TINGGI.plateau)
-  pasangRampKotak(t, ramp, 47, 42, 49, 43, 1) // Utara
-  pasangRampKotak(t, ramp, 47, 53, 49, 54, 1) // Selatan
-  pasangRampKotak(t, ramp, 42, 47, 43, 49, 2) // Barat
-  pasangRampKotak(t, ramp, 53, 47, 54, 49, 3) // Timur
+  pasangRampKotak(t, ramp, 47, 42, 49, 42, 1, TINGGI.plateau) // Utara
+  pasangRampKotak(t, ramp, 47, 55, 49, 55, 1, TINGGI.dataran) // Selatan
+  pasangRampKotak(t, ramp, 42, 47, 42, 49, 2, TINGGI.plateau) // Barat
+  pasangRampKotak(t, ramp, 54, 47, 54, 49, 3, TINGGI.plateau) // Timur
 
   rapikanPlateau(t)
 
   // 8. Jalan pasir keemasan menghubungkan seluruh 6 markas, tangga, jembatan, & pusat
   gambarJalanGaris(t, 14, 14, 20, 15, 1)
-  gambarJalanGaris(t, 20, 22, 20, 26, 1)
-  gambarJalanGaris(t, 23, 15, 27, 15, 1)
+  gambarJalanGaris(t, 20, 15, 20, 26, 1)
+  gambarJalanGaris(t, 20, 15, 27, 15, 1)
 
   gambarJalanGaris(t, 47, 14, 47, 26, 1)
   gambarJalanGaris(t, 36, 15, 59, 15, 1)
 
   gambarJalanGaris(t, 81, 14, 75, 15, 1)
-  gambarJalanGaris(t, 75, 22, 75, 26, 1)
-  gambarJalanGaris(t, 68, 15, 72, 15, 1)
+  gambarJalanGaris(t, 75, 15, 75, 26, 1)
+  gambarJalanGaris(t, 68, 15, 75, 15, 1)
 
   gambarJalanGaris(t, 14, 81, 20, 80, 1)
-  gambarJalanGaris(t, 20, 69, 20, 73, 1)
-  gambarJalanGaris(t, 23, 80, 27, 80, 1)
+  gambarJalanGaris(t, 20, 69, 20, 80, 1)
+  gambarJalanGaris(t, 20, 80, 27, 80, 1)
 
   gambarJalanGaris(t, 47, 69, 47, 81, 1)
   gambarJalanGaris(t, 36, 80, 59, 80, 1)
 
   gambarJalanGaris(t, 81, 81, 75, 80, 1)
-  gambarJalanGaris(t, 75, 69, 75, 73, 1)
-  gambarJalanGaris(t, 68, 80, 72, 80, 1)
+  gambarJalanGaris(t, 75, 69, 75, 80, 1)
+  gambarJalanGaris(t, 68, 80, 75, 80, 1)
 
   // Jalan arena pusat
   gambarJalanGaris(t, 48, 30, 48, 65, 1)

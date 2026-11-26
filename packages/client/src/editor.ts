@@ -1035,7 +1035,8 @@ export class PengendaliEditor {
           if (!this.tileDalamBatas(x, y)) continue
           const idx = y * PETA_KOLOM + x
           if (this.terrain.tinggi[idx] === TINGGI.air || this.terrain.jembatan[idx]! > 0 || this.terrain.ramp[idx]! > 0) continue
-          if (this.entitas.pohon.some((p) => Math.hypot(p.tx - x, p.ty - y) < 1.35)) continue
+          const jarakPohon = this.ukuranKuas > 1 ? 1.35 : 0.5
+          if (this.entitas.pohon.some((p) => Math.hypot(p.tx - x, p.ty - y) < jarakPohon)) continue
           const acak = Math.abs((x * 73856093) ^ (y * 19349663)) % 10
           if (this.ukuranKuas > 1 && acak >= 5) continue
           this.entitas.pohon.push({ tx: x, ty: y, varian: vars[acak % vars.length]!, kayu: 120 })
@@ -1130,11 +1131,18 @@ export class PengendaliEditor {
 
   private deteksiArahRampAuto(tx: number, ty: number): 1 | 2 | 3 {
     const h = this.terrain.tinggi[ty * PETA_KOLOM + tx]!
-    const kiri = tinggiDi(this.terrain, tx - 1, ty) < h
-    const kanan = tinggiDi(this.terrain, tx + 1, ty) < h
-    const atas = tinggiDi(this.terrain, tx, ty - 1) < h
-    const bawah = tinggiDi(this.terrain, tx, ty + 1) < h
-    if ((kiri || kanan) && !atas && !bawah) return kiri ? 2 : 3
+    const hKiri = tinggiDi(this.terrain, tx - 1, ty)
+    const hKanan = tinggiDi(this.terrain, tx + 1, ty)
+    const hAtas = tinggiDi(this.terrain, tx, ty - 1)
+    const hBawah = tinggiDi(this.terrain, tx, ty + 1)
+    const ns = (hAtas > TINGGI.air && hAtas !== h) || (hBawah > TINGGI.air && hBawah !== h)
+    const naikTimur = hKanan > h
+    const naikBarat = hKiri > h
+    const turunBarat = hKiri > TINGGI.air && hKiri < h
+    const turunTimur = hKanan > TINGGI.air && hKanan < h
+    if ((naikTimur || turunBarat) && !ns && !(naikBarat || turunTimur)) return 2
+    if ((naikBarat || turunTimur) && !ns && !(naikTimur || turunBarat)) return 3
+    if (ns) return 1
     // Periksa juga tangga kiri/kanan di atas/bawah supaya lebar tangga konsisten
     if (ty > 0 && (this.terrain.ramp[(ty - 1) * PETA_KOLOM + tx] ?? 0) >= 2) {
       return this.terrain.ramp[(ty - 1) * PETA_KOLOM + tx] as 2 | 3
@@ -1186,22 +1194,21 @@ export class PengendaliEditor {
         this.terrain.jalan[idx] = 0
         break
       case 'rampAuto': {
-        const targetLv = hLama >= TINGGI.plateau ? hLama : TINGGI.plateau
-        this.terrain.tinggi[idx] = targetLv
+        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         this.terrain.ramp[idx] = this.deteksiArahRampAuto(tx, ty)
         break
       }
       case 'rampNS':
-        this.terrain.tinggi[idx] = hLama >= TINGGI.plateau ? hLama : TINGGI.plateau
+        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         this.terrain.ramp[idx] = 1
         break
       case 'rampBarat':
       case 'rampTimur': {
-        this.terrain.tinggi[idx] = hLama >= TINGGI.plateau ? hLama : TINGGI.plateau
+        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         const kode = mode === 'rampBarat' ? 2 : 3

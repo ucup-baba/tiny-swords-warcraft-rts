@@ -105,8 +105,6 @@ export class PeremajaTerrain {
   private readonly jenisRamp: Uint8Array
   private readonly rampKol: Int8Array
   private readonly rampBar: Int8Array
-  /** Tangga lanjutan di kaki tebing selatan ramp Lv.2 (ty+1). */
-  private readonly tanggaBawahKol: Int8Array
   /** Level 3 (puncak) permukaan tertinggi bertumpuk di atas Level 2. */
   private readonly puncakKol: Int8Array
   private readonly puncakBar: Int8Array
@@ -116,7 +114,6 @@ export class PeremajaTerrain {
   private readonly jenisRamp3: Uint8Array
   private readonly ramp3Kol: Int8Array
   private readonly ramp3Bar: Int8Array
-  private readonly tangga3BawahKol: Int8Array
   private readonly dekoIdx: Int8Array
 
   private daftarJembatan: RentangJembatan[] = []
@@ -148,7 +145,6 @@ export class PeremajaTerrain {
     this.jenisRamp = new Uint8Array(total)
     this.rampKol = new Int8Array(total).fill(-1)
     this.rampBar = new Int8Array(total).fill(-1)
-    this.tanggaBawahKol = new Int8Array(total).fill(-1)
     this.puncakKol = new Int8Array(total).fill(-1)
     this.puncakBar = new Int8Array(total).fill(-1)
     this.tebingPuncakKol = new Int8Array(total).fill(-1)
@@ -156,7 +152,6 @@ export class PeremajaTerrain {
     this.jenisRamp3 = new Uint8Array(total)
     this.ramp3Kol = new Int8Array(total).fill(-1)
     this.ramp3Bar = new Int8Array(total).fill(-1)
-    this.tangga3BawahKol = new Int8Array(total).fill(-1)
     this.dekoIdx = new Int8Array(total).fill(-1)
     this.bangunTabel()
   }
@@ -223,7 +218,6 @@ export class PeremajaTerrain {
     this.jenisRamp.fill(0)
     this.rampKol.fill(-1)
     this.rampBar.fill(-1)
-    this.tanggaBawahKol.fill(-1)
     this.puncakKol.fill(-1)
     this.puncakBar.fill(-1)
     this.tebingPuncakKol.fill(-1)
@@ -231,7 +225,6 @@ export class PeremajaTerrain {
     this.jenisRamp3.fill(0)
     this.ramp3Kol.fill(-1)
     this.ramp3Bar.fill(-1)
-    this.tangga3BawahKol.fill(-1)
     this.dekoIdx.fill(-1)
     this.daftarJembatan = []
     this.daftarBatuAir = []
@@ -324,21 +317,40 @@ export class PeremajaTerrain {
           this.jalanSy[i] = sj.bar * TILE
         }
 
-        // Level 2: Plateau & Ramp / Tangga batu Lv.1 <-> Lv.2
+        // Tangga batu yang ditaruh di Dataran Lv.1 (1x1 tepat di sel yang diklik, mis. kaki tebing selatan Lv.2)
+        if (hv === TINGGI.dataran) {
+          const rv1 = rampVal(tx, ty)
+          if (rv1 === 1) {
+            const sr1 = selAutotile(
+              h(tx - 1, ty) === TINGGI.dataran && rampVal(tx - 1, ty) === 1,
+              h(tx + 1, ty) === TINGGI.dataran && rampVal(tx + 1, ty) === 1,
+              true, true,
+            )
+            this.jenisRamp[i] = 1
+            this.rampKol[i] = sr1.kol
+          } else if (rv1 === 2 || rv1 === 3) {
+            const sb1 = selAutotile(
+              true, true,
+              h(tx, ty - 1) === TINGGI.dataran && rampVal(tx, ty - 1) === rv1,
+              h(tx, ty + 1) === TINGGI.dataran && rampVal(tx, ty + 1) === rv1,
+            )
+            this.jenisRamp[i] = rv1
+            this.rampBar[i] = sb1.bar
+          }
+        }
+
+        // Level 2: Plateau & Ramp / Tangga batu Lv.1 <-> Lv.2 (murni 1 tile, tanpa sel bayangan di bawah)
         if (hv >= TINGGI.plateau) {
           const rv2 = hv === TINGGI.plateau ? rampVal(tx, ty) : 0
           if (rv2 === 1) {
             const sr = selAutotile(isRampLv(tx - 1, ty, TINGGI.plateau) && rampVal(tx - 1, ty) === 1, isRampLv(tx + 1, ty, TINGGI.plateau) && rampVal(tx + 1, ty) === 1, true, true)
             this.jenisRamp[i] = 1
             this.rampKol[i] = sr.kol
-            if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.dataran && !isRamp(tx, ty + 1)) {
-              this.tanggaBawahKol[(ty + 1) * kol + tx] = sr.kol
-            }
           } else if (rv2 === 2 || rv2 === 3) {
             const sb = selAutotile(true, true, isRampLv(tx, ty - 1, TINGGI.plateau) && rampVal(tx, ty - 1) === rv2, isRampLv(tx, ty + 1, TINGGI.plateau) && rampVal(tx, ty + 1) === rv2)
             this.jenisRamp[i] = rv2
             this.rampBar[i] = sb.bar
-            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.plateau)) {
+            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRamp(tx, ty + 1)) {
               const idxBawah = (ty + 1) * kol + tx
               const kiriPlat = atas2(tx - 1, ty)
               const kananPlat = atas2(tx + 1, ty)
@@ -351,7 +363,7 @@ export class PeremajaTerrain {
             )
             this.platKol[i] = sp.kol
             this.platBar[i] = sp.bar
-            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.plateau)) {
+            if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRamp(tx, ty + 1)) {
               const idxBawah = (ty + 1) * kol + tx
               this.tebingPlatKol[idxBawah] = sp.kol
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
@@ -359,21 +371,18 @@ export class PeremajaTerrain {
           }
         }
 
-        // Level 3: Puncak tertinggi & Ramp / Tangga batu Lv.2 <-> Lv.3
+        // Level 3: Puncak tertinggi & Ramp / Tangga batu Lv.2 <-> Lv.3 (murni 1 tile)
         if (hv === TINGGI.puncak) {
           const rv3 = rampVal(tx, ty)
           if (rv3 === 1) {
             const sr3 = selAutotile(isRampLv(tx - 1, ty, TINGGI.puncak) && rampVal(tx - 1, ty) === 1, isRampLv(tx + 1, ty, TINGGI.puncak) && rampVal(tx + 1, ty) === 1, true, true)
             this.jenisRamp3[i] = 1
             this.ramp3Kol[i] = sr3.kol
-            if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.plateau && !isRamp(tx, ty + 1)) {
-              this.tangga3BawahKol[(ty + 1) * kol + tx] = sr3.kol
-            }
           } else if (rv3 === 2 || rv3 === 3) {
             const sb3 = selAutotile(true, true, isRampLv(tx, ty - 1, TINGGI.puncak) && rampVal(tx, ty - 1) === rv3, isRampLv(tx, ty + 1, TINGGI.puncak) && rampVal(tx, ty + 1) === rv3)
             this.jenisRamp3[i] = rv3
             this.ramp3Bar[i] = sb3.bar
-            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.puncak)) {
+            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRamp(tx, ty + 1)) {
               const idxBawah = (ty + 1) * kol + tx
               const kiriP = atas3(tx - 1, ty)
               const kananP = atas3(tx + 1, ty)
@@ -386,7 +395,7 @@ export class PeremajaTerrain {
             )
             this.puncakKol[i] = s3.kol
             this.puncakBar[i] = s3.bar
-            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRampLv(tx, ty + 1, TINGGI.puncak)) {
+            if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRamp(tx, ty + 1)) {
               const idxBawah = (ty + 1) * kol + tx
               this.tebingPuncakKol[idxBawah] = s3.kol
               this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
@@ -404,10 +413,7 @@ export class PeremajaTerrain {
           const i = off + tx
           if (!darat(tx, ty)) continue
           if (isRamp(tx, ty) || jln(tx, ty)) continue
-          if (
-            this.tebingPlatKol[i]! >= 0 || this.tanggaBawahKol[i]! >= 0 ||
-            this.tebingPuncakKol[i]! >= 0 || this.tangga3BawahKol[i]! >= 0
-          ) continue
+          if (this.tebingPlatKol[i]! >= 0 || this.tebingPuncakKol[i]! >= 0) continue
           const acak = cakar(tx, ty)
           if (acak % 9 === 0) this.dekoIdx[i] = (acak >> 4) % 15
         }
@@ -789,12 +795,6 @@ export class PeremajaTerrain {
           }
         }
 
-        // 2b. Lanjutan kaki tangga selatan Lv.2
-        const tbk = this.tanggaBawahKol[i]!
-        if (tbk >= 0 && tinggiU010) {
-          ctx.drawImage(tinggiU010, tbk * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
-        }
-
         // 2c. Permukaan Plateau Level 2
         const pk = this.platKol[i]!
         if (pk >= 0) {
@@ -845,11 +845,6 @@ export class PeremajaTerrain {
           } else if (tinggiU010) {
             ctx.drawImage(tinggiU010, tp3k * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
           }
-        }
-
-        const tb3k = this.tangga3BawahKol[i]!
-        if (tb3k >= 0 && tinggiU010) {
-          ctx.drawImage(tinggiU010, tb3k * TILE, BARIS_ELEV.ramp * TILE, TILE, TILE, px, py, TILE, TILE)
         }
 
         const p3k = this.puncakKol[i]!
