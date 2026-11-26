@@ -5,6 +5,7 @@ import {
   UNIT_REGULER, URUTAN_BANGUN, ringkasCounter, risetDi, supplyMaks, supplyTerpakai,
   type Bangunan, type Dunia, type JenisRiset, type PeranUnit, type Unit,
 } from '@hftf/sim'
+import type { ModeSentuh } from './menu.js'
 import { urlAset } from './sembilan.js'
 
 export type Tab = 'bangun' | 'pasukan' | 'hero'
@@ -29,6 +30,10 @@ export interface AksiHud {
   pilihFilterUnit?(filter: FilterUnit): void
   perintahUnit?(perintah: PerintahKartu): void
   fokusUnit?(unitId: number): void
+  bukaMenu?(): void
+  layarPenuh?(): void
+  toggleKotak?(): void
+  lewatPutar?(): void
 }
 
 const IKON_SUMBER_ASAL = {
@@ -82,6 +87,12 @@ export class Hud {
   readonly akar: HTMLElement
   readonly kanvas: HTMLCanvasElement
   readonly petaMini: HTMLCanvasElement
+  readonly tombolKotak: HTMLButtonElement
+  readonly tombolFullscreen: HTMLButtonElement
+  readonly tombolMenu: HTMLButtonElement
+  readonly joystickEl: HTMLElement
+  readonly joystickKenop: HTMLElement
+  readonly layarPutar: HTMLElement
   private pita: HTMLElement
   private sumberEl: Record<string, HTMLElement> = {}
   private sumberImgEl: Record<string, HTMLImageElement> = {}
@@ -152,6 +163,36 @@ export class Hud {
     this.pita = el('div')
     this.pita.id = 'pita-status'
     panggung.append(this.pita)
+
+    // Tombol utilitas kanan-atas peta (Kotak Seleksi mobile, Fullscreen, Menu Jeda)
+    const tombolAtas = el('div')
+    tombolAtas.id = 'tombol-atas'
+    this.tombolKotak = el('button', 'btn-util', '⬚ Kotak')
+    this.tombolKotak.type = 'button'
+    this.tombolKotak.style.display = 'none'
+    this.tombolKotak.title = 'Toggle mode seret kotak seleksi (HP)'
+    this.tombolKotak.addEventListener('click', () => this.aksi.toggleKotak?.())
+
+    this.tombolFullscreen = el('button', 'btn-util', '⛶')
+    this.tombolFullscreen.type = 'button'
+    this.tombolFullscreen.title = 'Layar Penuh (Landscape)'
+    this.tombolFullscreen.addEventListener('click', () => this.aksi.layarPenuh?.())
+
+    this.tombolMenu = el('button', 'btn-util', '☰ Menu')
+    this.tombolMenu.type = 'button'
+    this.tombolMenu.title = 'Menu Jeda & Pengaturan Kontrol'
+    this.tombolMenu.addEventListener('click', () => this.aksi.bukaMenu?.())
+
+    tombolAtas.append(this.tombolKotak, this.tombolFullscreen, this.tombolMenu)
+    panggung.append(tombolAtas)
+
+    // Virtual Joystick untuk Mode 3 (Joystick + Seret Seleksi)
+    this.joystickEl = el('div')
+    this.joystickEl.id = 'joystick'
+    this.joystickKenop = el('div')
+    this.joystickKenop.id = 'joystick-kenop'
+    this.joystickEl.append(this.joystickKenop)
+    panggung.append(this.joystickEl)
 
     this.toast = el('div')
     this.toast.id = 'toast'
@@ -241,7 +282,44 @@ export class Hud {
     sisi.append(miniBingkai, sd, this.tabEl, this.kisi)
     this.akar.append(panggung, sisi)
     this.bingkai.append(this.akar)
+
+    // Layar anjuran putar HP ke Landscape (di luar #akar supaya terbaca jelas saat portrait)
+    this.layarPutar = el('div')
+    this.layarPutar.id = 'layar-putar'
+    const kotakPutar = el('div', 'kotak-putar')
+    kotakPutar.append(
+      el('div', 'ikon-putar', '📱↻'),
+      el('h2', undefined, 'Putar HP ke Landscape'),
+      el('p', undefined, 'Game RTS ini beresolusi 1280×720 (mendatar). Putar layar HP Anda ke posisi Landscape agar peta & tombol nyaman dikendalikan.'),
+    )
+    const barisPutar = el('div', 'baris')
+    const btnFullPutar = el('button', 'tombol-besar', '⛶ Layar Penuh (Landscape)')
+    btnFullPutar.type = 'button'
+    btnFullPutar.addEventListener('click', () => this.aksi.layarPenuh?.())
+    const btnLewat = el('button', 'tombol-besar', 'Tetap Lanjut')
+    btnLewat.type = 'button'
+    btnLewat.addEventListener('click', () => this.aksi.lewatPutar?.())
+    barisPutar.append(btnFullPutar, btnLewat)
+    kotakPutar.append(barisPutar)
+    this.layarPutar.append(kotakPutar)
+    this.bingkai.append(this.layarPutar)
+
     this.perbaruiTab()
+  }
+
+  /** Atur tampilan kontrol mobile sesuai ModeSentuh (Mode 1 vs Mode 3). */
+  setModeSentuh(mode: ModeSentuh, sentuhAktif: boolean): void {
+    this.joystickEl.classList.toggle('tampil', mode === 'joystick')
+    this.tombolKotak.style.display = mode === 'tapPintar' && sentuhAktif ? '' : 'none'
+  }
+
+  setKotakAktif(aktif: boolean): void {
+    this.tombolKotak.classList.toggle('aktif', aktif)
+    this.tombolKotak.textContent = aktif ? '⬚ Pilih: ON' : '⬚ Kotak'
+  }
+
+  setLayarPutar(tampil: boolean): void {
+    this.layarPutar.classList.toggle('tampil', tampil)
   }
 
   tampilkanToast(pesan: string): void {

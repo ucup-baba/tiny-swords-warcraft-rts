@@ -74,7 +74,94 @@ img, canvas { image-rendering: pixelated; }
   width: 976px;
   height: 720px;
   cursor: none;
+  touch-action: none;
 }
+
+/* --- Tombol utilitas kanan-atas peta (Menu, Fullscreen, Kotak Seleksi) --- */
+#tombol-atas {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  z-index: 14;
+}
+.btn-util {
+  height: 36px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tinta);
+  cursor: pointer;
+  background: transparent;
+  white-space: nowrap;
+  ${sembilanIris(UI.tombolBlue, 10, basis)};
+}
+.btn-util.aktif {
+  ${sembilanIris(UI.tombolBlueTekan, 10, basis)};
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+  outline: 2px solid var(--emas);
+}
+
+/* --- Virtual Joystick (Mode 3: Joystick + Seret Seleksi) --- */
+#joystick {
+  position: absolute;
+  left: 16px;
+  bottom: 168px;
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(92, 67, 48, 0.72) 0%, rgba(36, 22, 11, 0.84) 100%);
+  border: 3px solid rgba(255, 216, 107, 0.65);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  z-index: 15;
+}
+#joystick.tampil { display: flex; }
+#joystick-kenop {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 35%, #ffe699, #c68e32);
+  border: 2.5px solid #2b1a0c;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transform: translate(0px, 0px);
+}
+
+/* --- Layar Anjuran Putar Landscape (khusus HP berdiri / portrait) --- */
+#layar-putar {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  place-items: center;
+  padding: 20px;
+  background: rgba(14, 10, 7, 0.94);
+}
+#layar-putar.tampil { display: grid; }
+#layar-putar .kotak-putar {
+  width: min(400px, 100%);
+  padding: 22px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  ${sembilanIris(UI.panelUkir, 22, basis)};
+  background: var(--kayu-gelap);
+  color: var(--tinta);
+}
+#layar-putar .ikon-putar { font-size: 42px; line-height: 1; }
+#layar-putar h2 { font-size: 20px; color: var(--tinta); margin: 0; }
+#layar-putar p { font-size: 14px; font-weight: 700; color: #3d2410; line-height: 1.4; }
+#layar-putar .baris { justify-content: center; }
 
 /* --- Pita status kiri-atas --- */
 #pita-status {
@@ -110,7 +197,7 @@ img, canvas { image-rendering: pixelated; }
   padding: 2px;
   flex: none;
 }
-#peta-mini { display: block; width: 100%; height: 172px; cursor: crosshair; }
+#peta-mini { display: block; width: 100%; height: 172px; cursor: crosshair; touch-action: none; }
 
 #sumber-daya { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; flex: none; }
 .sumber {

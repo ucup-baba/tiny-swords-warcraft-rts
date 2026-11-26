@@ -1,5 +1,6 @@
 import { HERO_BLUE, type PeranHeroAset } from '@hftf/aset'
 import { UNIT } from '@hftf/sim'
+import type { ModeSentuh } from './menu.js'
 import { urlAset } from './sembilan.js'
 
 export interface RoomLan {
@@ -14,6 +15,8 @@ export interface AksiLobi {
   gabungRoom(kode: string, nama: string, hero: PeranHeroAset): void
   mulaiLan(): void
   keluarRoom(): void
+  ubahModeSentuh?(mode: ModeSentuh): void
+  layarPenuh?(): void
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -29,11 +32,14 @@ export class Lobi {
   readonly akar: HTMLElement
   private daftarRoom: HTMLElement
   private statusRoom: HTMLElement
+  private tombolBuat: HTMLButtonElement
+  private tombolGabung: HTMLButtonElement
   private tombolMulaiLan: HTMLButtonElement
   private tombolKeluar: HTMLButtonElement
   private inputNama: HTMLInputElement
   private inputKode: HTMLInputElement
   private alamat: HTMLElement
+  private wadahModeSentuh: HTMLElement
   private heroDipilih: PeranHeroAset = 'king'
   private kesulitan: 'normal' | 'sulit' = 'normal'
 
@@ -90,7 +96,31 @@ export class Lobi {
     tSolo.type = 'button'
     tSolo.addEventListener('click', () => this.aksi.mulaiSolo(this.heroDipilih, this.kesulitan))
     barisSolo.append(pilihKesulitan, tSolo)
+    if (this.aksi.layarPenuh) {
+      const tFull = el('button', 'tombol-besar', '⛶ Layar Penuh')
+      tFull.type = 'button'
+      tFull.addEventListener('click', () => this.aksi.layarPenuh?.())
+      barisSolo.append(tFull)
+    }
     kotak.append(barisSolo)
+
+    // Pilihan Kontrol Sentuh (HP/Tablet)
+    this.wadahModeSentuh = el('div', 'baris')
+    this.wadahModeSentuh.append(el('span', 'cip', 'Kontrol HP:'))
+    for (const [m, label] of [['tapPintar', 'Mode 1: Tap Pintar'], ['joystick', 'Mode 3: Joystick']] as const) {
+      const b = el('button', 'tombol-besar', label)
+      b.type = 'button'
+      b.dataset['modeSentuh'] = m
+      b.style.padding = '6px 12px'
+      b.style.fontSize = '12px'
+      b.addEventListener('click', () => {
+        this.setModeSentuh(m)
+        this.aksi.ubahModeSentuh?.(m)
+      })
+      this.wadahModeSentuh.append(b)
+    }
+    kotak.append(this.wadahModeSentuh)
+    this.setModeSentuh('tapPintar')
 
     // LAN
     kotak.append(el('h2', undefined, 'LAN Multiplayer (2 Pemain Wi-Fi)'))
@@ -98,18 +128,18 @@ export class Lobi {
     kotak.append(this.alamat)
 
     const barisLan = el('div', 'baris')
-    const tBuat = el('button', 'tombol-besar', 'Buat Room (Host)')
-    tBuat.type = 'button'
-    tBuat.addEventListener('click', () => this.aksi.buatRoom(this.inputNama.value, this.heroDipilih))
+    this.tombolBuat = el('button', 'tombol-besar', 'Buat Room (Host)')
+    this.tombolBuat.type = 'button'
+    this.tombolBuat.addEventListener('click', () => this.aksi.buatRoom(this.inputNama.value, this.heroDipilih))
     this.inputKode = el('input')
     this.inputKode.placeholder = 'KODE ROOM'
     this.inputKode.maxLength = 5
     this.inputKode.style.cssText = 'padding:9px 12px;font-family:inherit;font-size:15px;width:140px;text-transform:uppercase'
-    const tGabung = el('button', 'tombol-besar merah', 'Gabung')
-    tGabung.type = 'button'
-    tGabung.addEventListener('click', () =>
+    this.tombolGabung = el('button', 'tombol-besar merah', 'Gabung')
+    this.tombolGabung.type = 'button'
+    this.tombolGabung.addEventListener('click', () =>
       this.aksi.gabungRoom(this.inputKode.value.trim().toUpperCase(), this.inputNama.value, this.heroDipilih))
-    barisLan.append(tBuat, this.inputKode, tGabung)
+    barisLan.append(this.tombolBuat, this.inputKode, this.tombolGabung)
     kotak.append(barisLan)
 
     this.statusRoom = el('p', undefined, '')
@@ -141,6 +171,25 @@ export class Lobi {
 
   setAlamat(url: string): void {
     this.alamat.textContent = `Alamat LAN: ${url}`
+  }
+
+  setModeSentuh(mode: ModeSentuh): void {
+    for (const b of Array.from(this.wadahModeSentuh.children) as HTMLElement[]) {
+      if (!b.dataset['modeSentuh']) continue
+      b.style.outline = b.dataset['modeSentuh'] === mode ? '3px solid #ffd86b' : 'none'
+    }
+  }
+
+  /** Mode web statis (GitHub Pages): Solo vs AI aktif penuh, LAN nonaktif rapi tanpa error WS. */
+  setModeStatis(catatan?: string): void {
+    this.alamat.textContent =
+      catatan ?? 'Mode Web Statis (GitHub Pages) — Solo vs AI siap dimainkan! LAN 2 pemain aktif saat dijalankan lewat server lokal (npm run dev).'
+    this.tombolBuat.disabled = true
+    this.tombolGabung.disabled = true
+    this.inputKode.disabled = true
+    this.tombolMulaiLan.disabled = true
+    this.daftarRoom.textContent = ''
+    this.daftarRoom.append(el('span', 'cip', 'LAN hanya tersedia saat dijalankan dari server lokal (npm run dev).'))
   }
 
   setDaftarRoom(daftar: readonly RoomLan[]): void {

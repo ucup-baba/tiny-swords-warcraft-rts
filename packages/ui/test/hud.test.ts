@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buatBangunan, buatDunia, buatUnit, antreLatih, mulaiRiset } from '@hftf/sim'
 import { Hud } from '../src/hud.js'
+import { Lobi } from '../src/lobi.js'
 
 describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan Command Card', () => {
   const buatHud = () => {
@@ -97,5 +98,34 @@ describe('HUD Warcraft III — tab per unit, riset kontekstual, progres %, dan C
     btnSkill!.click()
     expect(callbacks.perintahUnit).toHaveBeenCalledWith('stop')
     expect(callbacks.perintahUnit).toHaveBeenCalledWith('skill')
+  })
+
+  it('kontrol mobile HUD: mode joystick menampilkan joystick, mode tapPintar menampilkan tombol Kotak, dan layar putar bisa di-toggle', () => {
+    const { hud } = buatHud()
+    hud.setModeSentuh('joystick', true)
+    expect(hud.joystickEl.classList.contains('tampil')).toBe(true)
+    expect(hud.tombolKotak.style.display).toBe('none')
+
+    hud.setModeSentuh('tapPintar', true)
+    expect(hud.joystickEl.classList.contains('tampil')).toBe(false)
+    expect(hud.tombolKotak.style.display).toBe('')
+
+    hud.setKotakAktif(true)
+    expect(hud.tombolKotak.classList.contains('aktif')).toBe(true)
+
+    hud.setLayarPutar(true)
+    expect(hud.layarPutar.classList.contains('tampil')).toBe(true)
+  })
+
+  it('Lobi.setModeStatis menonaktifkan tombol LAN untuk GitHub Pages tanpa merusak Solo vs AI', () => {
+    const lobi = new Lobi('', {
+      mulaiSolo: vi.fn(), buatRoom: vi.fn(), gabungRoom: vi.fn(), mulaiLan: vi.fn(), keluarRoom: vi.fn(),
+    })
+    lobi.setModeStatis()
+    expect(lobi.akar.textContent).toContain('GitHub Pages')
+    const btnBuat = [...lobi.akar.querySelectorAll('button')].find((b) => b.textContent?.includes('Buat Room')) as HTMLButtonElement
+    const btnSolo = [...lobi.akar.querySelectorAll('button')].find((b) => b.textContent?.includes('MULAI SOLO')) as HTMLButtonElement
+    expect(btnBuat.disabled).toBe(true)
+    expect(btnSolo.disabled).toBe(false)
   })
 })

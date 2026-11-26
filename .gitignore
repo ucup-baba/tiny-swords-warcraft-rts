@@ -7,3 +7,4 @@ __MACOSX/
 *.tsbuildinfo
 bundel.js
 bundel.js.map
+dist-pages/

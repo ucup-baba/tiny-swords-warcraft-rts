@@ -10,11 +10,12 @@ import {
   hitungFog, terapkanPerintah, terapkanSnapshot,
   type Bangunan, type Dunia, type JenisRiset, type KeadaanAi, type PeranUnit, type Perintah, type Snapshot, type Unit,
 } from '@hftf/sim'
-import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type PerintahKartu } from '@hftf/ui'
+import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type ModeSentuh, type PerintahKartu } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
   perintahKlikKanan, seleksiKotak, unitDiTitik, bolehTaruh,
 } from './input.js'
+import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
 const BASIS = ''
 
@@ -48,6 +49,10 @@ class Permainan {
   private klikTerakhir = { waktu: 0, id: -1 }
   private geserTengah = { aktif: false, x: 0, y: 0 }
   private kursorPotong = new Map<string, string>()
+  private sentuh: PengendaliSentuh
+  private perangkatSentuh = deteksiPerangkatSentuh()
+  private abaikanPutar = false
+  private modeStatis = false
 
   constructor() {
     const gaya = document.createElement('style')
@@ -97,15 +102,24 @@ class Permainan {
         this.input.bangunanTerpilih = null
         this.perbaruiHud()
       },
+      bukaMenu: () => this.bukaMenuJeda(),
+      layarPenuh: () => void this.mintaLayarPenuh(),
+      toggleKotak: () => this.sentuh.toggleKotak(),
+      lewatPutar: () => {
+        this.abaikanPutar = true
+        this.hud.setLayarPutar(false)
+      },
     })
 
     this.lobi = new Lobi(BASIS, {
       mulaiSolo: (hero, kesulitan) => this.mulaiSolo(hero, kesulitan),
       buatRoom: (nama, hero) => {
+        if (this.modeStatis) return
         this.pastikanLan(nama)
         this.lan?.buatRoom(hero)
       },
       gabungRoom: (kode, nama, hero) => {
+        if (this.modeStatis) return
         if (!kode) return this.hud.tampilkanToast('Masukkan kode room dulu')
         this.pastikanLan(nama)
         this.lan?.gabung(kode, hero)
@@ -115,7 +129,31 @@ class Permainan {
         this.lan?.keluar()
         this.lobi.setStatusRoom('Keluar dari room.', false, false)
       },
+      ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
+      layarPenuh: () => void this.mintaLayarPenuh(),
     })
+
+    const self = this
+    this.sentuh = new PengendaliSentuh({
+      dunia: () => self.dunia,
+      tim: () => self.timSaya,
+      faseMain: () => self.fase === 'main',
+      kam: this.kam,
+      get input() { return self.input },
+      kirim: (p) => self.kirim(p),
+      tandaiBendera: (wx, wy, jenis) => this.efek.tandaiPerintah(wx, wy, jenis),
+      toast: (pesan) => this.hud.tampilkanToast(pesan),
+      perbaruiHud: () => this.perbaruiHud(),
+      bangunanTerpilih: () => this.bangunanTerpilih(),
+      padaSentuhPertama: () => {
+        this.perangkatSentuh = true
+        this.kursor.style.display = 'none'
+        this.hud.setModeSentuh(this.sentuh.mode, true)
+      },
+      setKotakUi: (aktif) => this.hud.setKotakAktif(aktif),
+    })
+    this.lobi.setModeSentuh(this.sentuh.mode)
+    this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
 
     this.kursor = document.createElement('img')
     this.kursor.id = 'kursor'
@@ -129,7 +167,9 @@ class Permainan {
     // Kait debug: memeriksa state dari console tanpa membongkar bundel.
     ;(window as unknown as Record<string, unknown>)['__hftf'] = this
     this.pasangInput()
+    this.sentuh.pasang(this.hud.kanvas, this.hud.petaMini, this.hud.joystickEl, this.hud.joystickKenop)
     window.addEventListener('resize', () => this.ukurUlang())
+    window.addEventListener('orientationchange', () => this.ukurUlang())
     this.ukurUlang()
     void this.boot()
   }
@@ -195,17 +235,27 @@ class Permainan {
     this.lobi.tampil(true)
     this.lobi.setStatusRoom('Buat room, atau pilih room di bawah untuk bergabung.', false, false)
 
-    // Menyambung ke papan SEKARANG, bukan menunggu tombol diklik: room milik
-    // pemain lain harus muncul sendiri di daftar (AC-15.1).
-    this.pastikanLan(this.lobi.nama)
-
-    // Alamat LAN asli dari server, bukan tebakan dari location.
+    // Deteksi server LAN lokal vs hosting statis (GitHub Pages):
+    // Hanya menyambung WebSocket /ws jika endpoint ./alamat mengembalikan JSON server.
+    let lanTersedia = false
     try {
       const r = await fetch(`${BASIS}alamat`)
-      const j = (await r.json()) as { url?: string }
-      this.lobi.setAlamat(j.url ?? window.location.origin)
+      const ct = r.headers.get('content-type') ?? ''
+      if (r.ok && ct.includes('application/json')) {
+        const j = (await r.json()) as { url?: string }
+        this.lobi.setAlamat(j.url ?? window.location.origin)
+        lanTersedia = true
+      }
     } catch {
-      this.lobi.setAlamat(window.location.origin)
+      lanTersedia = false
+    }
+
+    if (lanTersedia) {
+      this.modeStatis = false
+      this.pastikanLan(this.lobi.nama)
+    } else {
+      this.modeStatis = true
+      this.lobi.setModeStatis()
     }
     requestAnimationFrame((t) => this.bingkai(t))
   }
@@ -306,8 +356,9 @@ class Permainan {
     // layarnya hitam total sampai snapshot pertama tiba.
     hitungFog(this.dunia)
     this.lobi.tampil(false)
-    this.kursor.style.display = 'block'
+    this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
   }
 
@@ -325,9 +376,31 @@ class Permainan {
     this.hud.setTim('blue')
     fokusKeCastle(this.dunia, 'blue', this.kam)
     this.lobi.tampil(false)
-    this.kursor.style.display = 'block'
+    this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
+    this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
     this.perbaruiHud()
+  }
+
+  private terapkanModeSentuh(mode: ModeSentuh): void {
+    this.sentuh.setMode(mode)
+    this.lobi.setModeSentuh(mode)
+    this.hud.setModeSentuh(mode, this.perangkatSentuh)
+    this.hud.tampilkanToast(mode === 'joystick' ? 'Mode 3: Virtual Joystick + Seret Seleksi' : 'Mode 1: Tap Pintar')
+  }
+
+  private async mintaLayarPenuh(): Promise<void> {
+    try {
+      const target = document.documentElement
+      if (!document.fullscreenElement) {
+        await target.requestFullscreen?.()
+      }
+      const orient = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }
+      await orient?.lock?.('landscape')
+    } catch {
+      // Browser iOS Safari / desktop tertentu tidak mendukung orientation.lock.
+    }
+    this.ukurUlang()
   }
 
   /**
@@ -417,6 +490,11 @@ class Permainan {
     this.kam.tinggi = 720
     batasiKamera(this.kam)
     if (this.ctx) this.ctx.imageSmoothingEnabled = false
+
+    // Tampilkan anjuran putar HP ke Landscape saat layar mobile dalam orientasi portrait.
+    const portraitMobile = window.innerHeight > window.innerWidth && window.innerWidth < 900 && this.perangkatSentuh
+    if (!portraitMobile) this.abaikanPutar = false
+    this.hud.setLayarPutar(portraitMobile && !this.abaikanPutar)
   }
 
   // -------------------------------------------------------------------------
@@ -434,7 +512,7 @@ class Permainan {
       this.kursor.style.display = 'none'
     })
     k.addEventListener('mouseenter', () => {
-      if (this.fase === 'main') this.kursor.style.display = 'block'
+      if (this.fase === 'main' && !this.perangkatSentuh) this.kursor.style.display = 'block'
     })
 
     k.addEventListener('mousemove', (e) => {
@@ -671,6 +749,7 @@ class Permainan {
 
     if (this.fase === 'main' && this.dunia) {
       gulirKamera(this.kam, this.tombol, this.input)
+      this.sentuh.langkahJoystick(dt)
       batasiKamera(this.kam)
 
       // Guest TIDAK menjalankan simulasi: ia menggambar snapshot dari host.
@@ -801,6 +880,7 @@ class Permainan {
     const menu = buatMenuJeda({
       lan,
       suaraNyala: this.suaraNyala,
+      modeSentuh: this.sentuh.mode,
       aksi: {
         lanjutkan: () => this.tutupMenuJeda(),
         suara: () => {
@@ -808,6 +888,8 @@ class Permainan {
           this.tutupMenuJeda()
           this.hud.tampilkanToast(this.suaraNyala ? 'Suara dinyalakan' : 'Suara dimatikan')
         },
+        ubahModeSentuh: (m) => this.terapkanModeSentuh(m),
+        layarPenuh: () => void this.mintaLayarPenuh(),
         menyerah: () => this.konfirmasiMenyerah(),
         keluar: () => this.konfirmasiKeluar(),
       },

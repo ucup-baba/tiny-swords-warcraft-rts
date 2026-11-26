@@ -70,6 +70,23 @@ describe('AC-13.3 — surrender wajib konfirmasi', () => {
   })
 })
 
+describe('Kontrol sentuh mobile di menu jeda', () => {
+  it('menyediakan pilihan Mode 1 (Tap Pintar) dan Mode 3 (Joystick + Seret)', () => {
+    const ubahModeSentuh = vi.fn()
+    const m = buatMenuJeda({
+      lan: false, suaraNyala: true, modeSentuh: 'tapPintar',
+      aksi: { ...aksiKosong(), ubahModeSentuh },
+    })
+    const btnJoy = m.querySelector<HTMLButtonElement>('button[data-mode-sentuh="joystick"]')
+    const btnTap = m.querySelector<HTMLButtonElement>('button[data-mode-sentuh="tapPintar"]')
+    expect(btnTap).not.toBeNull()
+    expect(btnJoy).not.toBeNull()
+
+    btnJoy!.click()
+    expect(ubahModeSentuh).toHaveBeenCalledWith('joystick')
+  })
+})
+
 function aksiKosong() {
   return { lanjutkan: vi.fn(), suara: vi.fn(), menyerah: vi.fn(), keluar: vi.fn() }
 }
