@@ -629,11 +629,25 @@ export class Hud {
         `${Math.round(bangunanTerpilih.hp)} / ${bangunanTerpilih.hpMaks}`,
       )
 
-      const detail = bangunanTerpilih.fase === 'konstruksi'
-        ? `Membangun ${Math.round((1 - Math.max(0, bangunanTerpilih.sisaBangun) / def.waktuBangun) * 100)}% (${Math.ceil(bangunanTerpilih.sisaBangun)}s)`
-        : def.melatih.length > 0
+      let detail: string
+      if (bangunanTerpilih.fase === 'konstruksi') {
+        const porsiBangun = Math.round((1 - Math.max(0, bangunanTerpilih.sisaBangun) / def.waktuBangun) * 100)
+        const jmlPekerja = dunia.unit.filter(
+          (u) => u.tim === bangunanTerpilih.tim && u.peran === 'pawn' && u.tugas === 'bangun' && u.targetId === bangunanTerpilih.id,
+        ).length
+        if (jmlPekerja === 0) {
+          detail = `Menunggu Pawn • ${porsiBangun}%`
+        } else if (jmlPekerja === 1) {
+          detail = `Membangun ${porsiBangun}% (${Math.ceil(bangunanTerpilih.sisaBangun)}s)`
+        } else {
+          const laju = 1 + 0.5 * (jmlPekerja - 1)
+          detail = `Membangun ${porsiBangun}% (${Math.ceil(bangunanTerpilih.sisaBangun / laju)}s) • ${jmlPekerja} Pawn (${laju.toFixed(1)}×)`
+        }
+      } else {
+        detail = def.melatih.length > 0
           ? `Aktif • Klik kanan peta: Rally`
           : def.supply > 0 ? `Aktif • +${def.supply} Populasi` : 'Aktif'
+      }
       this.setInfoSeleksi(def.nama, detail)
 
       this.perbaruiTengahBangunan(dunia, bangunanTerpilih)
@@ -809,7 +823,7 @@ export class Hud {
 
       if (!sedangLatih && !sedangRiset && !sedangRevive) {
         const teks = b.fase === 'konstruksi'
-          ? 'Pawn sedang membangun bangunan ini…'
+          ? 'Pilih Pawn tambahan lalu klik bangunan ini untuk kerja bakti (+50% tiap Pawn).'
           : BANGUNAN[b.jenis].melatih.length > 0
             ? 'Klik kanan di peta untuk memindahkan Bendera Rally Point.'
             : 'Bangunan aktif.'

@@ -306,18 +306,25 @@ export function terapkanPerintah(dunia: Dunia, tim: Tim, p: Perintah): void {
         if (!u || u.peran !== 'pawn') continue
         u.tugas = b.fase === 'konstruksi' ? 'bangun' : 'perbaiki'
         u.targetId = b.id
+        batalkanJalur(u)
       }
       return
     }
     case 'bangun': {
-      const pawn = unitMilik(dunia, tim, p.ids).find((u) => u?.peran === 'pawn')
-      if (!pawn) return
+      const punyaPawn = dunia.unit.some((u) => u.tim === tim && u.peran === 'pawn')
+      if (!punyaPawn) return
+      const pawn = unitMilik(dunia, tim, p.ids).find((u) => u?.peran === 'pawn') ?? null
+      // Jika ids diisi tapi bukan pawn milik tim sendiri, tolak perintah tidak sah.
+      if (p.ids.length > 0 && !pawn) return
       if (!bolehTaruhBangunan(dunia, p.bangunan, p.x, p.y)) return
       const def = BANGUNAN[p.bangunan]
       if (!bayar(dunia, tim, def.gold, def.kayu, 0)) return
       const b = buatBangunan(dunia, tim, p.bangunan, p.x, p.y, 'konstruksi')
-      pawn.tugas = 'bangun'
-      pawn.targetId = b.id
+      if (pawn) {
+        pawn.tugas = 'bangun'
+        pawn.targetId = b.id
+        batalkanJalur(pawn)
+      }
       return
     }
     case 'skill': {

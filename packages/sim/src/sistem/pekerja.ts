@@ -4,7 +4,7 @@ import { segarkanHalangan } from '../halangan.js'
 import type { Dunia, Unit } from '../tipe.js'
 import { castleTerdekat, jarak } from '../util.js'
 import { PANEN, terima } from './ekonomi.js'
-import { langkahMenuju } from './gerak.js'
+import { batalkanJalur, langkahMenuju } from './gerak.js'
 import { langkahUnitTempur } from './tempur.js'
 
 const JANGKAUAN_PANEN = 58
@@ -26,6 +26,10 @@ const KAYU_PER_HP = 0.06
 const HP_PERBAIKI_PER_DETIK = 34
 /** Kecepatan konstruksi satu pawn, relatif terhadap waktuBangun. */
 const LAJU_BANGUN = 1
+/** Bonus kecepatan tiap Pawn pembantu tambahan (2 Pawn = 1.5x, 3 Pawn = 2.0x). */
+export const BONUS_BANTU_BANGUN = 0.5
+/** Radius Pawn mencari pondasi konstruksi terbengkalai setelah menyelesaikan bangunan. */
+export const RADIUS_AUTO_BANGUN = 650
 
 function hadapKe(u: Unit, tx: number): void {
   if (tx < u.x - 1) u.arah = -1
@@ -267,9 +271,41 @@ function pungutDaging(dunia: Dunia, u: Unit): void {
   mulaiPulang(dunia, u)
 }
 
+/**
+ * Mencari pondasi konstruksi terdekat milik tim dalam radius RADIUS_AUTO_BANGUN.
+ * Memprioritaskan pondasi yang BELUM dikerjakan Pawn mana pun (terbengkalai),
+ * baru pondasi terdekat lain yang masih dibangun.
+ */
+function cariPondasiBerikut(dunia: Dunia, u: Unit): number | null {
+  let tanpaPekerja: { id: number; d: number } | null = null
+  let terdekatLain: { id: number; d: number } | null = null
+
+  for (const x of dunia.bangunan) {
+    if (x.tim !== u.tim || x.fase !== 'konstruksi') continue
+    const d = jarak(u.x, u.y, x.x, x.y)
+    if (d > RADIUS_AUTO_BANGUN) continue
+    const adaPekerja = dunia.unit.some(
+      (p) => p.id !== u.id && p.tim === u.tim && p.peran === 'pawn' && p.tugas === 'bangun' && p.targetId === x.id,
+    )
+    if (!adaPekerja) {
+      if (!tanpaPekerja || d < tanpaPekerja.d) tanpaPekerja = { id: x.id, d }
+    } else if (!terdekatLain || d < terdekatLain.d) {
+      terdekatLain = { id: x.id, d }
+    }
+  }
+  return tanpaPekerja?.id ?? terdekatLain?.id ?? null
+}
+
 function bangunBangunan(dunia: Dunia, u: Unit): void {
   const b = dunia.bangunan.find((x) => x.id === u.targetId)
   if (!b || b.fase !== 'konstruksi') {
+    const berikut = cariPondasiBerikut(dunia, u)
+    if (berikut !== null) {
+      u.tugas = 'bangun'
+      u.targetId = berikut
+      batalkanJalur(u)
+      return
+    }
     u.tugas = 'diam'
     u.targetId = null
     return
@@ -281,7 +317,23 @@ function bangunBangunan(dunia: Dunia, u: Unit): void {
   }
   hadapKe(u, b.x)
   u.aksi = 'bangun'
-  b.sisaBangun -= DT_TETAP * LAJU_BANGUN
+
+  // Kerja bakti multi-Pawn (gaya AoE2): Pawn ke-1 = 100%, tiap pembantu = +50%.
+  // Dibagi rata secara simetris antar pekerja aktif di jangkauan agar tetap 100% deterministik.
+  let pekerjaAktif = 0
+  for (const p of dunia.unit) {
+    if (
+      p.tim === u.tim && p.peran === 'pawn' &&
+      p.tugas === 'bangun' && p.targetId === b.id &&
+      jarak(p.x, p.y, b.x, b.y) <= jangkauan
+    ) {
+      pekerjaAktif++
+    }
+  }
+  const k = Math.max(1, pekerjaAktif)
+  const lajuTotal = 1 + BONUS_BANTU_BANGUN * (k - 1)
+  b.sisaBangun -= DT_TETAP * LAJU_BANGUN * (lajuTotal / k)
+
   const total = BANGUNAN[b.jenis].waktuBangun
   const porsi = 1 - Math.max(0, b.sisaBangun) / total
   b.hp = Math.max(b.hp, Math.round(b.hpMaks * (0.15 + 0.85 * porsi)))

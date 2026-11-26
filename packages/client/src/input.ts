@@ -167,3 +167,45 @@ export function fokusKeCastle(dunia: Dunia, tim: Tim, kam: Kamera): void {
 }
 
 export const bolehTaruh = bolehTaruhBangunan
+
+export interface HasilPilihPawnBangun {
+  pawn: Unit | null
+  adaPawn: boolean
+  semuaSibuk: boolean
+}
+
+/**
+ * Memilih 1 Pawn terbaik untuk membangun di (x, y) tanpa pernah menarik Pawn
+ * yang sedang membangun/memperbaiki bangunan lain:
+ *   1. Pawn yang sedang dipilih pemain & tidak sedang bangun/perbaiki (terdekat)
+ *   2. Pawn yang sedang menganggur (`diam`) terdekat
+ *   3. Pawn lain yang sedang panen/berjalan (BUKAN `bangun`/`perbaiki`) terdekat
+ *   4. Jika semua Pawn sedang membangun -> `pawn: null, semuaSibuk: true`
+ */
+export function pilihPawnBangun(
+  dunia: Dunia, tim: Tim, x: number, y: number, unitTerpilih: ReadonlySet<number>,
+): HasilPilihPawnBangun {
+  const semuaPawn = dunia.unit.filter((u) => u.tim === tim && u.peran === 'pawn')
+  if (semuaPawn.length === 0) return { pawn: null, adaPawn: false, semuaSibuk: false }
+
+  const terdekat = (daftar: readonly Unit[]): Unit | null => {
+    let terbaik: Unit | null = null
+    let dMin = Infinity
+    for (const u of daftar) {
+      const d = Math.hypot(u.x - x, u.y - y)
+      if (d < dMin) { dMin = d; terbaik = u }
+    }
+    return terbaik
+  }
+
+  const bebas = semuaPawn.filter((u) => u.tugas !== 'bangun' && u.tugas !== 'perbaiki')
+  if (bebas.length === 0) return { pawn: null, adaPawn: true, semuaSibuk: true }
+
+  const terpilihBebas = bebas.filter((u) => unitTerpilih.has(u.id))
+  if (terpilihBebas.length > 0) return { pawn: terdekat(terpilihBebas), adaPawn: true, semuaSibuk: false }
+
+  const diam = bebas.filter((u) => u.tugas === 'diam')
+  if (diam.length > 0) return { pawn: terdekat(diam), adaPawn: true, semuaSibuk: false }
+
+  return { pawn: terdekat(bebas), adaPawn: true, semuaSibuk: false }
+}

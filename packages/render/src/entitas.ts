@@ -229,6 +229,8 @@ export interface OpsiGambar {
   terpilihBangunan: number | null
   terpilihSumber?: SumberVisual | null
   hoverSumber?: SumberVisual | null
+  /** Sorotan konfirmasi berdenyut (0..1) saat Pawn baru diperintahkan memanen resource. */
+  sumberSorot?: { id: number; porsi: number } | null
   timSaya: Tim
   /** Fog aktif? Solo tetap memakainya; mematikannya hanya untuk debug. */
   fog: boolean
@@ -236,6 +238,8 @@ export interface OpsiGambar {
   posLama?: ReadonlyMap<number, { x: number; y: number }>
   alpha?: number
 }
+
+const targetSumberSet = new Set<number>()
 
 type ItemRender =
   | { jenis: 0; y: number; obj: Dunia['tunggul'][number] }
@@ -266,11 +270,25 @@ function gambarCincinSumber(
   ctx: CanvasRenderingContext2D,
   x: number, y: number, rx: number,
   warna: string, terpilih: boolean, label: string, labelY: number,
+  denyutPorsi?: number,
 ): void {
   ctx.save()
+  // Efek denyut riak mengembang saat Pawn baru diperintahkan memanen resource ini
+  if (denyutPorsi !== undefined && denyutPorsi >= 0 && denyutPorsi <= 1) {
+    const riakRx = rx + denyutPorsi * 18
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, 1 - denyutPorsi) * 0.9
+    ctx.beginPath()
+    ctx.ellipse(x, y + 3, riakRx, riakRx * 0.44, 0, 0, Math.PI * 2)
+    ctx.strokeStyle = warna
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.restore()
+  }
+
   ctx.beginPath()
   ctx.ellipse(x, y + 3, rx, rx * 0.44, 0, 0, Math.PI * 2)
-  ctx.fillStyle = terpilih ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.08)'
+  ctx.fillStyle = terpilih ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.08)'
   ctx.fill()
   ctx.strokeStyle = warna
   ctx.lineWidth = terpilih ? 2.6 : 2.2
@@ -309,6 +327,19 @@ export function gambarEntitas(
 
   const antrean = antreanBersama
   antrean.length = 0
+  // Kumpulkan ID resource yang sedang ditarget oleh Pawn yang dipilih pemain (nol alokasi)
+  targetSumberSet.clear()
+  if (opsi.terpilihUnit.size > 0) {
+    for (const u of dunia.unit) {
+      if (
+        u.peran === 'pawn' && u.targetId !== null && opsi.terpilihUnit.has(u.id) &&
+        (u.tugas === 'tebang' || u.tugas === 'tambang' || u.tugas === 'gembala' || u.tugas === 'pungut' || u.tugas === 'pulang')
+      ) {
+        targetSumberSet.add(u.targetId)
+      }
+    }
+  }
+  const sorot = opsi.sumberSorot ?? null
   const x1 = p.x1, x2 = p.x2, y1 = p.y1, y2 = p.y2
   const fogAktif = opsi.fog
   const timSaya = opsi.timSaya
@@ -375,8 +406,13 @@ export function gambarEntitas(
         const o = item.obj
         const ter = cocokSumber(opsi.terpilihSumber, 'pohon', o.id)
         const hov = cocokSumber(opsi.hoverSumber, 'pohon', o.id)
-        if (ter || hov) {
-          gambarCincinSumber(ctx, o.x, o.y, 32, '#6ff088', ter, `${Math.round(o.kayu)} Kayu`, o.y - 84)
+        const ditarget = targetSumberSet.has(o.id)
+        const kenaSorot = sorot?.id === o.id
+        if (ter || hov || ditarget || kenaSorot) {
+          gambarCincinSumber(
+            ctx, o.x, o.y, 32, '#6ff088', ter || ditarget || kenaSorot, `${Math.round(o.kayu)} Kayu`, o.y - 84,
+            kenaSorot ? sorot!.porsi : undefined,
+          )
         }
         sprite(ctx, SUMBER.pohon, framePohon(t, o.id), o.x, o.y, 0.62, false, 0.78)
         break
@@ -385,9 +421,14 @@ export function gambarEntitas(
         const o = item.obj
         const ter = cocokSumber(opsi.terpilihSumber, 'tambang', o.id)
         const hov = cocokSumber(opsi.hoverSumber, 'tambang', o.id)
-        if (ter || hov) {
+        const ditarget = targetSumberSet.has(o.id)
+        const kenaSorot = sorot?.id === o.id
+        if (ter || hov || ditarget || kenaSorot) {
           const rx = o.jenis === 'mine' ? 62 : 34
-          gambarCincinSumber(ctx, o.x, o.y, rx, '#ffd86b', ter, `${Math.round(o.gold)} Gold`, o.y - (o.jenis === 'mine' ? 76 : 48))
+          gambarCincinSumber(
+            ctx, o.x, o.y, rx, '#ffd86b', ter || ditarget || kenaSorot, `${Math.round(o.gold)} Gold`, o.y - (o.jenis === 'mine' ? 76 : 48),
+            kenaSorot ? sorot!.porsi : undefined,
+          )
         }
         sprite(ctx, SUMBER.tambangAktif, 0, o.x, o.y, o.jenis === 'mine' ? 0.9 : 0.6, false, 0.82)
         break
@@ -396,8 +437,13 @@ export function gambarEntitas(
         const o = item.obj
         const ter = cocokSumber(opsi.terpilihSumber, 'domba', o.id)
         const hov = cocokSumber(opsi.hoverSumber, 'domba', o.id)
-        if (ter || hov) {
-          gambarCincinSumber(ctx, item.x, item.yr, 24, '#ff9eb5', ter, `Domba • ${o.daging} Daging`, item.yr - 38)
+        const ditarget = targetSumberSet.has(o.id)
+        const kenaSorot = sorot?.id === o.id
+        if (ter || hov || ditarget || kenaSorot) {
+          gambarCincinSumber(
+            ctx, item.x, item.yr, 24, '#ff9eb5', ter || ditarget || kenaSorot, `Domba • ${o.daging} Daging`, item.yr - 38,
+            kenaSorot ? sorot!.porsi : undefined,
+          )
         }
         bayangan(ctx, item.x, item.yr, 12)
         const a = o.bergerak ? SUMBER.dombaLompat : SUMBER.dombaDiam
@@ -408,8 +454,13 @@ export function gambarEntitas(
         const o = item.obj
         const ter = cocokSumber(opsi.terpilihSumber, 'daging', o.id)
         const hov = cocokSumber(opsi.hoverSumber, 'daging', o.id)
-        if (ter || hov) {
-          gambarCincinSumber(ctx, o.x, o.y, 22, '#ff8a8a', ter, `+${o.jumlah} Daging`, o.y - 30)
+        const ditarget = targetSumberSet.has(o.id)
+        const kenaSorot = sorot?.id === o.id
+        if (ter || hov || ditarget || kenaSorot) {
+          gambarCincinSumber(
+            ctx, o.x, o.y, 22, '#ff8a8a', ter || ditarget || kenaSorot, `+${o.jumlah} Daging`, o.y - 30,
+            kenaSorot ? sorot!.porsi : undefined,
+          )
         }
         sprite(ctx, SUMBER.dagingDiam, 0, o.x, o.y, 0.52, false, 0.74)
         break

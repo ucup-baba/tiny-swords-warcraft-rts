@@ -54,6 +54,57 @@ describe('siklus konstruksi (PRD §3)', () => {
     }
     expect(lihat).toBe(true)
   })
+
+  it('kerja bakti multi-Pawn menambah +50% kecepatan tiap Pawn pembantu (2 Pawn = 1.5x)', () => {
+    // 1 Pawn vs 2 Pawn persis di samping bangunan konstruksi yang sama
+    const d1 = dunia0()
+    const d2 = dunia0()
+    const p1 = d1.unit.find((u) => u.tim === 'blue' && u.peran === 'pawn')!
+    const b1 = buatBangunan(d1, 'blue', 'barracks', p1.x + 20, p1.y, 'konstruksi')
+    p1.tugas = 'bangun'
+    p1.targetId = b1.id
+
+    const pawns2 = d2.unit.filter((u) => u.tim === 'blue' && u.peran === 'pawn')
+    const p2a = pawns2[0]!
+    const p2b = pawns2[1]!
+    const b2 = buatBangunan(d2, 'blue', 'barracks', p2a.x + 20, p2a.y, 'konstruksi')
+    p2b.x = p2a.x
+    p2b.y = p2a.y + 10
+    p2a.tugas = 'bangun'; p2a.targetId = b2.id
+    p2b.tugas = 'bangun'; p2b.targetId = b2.id
+
+    // Setelah 60 tick (1 detik): 1 Pawn kurangi 1.0s, 2 Pawn kurangi 1.5s
+    const awal = BANGUNAN.barracks.waktuBangun
+    langkahBanyak(d1, 60)
+    langkahBanyak(d2, 60)
+    expect(awal - b1.sisaBangun).toBeCloseTo(1.0, 2)
+    expect(awal - b2.sisaBangun).toBeCloseTo(1.5, 2)
+  })
+
+  it('pondasi tanpa pekerja (ids: []) tetap bisa ditaruh saat semua Pawn sibuk dan otomatis dilanjutkan Pawn yang selesai duluan', () => {
+    const d = dunia0()
+    d.tim.blue.sumberDaya = { gold: 500, kayu: 500, daging: 200 }
+    // Sisakan tepat 1 Pawn supaya semua Pawn langsung sibuk setelah bangunan ke-1
+    const semuaPawn = d.unit.filter((u) => u.tim === 'blue' && u.peran === 'pawn')
+    const satu = semuaPawn[0]!
+    d.unit = d.unit.filter((u) => u.tim !== 'blue' || u.peran !== 'pawn' || u.id === satu.id)
+
+    terapkanPerintah(d, 'blue', { jenis: 'bangun', ids: [satu.id], bangunan: 'house', x: satu.x + 70, y: satu.y })
+    const b1 = d.bangunan.find((x) => x.fase === 'konstruksi')!
+    expect(satu.tugas).toBe('bangun')
+    expect(satu.targetId).toBe(b1.id)
+
+    // Taruh bangunan ke-2 dengan ids: [] -> b1 TIDAK ditinggalkan, b2 tetap jadi pondasi
+    terapkanPerintah(d, 'blue', { jenis: 'bangun', ids: [], bangunan: 'house', x: satu.x + 220, y: satu.y })
+    const konstruksi = d.bangunan.filter((x) => x.fase === 'konstruksi')
+    expect(konstruksi).toHaveLength(2)
+    expect(satu.targetId).toBe(b1.id)
+
+    // Biarkan simulasi berjalan -> satu Pawn menyelesaikan b1 lalu otomatis lanjut menyelesaikan b2!
+    langkahBanyak(d, 60 * 35)
+    expect(konstruksi[0]!.fase).toBe('aktif')
+    expect(konstruksi[1]!.fase).toBe('aktif')
+  })
 })
 
 describe('antrean latih', () => {

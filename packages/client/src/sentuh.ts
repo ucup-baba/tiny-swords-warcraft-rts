@@ -3,7 +3,7 @@ import { BANGUNAN, type Bangunan, type Dunia, type Perintah } from '@hftf/sim'
 import { batasiKamera, pusatkan, type Kamera } from '@hftf/render'
 import type { ModeSentuh } from '@hftf/ui'
 import {
-  bangunanDiTitik, bolehTaruh, perbaruiMouseDunia, perintahKlikKanan,
+  bangunanDiTitik, bolehTaruh, perbaruiMouseDunia, perintahKlikKanan, pilihPawnBangun,
   seleksiKotak, sumberDiTitik, unitDiTitik, type KeadaanInput,
 } from './input.js'
 
@@ -43,6 +43,7 @@ export interface KaitSentuh {
   input: KeadaanInput
   kirim(p: Perintah): void
   tandaiBendera(wx: number, wy: number, jenis: 'pindah' | 'serang' | 'rally'): void
+  sorotSumber?(id: number): void
   toast(pesan: string): void
   perbaruiHud(): void
   bangunanTerpilih(): Bangunan | null
@@ -375,12 +376,21 @@ export class PengendaliSentuh {
         this.kait.toast('Tidak bisa dibangun di sini')
         return
       }
-      const pawn = dunia.unit.find((u) => u.tim === tim && u.peran === 'pawn')
-      if (!pawn) {
+      const pilih = pilihPawnBangun(dunia, tim, wx, wy, this.kait.input.unitTerpilih)
+      if (!pilih.adaPawn) {
         this.kait.toast('Tidak ada Pawn')
         return
       }
-      this.kait.kirim({ jenis: 'bangun', ids: [pawn.id], bangunan: jenis, x: wx, y: wy })
+      this.kait.kirim({
+        jenis: 'bangun',
+        ids: pilih.pawn ? [pilih.pawn.id] : [],
+        bangunan: jenis,
+        x: wx,
+        y: wy,
+      })
+      if (pilih.semuaSibuk) {
+        this.kait.toast('Pondasi ditaruh — Pawn pertama yang selesai akan otomatis melanjutkannya')
+      }
       this.kait.input.hantuBangun = null
       return
     }
@@ -426,6 +436,7 @@ export class PengendaliSentuh {
       const p = perintahKlikKanan(dunia, tim, ids, wx, wy, false)
       if (p) {
         this.kait.kirim(p)
+        if (p.jenis === 'kumpul') this.kait.sorotSumber?.(p.targetId)
         const jenisFlag = p.jenis === 'serang' || p.jenis === 'serangPindah' ? 'serang' : 'pindah'
         this.kait.tandaiBendera(wx, wy, jenisFlag)
       }

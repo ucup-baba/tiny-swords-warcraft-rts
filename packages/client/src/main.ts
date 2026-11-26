@@ -13,7 +13,7 @@ import {
 import { Hud, Lobi, bangunGaya, buatKonfirmasi, buatMenuJeda, urlAset, type FilterUnit, type ModeSentuh, type PerintahKartu } from '@hftf/ui'
 import {
   bangunanDiTitik, buatInput, fokusKeCastle, gulirKamera, perbaruiMouseDunia,
-  perintahKlikKanan, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
+  perintahKlikKanan, pilihPawnBangun, seleksiKotak, sumberDiTitik, unitDiTitik, bolehTaruh,
 } from './input.js'
 import { PengendaliSentuh, deteksiPerangkatSentuh } from './sentuh.js'
 
@@ -53,6 +53,7 @@ class Permainan {
   private fpsHitung = 0
   private fpsWaktu = 0
   private fpsTampil = 0
+  private sorotSumber: { id: number; sisa: number; durasi: number } | null = null
   private klikTerakhir = { waktu: 0, id: -1 }
   private geserTengah = { aktif: false, x: 0, y: 0 }
   private kursorPotong = new Map<string, string>()
@@ -215,6 +216,7 @@ class Permainan {
       get input() { return self.input },
       kirim: (p) => self.kirim(p),
       tandaiBendera: (wx, wy, jenis) => this.efek.tandaiPerintah(wx, wy, jenis),
+      sorotSumber: (id) => { this.sorotSumber = { id, sisa: 1.5, durasi: 1.5 } },
       toast: (pesan) => this.hud.tampilkanToast(pesan),
       perbaruiHud: () => this.perbaruiHud(),
       bangunanTerpilih: () => this.bangunanTerpilih(),
@@ -445,6 +447,7 @@ class Permainan {
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
     this.posLama.clear()
+    this.sorotSumber = null
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
@@ -468,6 +471,7 @@ class Permainan {
     this.kursor.style.display = this.perangkatSentuh ? 'none' : 'block'
     this.fase = 'main'
     this.posLama.clear()
+    this.sorotSumber = null
     this.akumulatorHud = 1
     this.akumulatorMinimap = 1
     this.hud.setModeSentuh(this.sentuh.mode, this.perangkatSentuh)
@@ -689,15 +693,24 @@ class Permainan {
         if (this.input.hantuBangun) {
           const jenis = this.input.hantuBangun as keyof typeof BANGUNAN
           if (!bolehTaruh(this.dunia, jenis, wx, wy)) {
-            this.hud.tampilkanToast('Tidak bisa dibangun di sini')
+            this.hud.tampilkanToast('Tidak bisa dibangun di sini', true)
             return
           }
-          const pawn = this.dunia.unit.find((u) => u.tim === this.timSaya && u.peran === 'pawn')
-          if (!pawn) {
-            this.hud.tampilkanToast('Tidak ada Pawn')
+          const pilih = pilihPawnBangun(this.dunia, this.timSaya, wx, wy, this.input.unitTerpilih)
+          if (!pilih.adaPawn) {
+            this.hud.tampilkanToast('Tidak ada Pawn', true)
             return
           }
-          this.kirim({ jenis: 'bangun', ids: [pawn.id], bangunan: jenis, x: wx, y: wy })
+          this.kirim({
+            jenis: 'bangun',
+            ids: pilih.pawn ? [pilih.pawn.id] : [],
+            bangunan: jenis,
+            x: wx,
+            y: wy,
+          })
+          if (pilih.semuaSibuk) {
+            this.hud.tampilkanToast('Pondasi ditaruh — Pawn pertama yang selesai akan otomatis melanjutkannya')
+          }
           this.input.hantuBangun = null
           return
         }
@@ -719,6 +732,9 @@ class Permainan {
           const p = perintahKlikKanan(this.dunia, this.timSaya, ids, wx, wy, this.input.modeSerang)
           if (p) {
             this.kirim(p)
+            if (p.jenis === 'kumpul') {
+              this.sorotSumber = { id: p.targetId, sisa: 1.5, durasi: 1.5 }
+            }
             const jenisFlag = p.jenis === 'serang' || p.jenis === 'serangPindah' ? 'serang' : 'pindah'
             this.efek.tandaiPerintah(wx, wy, jenisFlag)
           }
@@ -962,6 +978,10 @@ class Permainan {
     }
 
     this.efek.langkah(dt)
+    if (this.sorotSumber) {
+      this.sorotSumber.sisa -= dt
+      if (this.sorotSumber.sisa <= 0) this.sorotSumber = null
+    }
     this.hud.langkahToast(dt)
     this.akumulatorMinimap += dt
     const alpha = pakaiInterpolasi ? Math.max(0, Math.min(1, this.akumulator / DT_TETAP)) : 1
@@ -999,6 +1019,9 @@ class Permainan {
       terpilihBangunan: this.input.bangunanTerpilih,
       terpilihSumber: this.input.sumberTerpilih,
       hoverSumber: this.input.sumberHover,
+      sumberSorot: this.sorotSumber
+        ? { id: this.sorotSumber.id, porsi: 1 - Math.max(0, this.sorotSumber.sisa) / this.sorotSumber.durasi }
+        : null,
       timSaya: this.timSaya,
       fog: true,
       posLama: this.posLama,

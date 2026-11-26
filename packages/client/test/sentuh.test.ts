@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buatKamera } from '@hftf/render'
 import { buatBangunan, buatDunia, buatUnit } from '@hftf/sim'
-import { buatInput } from '../src/input.js'
+import { buatInput, pilihPawnBangun } from '../src/input.js'
 import { PengendaliSentuh } from '../src/sentuh.js'
 
 describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)', () => {
@@ -14,6 +14,7 @@ describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)',
     const input = buatInput()
     const kirim = vi.fn()
     const tandaiBendera = vi.fn()
+    const sorotSumber = vi.fn()
     const toast = vi.fn()
     const perbaruiHud = vi.fn()
     const setKotakUi = vi.fn()
@@ -26,6 +27,7 @@ describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)',
       input,
       kirim,
       tandaiBendera,
+      sorotSumber,
       toast,
       perbaruiHud,
       bangunanTerpilih: () => dunia.bangunan.find((b) => b.id === input.bangunanTerpilih) ?? null,
@@ -33,7 +35,7 @@ describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)',
       setKotakUi,
     }, mode)
 
-    return { dunia, kam, input, kirim, tandaiBendera, toast, perbaruiHud, setKotakUi, pengendali }
+    return { dunia, kam, input, kirim, tandaiBendera, sorotSumber, toast, perbaruiHud, setKotakUi, pengendali }
   }
 
   it('Mode 1: tap pada unit memilihnya, lalu tap tanah memberi perintah pindah + bendera', () => {
@@ -74,5 +76,42 @@ describe('PengendaliSentuh — Mode 1 (Tap Pintar) & Mode 3 (Joystick + Seret)',
     expect(pengendali.mode).toBe('tapPintar')
     expect(pengendali.toggleKotak()).toBe(true)
     expect(pengendali.toggleKotak()).toBe(false)
+  })
+
+  it('pilihPawnBangun tidak pernah menarik Pawn yang sedang membangun & memprioritaskan Pawn terpilih/diam terdekat', () => {
+    const { dunia } = buatFixture('tapPintar')
+    const pawns = dunia.unit.filter((u) => u.tim === 'blue' && u.peran === 'pawn')
+    const [p0, p1, p2] = pawns as [typeof pawns[0], typeof pawns[0], typeof pawns[0]]
+    p0.tugas = 'bangun'
+    p1.tugas = 'tebang'
+    p2.tugas = 'diam'
+    for (const p of pawns.slice(3)) p.tugas = 'bangun'
+
+    // Tanpa seleksi: prioritaskan Pawn diam (p2), bukan p0 yang sedang bangun atau p1 yang menebang
+    const h1 = pilihPawnBangun(dunia, 'blue', p0.x, p0.y, new Set())
+    expect(h1.pawn?.id).toBe(p2.id)
+
+    // Jika p1 sedang dipilih (dan tidak bangun), prioritaskan p1
+    const h2 = pilihPawnBangun(dunia, 'blue', p0.x, p0.y, new Set([p1.id]))
+    expect(h2.pawn?.id).toBe(p1.id)
+
+    // Jika SEMUA Pawn sedang bangun -> pawn: null, semuaSibuk: true (tidak merampas pekerja lain!)
+    p1.tugas = 'bangun'
+    p2.tugas = 'bangun'
+    const h3 = pilihPawnBangun(dunia, 'blue', p0.x, p0.y, new Set([p0.id]))
+    expect(h3.pawn).toBeNull()
+    expect(h3.semuaSibuk).toBe(true)
+    expect(h3.adaPawn).toBe(true)
+  })
+
+  it('tap resource saat Pawn terpilih memicu perintah kumpul dan sorotSumber (lingkaran konfirmasi)', () => {
+    const { dunia, input, kirim, sorotSumber, pengendali } = buatFixture('tapPintar')
+    const pawn = dunia.unit.find((u) => u.tim === 'blue' && u.peran === 'pawn')!
+    const pohon = dunia.pohon[0]!
+    input.unitTerpilih = new Set([pawn.id])
+
+    pengendali.tanganiTap(pohon.x, pohon.y)
+    expect(kirim).toHaveBeenCalledWith({ jenis: 'kumpul', ids: [pawn.id], targetId: pohon.id })
+    expect(sorotSumber).toHaveBeenCalledWith(pohon.id)
   })
 })
