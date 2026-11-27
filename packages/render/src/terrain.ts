@@ -92,6 +92,7 @@ export class PeremajaTerrain {
   private readonly daratBar: Int8Array
   /** Tebing laut jatuh ke tile air (tx, ty+1): nilai 0..3 = kol (5+k, bar 5). */
   private readonly tebingLautKol: Int8Array
+  private readonly tebingLautBioma: Uint8Array
   /** Jalan pasir pada seluruh level permukaan (Tilemap_Flat kol 5..8). */
   private readonly jalanSx: Int16Array
   private readonly jalanSy: Int16Array
@@ -101,6 +102,7 @@ export class PeremajaTerrain {
   /** Tebing plateau Lv.2 jatuh ke tile (tx, ty+1): kol 0..3, baris 4 (di atas rumput) atau 5 (di atas air). */
   private readonly tebingPlatKol: Int8Array
   private readonly tebingPlatBar: Int8Array
+  private readonly tebingPlatBioma: Uint8Array
   /** Kaki lereng rumput Lv.1/Lv.2 di tile selatan (tx, ty+1): 0=bukan, 4=lereng barat (0,5), 5=lereng timur (3,5). */
   private readonly tebingLereng: Uint8Array
   /** Ramp Lv.1 <-> Lv.2: 0=bukan, 1=batu N/S, 2=batu barat, 3=batu timur, 4=lereng rumput barat, 5=lereng rumput timur. */
@@ -112,6 +114,7 @@ export class PeremajaTerrain {
   private readonly puncakBar: Int8Array
   private readonly tebingPuncakKol: Int8Array
   private readonly tebingPuncakBar: Int8Array
+  private readonly tebingPuncakBioma: Uint8Array
   /** Kaki lereng rumput Lv.3 di tile selatan (tx, ty+1): 0=bukan, 4=lereng barat (0,5), 5=lereng timur (3,5). */
   private readonly tebingLereng3: Uint8Array
   /** Ramp Lv.2 <-> Lv.3: 0=bukan, 1=batu N/S, 2=batu barat, 3=batu timur, 4=lereng rumput barat, 5=lereng rumput timur. */
@@ -125,8 +128,8 @@ export class PeremajaTerrain {
   private daftarAwan: AwanPos[] = []
   private tanggaBarat: HTMLCanvasElement | null = null
   private tanggaTimur: HTMLCanvasElement | null = null
-  private lerengPuncakKanvas: HTMLCanvasElement | null = null
-  private lerengPuncakBioma = -1
+  private readonly lerengPuncakCache = new Map<number, HTMLCanvasElement>()
+  private readonly blendStripCache = new Map<string, HTMLCanvasElement>()
   private readonly chunk = new Map<string, Chunk>()
   private urutanPakai = 0
 
@@ -142,12 +145,14 @@ export class PeremajaTerrain {
     this.daratKol = new Int8Array(total).fill(-1)
     this.daratBar = new Int8Array(total).fill(-1)
     this.tebingLautKol = new Int8Array(total).fill(-1)
+    this.tebingLautBioma = new Uint8Array(total)
     this.jalanSx = new Int16Array(total).fill(-1)
     this.jalanSy = new Int16Array(total).fill(-1)
     this.platKol = new Int8Array(total).fill(-1)
     this.platBar = new Int8Array(total).fill(-1)
     this.tebingPlatKol = new Int8Array(total).fill(-1)
     this.tebingPlatBar = new Int8Array(total).fill(-1)
+    this.tebingPlatBioma = new Uint8Array(total)
     this.tebingLereng = new Uint8Array(total)
     this.jenisRamp = new Uint8Array(total)
     this.rampKol = new Int8Array(total).fill(-1)
@@ -156,6 +161,7 @@ export class PeremajaTerrain {
     this.puncakBar = new Int8Array(total).fill(-1)
     this.tebingPuncakKol = new Int8Array(total).fill(-1)
     this.tebingPuncakBar = new Int8Array(total).fill(-1)
+    this.tebingPuncakBioma = new Uint8Array(total)
     this.tebingLereng3 = new Uint8Array(total)
     this.jenisRamp3 = new Uint8Array(total)
     this.ramp3Kol = new Int8Array(total).fill(-1)
@@ -211,18 +217,26 @@ export class PeremajaTerrain {
     const atas2 = (tx: number, ty: number): boolean => h(tx, ty) >= TINGGI.plateau
     const atas3 = (tx: number, ty: number): boolean => h(tx, ty) >= TINGGI.puncak
     const isRampLv = (tx: number, ty: number, lv: number): boolean => h(tx, ty) === lv && rampVal(tx, ty) > 0
+    const biomaDi = (tx: number, ty: number): TemaBioma => {
+      const def = t.bioma ?? 1
+      if (!t.biomaGrid || tx < 0 || ty < 0 || tx >= kol || ty >= bar) return def
+      const v = t.biomaGrid[ty * kol + tx]!
+      return v >= 1 && v <= 5 ? (v as TemaBioma) : def
+    }
 
     this.butuhAir.fill(0)
     this.busaPantai.fill(0)
     this.daratKol.fill(-1)
     this.daratBar.fill(-1)
     this.tebingLautKol.fill(-1)
+    this.tebingLautBioma.fill(0)
     this.jalanSx.fill(-1)
     this.jalanSy.fill(-1)
     this.platKol.fill(-1)
     this.platBar.fill(-1)
     this.tebingPlatKol.fill(-1)
     this.tebingPlatBar.fill(-1)
+    this.tebingPlatBioma.fill(0)
     this.tebingLereng.fill(0)
     this.jenisRamp.fill(0)
     this.rampKol.fill(-1)
@@ -231,6 +245,7 @@ export class PeremajaTerrain {
     this.puncakBar.fill(-1)
     this.tebingPuncakKol.fill(-1)
     this.tebingPuncakBar.fill(-1)
+    this.tebingPuncakBioma.fill(0)
     this.tebingLereng3.fill(0)
     this.jenisRamp3.fill(0)
     this.ramp3Kol.fill(-1)
@@ -307,12 +322,14 @@ export class PeremajaTerrain {
           this.butuhAir[i] = 1
           this.busaPantai[i] = 1
         }
+        const bioTile = biomaDi(tx, ty)
         // Jika tile langsung di selatan adalah air (bukan jembatan), pasang tebing batu laut (kecuali lereng rumput Lv.1)!
         if (ty + 1 < bar && h(tx, ty + 1) === TINGGI.air && jemb(tx, ty + 1) === 0) {
           const rvSini = rampVal(tx, ty)
           const idxBawah = (ty + 1) * kol + tx
           if (!(hv === TINGGI.dataran && (rvSini === 4 || rvSini === 5))) {
             this.tebingLautKol[idxBawah] = sel.kol
+            this.tebingLautBioma[idxBawah] = bioTile
           }
           this.butuhAir[idxBawah] = 1
           this.busaPantai[idxBawah] = 1
@@ -352,7 +369,9 @@ export class PeremajaTerrain {
           } else if (rv1 === 4 || rv1 === 5) {
             this.jenisRamp[i] = rv1
             if (ty + 1 < bar && h(tx, ty + 1) <= TINGGI.dataran && !isRamp(tx, ty + 1)) {
-              this.tebingLereng[(ty + 1) * kol + tx] = rv1
+              const idxBawah = (ty + 1) * kol + tx
+              this.tebingLereng[idxBawah] = rv1
+              this.tebingPlatBioma[idxBawah] = bioTile
             }
           }
         }
@@ -374,11 +393,14 @@ export class PeremajaTerrain {
               const kananPlat = atas2(tx + 1, ty)
               this.tebingPlatKol[idxBawah] = kiriPlat && kananPlat ? 1 : kiriPlat ? 2 : kananPlat ? 0 : 3
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+              this.tebingPlatBioma[idxBawah] = bioTile
             }
           } else if (rv2 === 4 || rv2 === 5) {
             this.jenisRamp[i] = rv2
             if (ty + 1 < bar && !atas2(tx, ty + 1) && !isRamp(tx, ty + 1)) {
-              this.tebingLereng[(ty + 1) * kol + tx] = rv2
+              const idxBawah = (ty + 1) * kol + tx
+              this.tebingLereng[idxBawah] = rv2
+              this.tebingPlatBioma[idxBawah] = bioTile
             }
           } else {
             const sp = selAutotile(
@@ -390,6 +412,7 @@ export class PeremajaTerrain {
               const idxBawah = (ty + 1) * kol + tx
               this.tebingPlatKol[idxBawah] = sp.kol
               this.tebingPlatBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+              this.tebingPlatBioma[idxBawah] = bioTile
             }
           }
         }
@@ -411,11 +434,14 @@ export class PeremajaTerrain {
               const kananP = atas3(tx + 1, ty)
               this.tebingPuncakKol[idxBawah] = kiriP && kananP ? 1 : kiriP ? 2 : kananP ? 0 : 3
               this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+              this.tebingPuncakBioma[idxBawah] = bioTile
             }
           } else if (rv3 === 4 || rv3 === 5) {
             this.jenisRamp3[i] = rv3
             if (ty + 1 < bar && !atas3(tx, ty + 1) && !isRamp(tx, ty + 1)) {
-              this.tebingLereng3[(ty + 1) * kol + tx] = rv3
+              const idxBawah = (ty + 1) * kol + tx
+              this.tebingLereng3[idxBawah] = rv3
+              this.tebingPuncakBioma[idxBawah] = bioTile
             }
           } else {
             const s3 = selAutotile(
@@ -427,6 +453,7 @@ export class PeremajaTerrain {
               const idxBawah = (ty + 1) * kol + tx
               this.tebingPuncakKol[idxBawah] = s3.kol
               this.tebingPuncakBar[idxBawah] = h(tx, ty + 1) === TINGGI.air ? 5 : 4
+              this.tebingPuncakBioma[idxBawah] = bioTile
             }
           }
         }
@@ -714,13 +741,22 @@ export class PeremajaTerrain {
     return k
   }
 
+  /** Membaca kode bioma per-tile (1..5), fallback ke bioma dasar peta. */
+  private biomaTile(tx: number, ty: number): TemaBioma {
+    const def = this.terrain.bioma ?? 1
+    const g = this.terrain.biomaGrid
+    if (!g || tx < 0 || ty < 0 || tx >= this.kolom || ty >= this.baris) return def
+    const v = g[ty * this.kolom + tx]!
+    return v >= 1 && v <= 5 ? (v as TemaBioma) : def
+  }
+
   /**
-   * Membangun cache 128x64 (kol 0 = lereng barat, kol 1 = lereng timur) untuk lereng rumput Puncak Lv.3
+   * Membangun cache 128x64 (kol 0 = lereng barat, kol 1 = lereng timur) per bioma untuk Puncak Lv.3
    * yang membawa highlight hangat identik dengan permukaan Puncak Lv.3 agar transisi nol garis potong!
    */
-  private ambilLerengPuncak(tileFree: HTMLImageElement): HTMLCanvasElement | null {
-    const b = this.terrain.bioma ?? 1
-    if (this.lerengPuncakKanvas && this.lerengPuncakBioma === b) return this.lerengPuncakKanvas
+  private ambilLerengPuncak(tileFree: HTMLImageElement, bioma: TemaBioma): HTMLCanvasElement | null {
+    const ada = this.lerengPuncakCache.get(bioma)
+    if (ada) return ada
     const k = document.createElement('canvas')
     k.width = TILE * 2
     k.height = TILE
@@ -733,9 +769,82 @@ export class PeremajaTerrain {
     c.fillStyle = 'rgba(255, 252, 214, 0.11)'
     c.fillRect(0, 0, TILE * 2, TILE)
     c.globalCompositeOperation = 'source-over'
-    this.lerengPuncakKanvas = k
-    this.lerengPuncakBioma = b
+    this.lerengPuncakCache.set(bioma, k)
     return k
+  }
+
+  /**
+   * Membangun strip 64x64 tepi blend organik untuk perbatasan 2 bioma pada lantai datar yang sama
+   * (di-cache sekali per bioma & sisi -> nol beban frame saat rendering!).
+   */
+  private ambilStripBlend(bioma: TemaBioma, sisi: 'L' | 'R' | 'T' | 'B'): HTMLCanvasElement | null {
+    const kunci = `${bioma}-${sisi}`
+    const ada = this.blendStripCache.get(kunci)
+    if (ada) return ada
+    const im = gambarDari(asetBioma(bioma))
+    if (!im) return null
+    const k = document.createElement('canvas')
+    k.width = TILE
+    k.height = TILE
+    const c = k.getContext('2d')
+    if (!c) return null
+    c.imageSmoothingEnabled = false
+    c.drawImage(im, 6 * TILE, TILE, TILE, TILE, 0, 0, TILE, TILE)
+    const img = c.getImageData(0, 0, TILE, TILE)
+    const d = img.data
+    const lebar = 22
+    for (let y = 0; y < TILE; y++) {
+      for (let x = 0; x < TILE; x++) {
+        const jarak = sisi === 'L' ? x : sisi === 'R' ? (TILE - 1 - x) : sisi === 'T' ? y : (TILE - 1 - y)
+        const sepanjang = (sisi === 'L' || sisi === 'R') ? y : x
+        const goyang = Math.sin(sepanjang * 0.42 + bioma) * 3.4 + Math.cos(sepanjang * 0.88) * 1.8
+        const batas = lebar + goyang
+        const faktor = jarak >= batas ? 0 : Math.max(0, Math.min(1, 1 - jarak / Math.max(4, batas)))
+        // ~0.58 di garis batas tepat agar kedua sisi bertemu simetris 50/50 tanpa garis potong!
+        const alfa = Math.round(faktor * faktor * 0.58 * 255)
+        const off = (y * TILE + x) * 4 + 3
+        d[off] = Math.min(d[off]!, alfa)
+      }
+    }
+    c.putImageData(img, 0, 0)
+    this.blendStripCache.set(kunci, k)
+    return k
+  }
+
+  /** Melukis transisi halus organik bila tetangga pada elevasi SAMA memiliki bioma berbeda. */
+  private gambarBlendBioma(
+    ctx: CanvasRenderingContext2D,
+    tx: number, ty: number, px: number, py: number,
+    lv: number, bSelf: TemaBioma, selKol: number, selBar: number,
+  ): void {
+    const t = this.terrain
+    if (!t.biomaGrid) return
+    const kol = this.kolom
+    const bar = this.baris
+    const cek = (nx: number, ny: number, sisi: 'L' | 'R' | 'T' | 'B'): void => {
+      if (nx < 0 || ny < 0 || nx >= kol || ny >= bar) return
+      const ni = ny * kol + nx
+      if (t.tinggi[ni] !== lv || (t.jembatan[ni] ?? 0) > 0) return
+      const bN = this.biomaTile(nx, ny)
+      if (bN === bSelf) return
+      const strip = this.ambilStripBlend(bN, sisi)
+      if (!strip) return
+      let sx = 0, sy = 0, ex = TILE, ey = TILE
+      if (sisi === 'L' || sisi === 'R') {
+        if (selBar === 0 || selBar === 3) sy = 10
+        if (selBar === 2 || selBar === 3) ey = TILE - 10
+      } else {
+        if (selKol === 0 || selKol === 3) sx = 10
+        if (selKol === 2 || selKol === 3) ex = TILE - 10
+      }
+      if (ex > sx && ey > sy) {
+        ctx.drawImage(strip, sx, sy, ex - sx, ey - sy, px + sx, py + sy, ex - sx, ey - sy)
+      }
+    }
+    cek(tx - 1, ty, 'L')
+    cek(tx + 1, ty, 'R')
+    cek(tx, ty - 1, 'T')
+    cek(tx, ty + 1, 'B')
   }
 
   private gambarRentangTile(
@@ -750,7 +859,8 @@ export class PeremajaTerrain {
     const datar = gambarDari(TERRAIN.tanahDatar)
     const tinggiU010 = gambarDari(TERRAIN.tanahTinggi)
     const bayang = gambarDari(TERRAIN.bayangTanah)
-    const tileFree = gambarDari(asetBioma(this.terrain.bioma))
+    const tileBio = (b: number): HTMLImageElement | null =>
+      gambarDari(asetBioma((b >= 1 && b <= 5 ? b : (this.terrain.bioma ?? 1)) as TemaBioma))
 
     // Pass 0: Air laut turquoise.
     if (air) {
@@ -782,7 +892,7 @@ export class PeremajaTerrain {
       }
     }
 
-    // Pass 1: Daratan Level 1 (blok elevated Tilemap_color1 kol 5..8) + tebing batu laut (baris 5).
+    // Pass 1: Daratan Level 1 (per-tile bioma Tilemap_color1..5 kol 5..8) + tebing batu laut (baris 5).
     for (let ty = ty0; ty <= ty2; ty++) {
       const off = ty * kol
       const py = asalPxY + (ty - ty0) * TILE
@@ -791,15 +901,21 @@ export class PeremajaTerrain {
         const px = asalPxX + (tx - tx0) * TILE
 
         const tlKol = this.tebingLautKol[i]!
-        if (tlKol >= 0 && tileFree) {
-          ctx.drawImage(tileFree, (5 + tlKol) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        if (tlKol >= 0) {
+          const imTebing = tileBio(this.tebingLautBioma[i]!)
+          if (imTebing) ctx.drawImage(imTebing, (5 + tlKol) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
         }
 
         const dk = this.daratKol[i]!
         if (dk >= 0) {
           const db = this.daratBar[i]!
-          if (tileFree) {
-            ctx.drawImage(tileFree, (5 + dk) * TILE, db * TILE, TILE, TILE, px, py, TILE, TILE)
+          const bSelf = this.biomaTile(tx, ty)
+          const imSelf = tileBio(bSelf)
+          if (imSelf) {
+            ctx.drawImage(imSelf, (5 + dk) * TILE, db * TILE, TILE, TILE, px, py, TILE, TILE)
+            if (this.terrain.tinggi[i] === TINGGI.dataran) {
+              this.gambarBlendBioma(ctx, tx, ty, px, py, TINGGI.dataran, bSelf, dk, db)
+            }
           } else if (datar) {
             ctx.drawImage(datar, (GUGUS_FLAT.rumput + dk) * TILE, db * TILE, TILE, TILE, px, py, TILE, TILE)
           }
@@ -822,7 +938,7 @@ export class PeremajaTerrain {
       }
     }
 
-    // Pass 2: Tebing Batu Plateau Lv.2, tangga batu Lv.2, & permukaan Plateau Level 2!
+    // Pass 2: Tebing Batu Plateau Lv.2, tangga batu / lereng rumput Lv.2, & permukaan Plateau Level 2!
     for (let ty = ty0; ty <= ty2; ty++) {
       const off = ty * kol
       const py = asalPxY + (ty - ty0) * TILE
@@ -832,8 +948,9 @@ export class PeremajaTerrain {
 
         // 2a. Tebing batu plateau Lv.2 atau kaki lereng rumput Lv.1/Lv.2 (baris 5 Tilemap_color)
         const tlr = this.tebingLereng[i]!
-        if ((tlr === 4 || tlr === 5) && tileFree) {
-          ctx.drawImage(tileFree, (tlr === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        const imTebing2 = tileBio(this.tebingPlatBioma[i]!)
+        if ((tlr === 4 || tlr === 5) && imTebing2) {
+          ctx.drawImage(imTebing2, (tlr === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
         } else {
           const tpk = this.tebingPlatKol[i]!
           if (tpk >= 0) {
@@ -844,8 +961,8 @@ export class PeremajaTerrain {
               ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
               ctx.restore()
             }
-            if (tileFree) {
-              ctx.drawImage(tileFree, (5 + tpk) * TILE, tpb * TILE, TILE, TILE, px, py, TILE, TILE)
+            if (imTebing2) {
+              ctx.drawImage(imTebing2, (5 + tpk) * TILE, tpb * TILE, TILE, TILE, px, py, TILE, TILE)
             } else if (tinggiU010) {
               ctx.drawImage(tinggiU010, tpk * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
             }
@@ -853,11 +970,16 @@ export class PeremajaTerrain {
         }
 
         // 2c. Permukaan Plateau Level 2
+        const bSelf = this.biomaTile(tx, ty)
+        const imSelf = tileBio(bSelf)
         const pk = this.platKol[i]!
         if (pk >= 0) {
           const pb = this.platBar[i]!
-          if (tileFree) {
-            ctx.drawImage(tileFree, (5 + pk) * TILE, pb * TILE, TILE, TILE, px, py, TILE, TILE)
+          if (imSelf) {
+            ctx.drawImage(imSelf, (5 + pk) * TILE, pb * TILE, TILE, TILE, px, py, TILE, TILE)
+            if (this.terrain.tinggi[i] === TINGGI.plateau) {
+              this.gambarBlendBioma(ctx, tx, ty, px, py, TINGGI.plateau, bSelf, pk, pb)
+            }
           } else if (tinggiU010) {
             ctx.drawImage(tinggiU010, pk * TILE, Math.min(pb, BARIS_ELEV.permukaanBawah) * TILE, TILE, TILE, px, py, TILE, TILE)
           }
@@ -877,8 +999,8 @@ export class PeremajaTerrain {
             ctx.drawImage(strip, 0, this.rampBar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
           }
         } else if (jr === 4 || jr === 5) {
-          if (tileFree) {
-            ctx.drawImage(tileFree, (jr === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
+          if (imSelf) {
+            ctx.drawImage(imSelf, (jr === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
           } else if (tinggiU010) {
             const strip = this.ambilTanggaEW(tinggiU010, jr === 4 ? 2 : 3)
             if (strip) ctx.drawImage(strip, 0, 3 * TILE, TILE, TILE, px, py, TILE, TILE)
@@ -896,8 +1018,9 @@ export class PeremajaTerrain {
         const px = asalPxX + (tx - tx0) * TILE
 
         const tlr3 = this.tebingLereng3[i]!
-        if ((tlr3 === 4 || tlr3 === 5) && tileFree) {
-          ctx.drawImage(tileFree, (tlr3 === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
+        const imTebing3 = tileBio(this.tebingPuncakBioma[i]!)
+        if ((tlr3 === 4 || tlr3 === 5) && imTebing3) {
+          ctx.drawImage(imTebing3, (tlr3 === 4 ? 0 : 3) * TILE, 5 * TILE, TILE, TILE, px, py, TILE, TILE)
         } else {
           const tp3k = this.tebingPuncakKol[i]!
           if (tp3k >= 0) {
@@ -908,19 +1031,22 @@ export class PeremajaTerrain {
               ctx.drawImage(bayang, TILE, TILE, TILE, TILE, px, py + 12, TILE, TILE)
               ctx.restore()
             }
-            if (tileFree) {
-              ctx.drawImage(tileFree, (5 + tp3k) * TILE, tp3b * TILE, TILE, TILE, px, py, TILE, TILE)
+            if (imTebing3) {
+              ctx.drawImage(imTebing3, (5 + tp3k) * TILE, tp3b * TILE, TILE, TILE, px, py, TILE, TILE)
             } else if (tinggiU010) {
               ctx.drawImage(tinggiU010, tp3k * TILE, BARIS_ELEV.tebing * TILE, TILE, TILE, px, py, TILE, TILE)
             }
           }
         }
 
+        const bSelf = this.biomaTile(tx, ty)
+        const imSelf = tileBio(bSelf)
         const p3k = this.puncakKol[i]!
         if (p3k >= 0) {
           const p3b = this.puncakBar[i]!
-          if (tileFree) {
-            ctx.drawImage(tileFree, (5 + p3k) * TILE, p3b * TILE, TILE, TILE, px, py, TILE, TILE)
+          if (imSelf) {
+            ctx.drawImage(imSelf, (5 + p3k) * TILE, p3b * TILE, TILE, TILE, px, py, TILE, TILE)
+            this.gambarBlendBioma(ctx, tx, ty, px, py, TINGGI.puncak, bSelf, p3k, p3b)
             ctx.fillStyle = 'rgba(255, 252, 214, 0.11)'
             ctx.fillRect(px, py, TILE, TILE)
           } else if (tinggiU010) {
@@ -941,12 +1067,12 @@ export class PeremajaTerrain {
             ctx.drawImage(strip, 0, this.ramp3Bar[i]! * TILE, TILE, TILE, px, py, TILE, TILE)
           }
         } else if (jr3 === 4 || jr3 === 5) {
-          if (tileFree) {
-            const lp = this.ambilLerengPuncak(tileFree)
+          if (imSelf) {
+            const lp = this.ambilLerengPuncak(imSelf, bSelf)
             if (lp) {
               ctx.drawImage(lp, (jr3 === 4 ? 0 : 1) * TILE, 0, TILE, TILE, px, py, TILE, TILE)
             } else {
-              ctx.drawImage(tileFree, (jr3 === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
+              ctx.drawImage(imSelf, (jr3 === 4 ? 0 : 3) * TILE, 4 * TILE, TILE, TILE, px, py, TILE, TILE)
             }
           } else if (tinggiU010) {
             const strip = this.ambilTanggaEW(tinggiU010, jr3 === 4 ? 2 : 3)

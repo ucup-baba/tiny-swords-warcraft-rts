@@ -1230,8 +1230,100 @@ img, canvas { image-rendering: pixelated; }
 }
 .ed-alat-baris {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+.ed-alat-baris .ed-btn {
+  padding: 0 2px;
+  font-size: 13px;
+}
+.ed-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  min-height: 36px;
+  background: linear-gradient(180deg, #dfca9a 0%, #ccb277 100%);
+  border-bottom: 2px solid #593b20;
+  overflow-x: auto;
+  flex: none;
+}
+.ed-filter-grup {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  background: rgba(36, 22, 11, 0.12);
+  border: 1.5px solid rgba(74, 48, 24, 0.36);
+  border-radius: 5px;
+  flex: none;
+}
+.ed-filter-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #4a2b10;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.ed-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 7px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 249, 232, 0.86);
+  border: 1.5px solid #5c3c1e;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ed-chip:hover { background: #ffe48f; }
+.ed-chip.aktif {
+  background: #ffd15c;
+  border-color: #1f1207;
+  outline: 2px solid #fff3c4;
+}
+.ed-chip.pemain {
+  min-width: 24px;
+  padding: 0 5px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+.ed-chip.pemain.aktif {
+  outline: 2.5px solid #ffd86b;
+  transform: scale(1.06);
+}
+.ed-inspector {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  background: rgba(255, 236, 178, 0.55);
+  border: 2px solid #8a5c14;
+  border-radius: 6px;
+}
+.ed-inspector.tampil { display: flex; }
+.ed-insp-row {
+  display: flex;
+  align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+}
+.ed-insp-num {
+  width: 68px;
+  height: 26px;
+  padding: 2px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tinta);
+  background: rgba(255, 250, 236, 0.96);
+  border: 1.5px solid #5c3c1e;
+  border-radius: 4px;
 }
 .ed-ukuran-baris {
   display: flex;
@@ -1477,6 +1569,8 @@ img, canvas { image-rendering: pixelated; }
   .ed-btn, .ed-select { height: 26px; padding: 0 6px; font-size: 11px; }
   .ed-bioma-swatch { width: 18px; height: 18px; }
   .ed-nama { width: 112px; height: 26px; padding: 2px 6px; font-size: 11px; }
+  .ed-filter-bar { padding: 3px 6px; gap: 5px; min-height: 30px; flex-wrap: nowrap; overflow-x: auto; }
+  .ed-chip { height: 22px; padding: 0 5px; font-size: 10px; }
   .ed-palet {
     position: absolute;
     left: 0;

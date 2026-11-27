@@ -16,7 +16,7 @@ import { pakaiSkill } from './sistem/hero.js'
 import { KAYU_POHON_BARU, langkahPawn } from './sistem/pekerja.js'
 import { buatBangunan, buatUnit } from './sistem/spawn.js'
 import { langkahAkhir } from './sistem/akhir.js'
-import { langkahCamp, tambahCamp } from './sistem/goblin.js'
+import { langkahCamp, tambahCamp, tambahGoblinSatuan } from './sistem/goblin.js'
 import { buatFog, langkahFog, type Fog } from './sistem/fog.js'
 import { langkahProyektil, langkahUnitTempur } from './sistem/tempur.js'
 import type { Dunia, KeadaanTim, Statistik } from './tipe.js'
@@ -541,6 +541,24 @@ function isiPetaCustom(dunia: Dunia, data: DataPetaCustom, daftarSlot: readonly 
       dunia.tambang.push({ id: dunia.idBerikut++, jenis: 'stone', x: wx, y: wy, gold: bn.jumlah, varian: 1 })
     } else {
       dunia.pohon.push({ id: dunia.idBerikut++, x: wx, y: wy, kayu: bn.jumlah, varian: 'pinus1' })
+    }
+  }
+
+  for (const u of data.entitas.unit ?? []) {
+    if (tinggiDi(t, u.tx, u.ty) === TINGGI.air) continue
+    const [wx, wy] = P(u.tx, u.ty)
+    if (u.jenis === 'goblinTorch') {
+      tambahGoblinSatuan(dunia, 'torch', wx, wy)
+    } else if (u.jenis === 'goblinTnt') {
+      tambahGoblinSatuan(dunia, 'tnt', wx, wy)
+    } else if (u.jenis === 'goblinBarrel') {
+      tambahGoblinSatuan(dunia, 'barrel', wx, wy)
+    } else {
+      const slotPemilik = u.slot >= 0
+        ? (daftarSlot.find((s) => s.indeks === u.slot) ?? daftarSlot[u.slot] ?? null)
+        : null
+      const tim: Tim = slotPemilik ? slotPemilik.tim : 'neutral'
+      buatUnit(dunia, tim, u.jenis, wx, wy)
     }
   }
 

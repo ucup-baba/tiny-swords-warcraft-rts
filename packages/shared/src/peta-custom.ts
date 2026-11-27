@@ -52,6 +52,12 @@ export type JenisDekoCustom = (typeof JENIS_DEKO_CUSTOM)[number]
 export const JENIS_BANGUNAN_CUSTOM = ['house', 'tower', 'barracks', 'archery', 'monastery', 'altar'] as const
 export type JenisBangunanCustom = (typeof JENIS_BANGUNAN_CUSTOM)[number]
 
+export const JENIS_UNIT_CUSTOM = [
+  'pawn', 'warrior', 'archer', 'lancer', 'monk', 'mage',
+  'goblinTorch', 'goblinTnt', 'goblinBarrel',
+] as const
+export type JenisUnitCustom = (typeof JENIS_UNIT_CUSTOM)[number]
+
 export interface SpawnPetaCustom {
   /** Indeks slot pemain (0..5). */
   slot: number
@@ -103,6 +109,14 @@ export interface BonusPetaCustom {
   jumlah: number
 }
 
+export interface UnitPetaCustom {
+  tx: number
+  ty: number
+  jenis: JenisUnitCustom
+  /** Indeks slot pemilik 0..5, atau -1 untuk Netral (Goblin selalu -1). */
+  slot: number
+}
+
 export interface EntitasPetaCustom {
   spawn: SpawnPetaCustom[]
   pohon: PohonPetaCustom[]
@@ -112,6 +126,8 @@ export interface EntitasPetaCustom {
   deko: DekoPetaCustom[]
   bangunan: BangunanPetaCustom[]
   bonus: BonusPetaCustom[]
+  /** Pasukan / karakter awal yang ditaruh di peta (opsional agar kompatibel peta lama). */
+  unit?: UnitPetaCustom[]
 }
 
 /**
@@ -122,12 +138,15 @@ export interface DataPetaCustom {
   versi: 1
   id: string
   nama: string
+  /** Tema bioma dasar peta (1..5); dipakai sebagai fallback bila `biomaRle` tidak diisi. */
   bioma: TemaBioma
+  /** Grid bioma per-tile (1..5 -> Tilemap_color1..5) terkompresi RLE agar pulau/lantai/tepi sungai bisa beda bioma! */
+  biomaRle?: string
   kolom: number
   baris: number
   /** Grid tinggi (0 air, 1 dataran, 2 plateau, 3 puncak) terkompresi RLE. */
   tinggiRle: string
-  /** Grid ramp (0 bukan, 1 N/S, 2 barat, 3 timur) terkompresi RLE. */
+  /** Grid ramp (0 bukan, 1 batu N/S, 2 batu barat, 3 batu timur, 4 lereng rumput barat, 5 lereng rumput timur). */
   rampRle: string
   /** Grid jembatan (0 bukan, 1 horizontal, 2 vertikal) terkompresi RLE. */
   jembatanRle: string
@@ -184,6 +203,22 @@ export function decodeRle(rle: string, panjang: number, maksNilai: number): Uint
   return hasil
 }
 
+/** Mendekode grid bioma per-tile (nilai 1..5); jika `rle` kosong, mengisi seluruh grid dengan `biomaDefault`. */
+export function decodeBiomaGrid(
+  rle: string | undefined,
+  panjang: number,
+  biomaDefault: TemaBioma,
+): Uint8Array {
+  if (!rle) {
+    return new Uint8Array(panjang).fill(biomaDefault)
+  }
+  const arr = decodeRle(rle, panjang, 5)
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i]! < 1 || arr[i]! > 5) arr[i] = biomaDefault
+  }
+  return arr
+}
+
 /** Menghasilkan daftar koordinat simetri unik untuk satu titik tile sesuai ModeSimetri. */
 export function hitungTitikSimetri(
   tx: number, ty: number, kolom: number, baris: number, mode: ModeSimetri,
@@ -237,6 +272,7 @@ export function buatIdPetaCustom(): string {
 const SET_POHON = new Set<string>(VARIAN_POHON_CUSTOM)
 const SET_DEKO = new Set<string>(JENIS_DEKO_CUSTOM)
 const SET_BANGUNAN = new Set<string>(JENIS_BANGUNAN_CUSTOM)
+const SET_UNIT = new Set<string>(JENIS_UNIT_CUSTOM)
 const SET_BIOMA = new Set<number>(DAFTAR_BIOMA)
 
 const bulatDalam = (v: unknown, min: number, maks: number): number | null =>
@@ -388,21 +424,45 @@ export function validasiDataPetaCustom(raw: unknown): DataPetaCustom | null {
     }
   }
 
+  const unit: UnitPetaCustom[] = []
+  if (Array.isArray(er['unit'])) {
+    for (const item of er['unit'].slice(0, 200)) {
+      if (!item || typeof item !== 'object') continue
+      const u = item as Record<string, unknown>
+      const tx = bulatDalam(u['tx'], 0, kolom - 1)
+      const ty = bulatDalam(u['ty'], 0, baris - 1)
+      const slotRaw = bulatDalam(u['slot'], -1, 5)
+      if (tx === null || ty === null || slotRaw === null) continue
+      if (typeof u['jenis'] !== 'string' || !SET_UNIT.has(u['jenis'])) continue
+      const jenis = u['jenis'] as JenisUnitCustom
+      const slot = jenis.startsWith('goblin') ? -1 : slotRaw
+      unit.push({ tx, ty, jenis, slot })
+    }
+  }
+
   // Pastikan panjang RLE valid dengan decode-encode cepat tidak melempar error
   decodeRle(o['tinggiRle'], kolom * baris, TINGGI.puncak)
+  const biomaRle = typeof o['biomaRle'] === 'string' && o['biomaRle'].length > 0 && o['biomaRle'].length <= 48_000
+    ? o['biomaRle']
+    : undefined
+  if (biomaRle) decodeBiomaGrid(biomaRle, kolom * baris, bioma)
 
   return {
     versi: 1,
     id,
     nama,
     bioma,
+    ...(biomaRle ? { biomaRle } : {}),
     kolom,
     baris,
     tinggiRle: o['tinggiRle'],
     rampRle: o['rampRle'],
     jembatanRle: o['jembatanRle'],
     jalanRle: o['jalanRle'],
-    entitas: { spawn, pohon, tambang, domba, camp, deko, bangunan, bonus },
+    entitas: {
+      spawn, pohon, tambang, domba, camp, deko, bangunan, bonus,
+      ...(unit.length > 0 ? { unit } : {}),
+    },
     diubahPada: typeof o['diubahPada'] === 'number' && Number.isFinite(o['diubahPada']) ? o['diubahPada'] : Date.now(),
   }
 }
@@ -493,6 +553,20 @@ export function cekValidasiPeta(data: DataPetaCustom): HasilValidasiPeta {
     const dekatTambang = data.entitas.tambang.some((m) => Math.hypot(m.tx - s.tx, m.ty - s.ty) <= 14)
     if (!dekatTambang) {
       peringatan.push(`Spawn #${s.slot + 1} belum punya Tambang Emas dekat markas.`)
+    }
+    const hSp = tinggi[s.ty * kol + s.tx]!
+    if (hSp > TINGGI.air) {
+      let luasSama = 0
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = s.tx + dx
+          const ny = s.ty + dy
+          if (nx >= 0 && ny >= 0 && nx < kol && ny < bar && tinggi[ny * kol + nx] === hSp) luasSama++
+        }
+      }
+      if (luasSama < 6) {
+        peringatan.push(`Area Spawn #${s.slot + 1} sempit (< 3×3 lahan datar) — perlebar untuk ruang Castle & Pawn.`)
+      }
     }
   }
   if (data.entitas.pohon.length < 10) {

@@ -15,8 +15,10 @@ export interface Terrain {
   jembatan: Uint8Array
   /** 1 = jalan tanah/pasir keemasan penghubung markas, tangga, & jembatan (visual). */
   jalan: Uint8Array
-  /** Tema bioma visual (1..5 -> Tilemap_color1..5 Free Pack). Default 1. */
+  /** Tema bioma dasar visual (1..5 -> Tilemap_color1..5 Free Pack). Default 1. */
   bioma?: TemaBioma
+  /** Grid bioma per-tile (nilai 1..5) agar tiap pulau, tepi sungai, dan lantai bisa beda bioma! */
+  biomaGrid?: Uint8Array
 }
 
 export const indeks = (t: Terrain, tx: number, ty: number): number => ty * t.kolom + tx

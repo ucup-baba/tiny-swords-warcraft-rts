@@ -42,6 +42,13 @@ export function peranGoblin(u: Unit): PeranGoblin {
 }
 
 export function isiCamp(dunia: Dunia, camp: Camp): void {
+  if (camp.satuan) {
+    buatGoblin(dunia, camp, camp.satuan, camp.x, camp.y)
+    camp.aggro = false
+    camp.respawn = 0
+    camp.pembunuhTerakhir = null
+    return
+  }
   const daftar = ISI_CAMP[camp.jenis]
   const levelCamp = tinggiDi(dunia.terrain, keTile(camp.x), keTile(camp.y))
   const rDasar = dunia.peta === 'klasik2' && !dunia.petaCustomNama ? 40 : 84
@@ -64,6 +71,16 @@ export function isiCamp(dunia: Dunia, camp: Camp): void {
 
 export function tambahCamp(dunia: Dunia, jenis: JenisCamp, x: number, y: number): Camp {
   const camp: Camp = { id: dunia.idBerikut++, jenis, x, y, aggro: false, respawn: 0, pembunuhTerakhir: null }
+  dunia.camp.push(camp)
+  isiCamp(dunia, camp)
+  return camp
+}
+
+/** Menaruh satu penjaga Goblin satuan (dipakai peta custom dari Map Editor tanpa gubuk camp). */
+export function tambahGoblinSatuan(dunia: Dunia, peran: PeranGoblin, x: number, y: number): Camp {
+  const camp: Camp = {
+    id: dunia.idBerikut++, jenis: 'kecil', x, y, aggro: false, respawn: 0, pembunuhTerakhir: null, satuan: peran,
+  }
   dunia.camp.push(camp)
   isiCamp(dunia, camp)
   return camp

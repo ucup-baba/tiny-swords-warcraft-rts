@@ -1,7 +1,7 @@
 import {
-  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, decodeRle, encodeRle,
+  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, decodeBiomaGrid, decodeRle, encodeRle,
   type CampPetaCustom, type DataPetaCustom, type DekoPetaCustom, type EntitasPetaCustom,
-  type PohonPetaCustom, type SpawnPetaCustom, type TambangPetaCustom, type Tinggi,
+  type PohonPetaCustom, type SpawnPetaCustom, type TambangPetaCustom, type TemaBioma, type Tinggi,
 } from '@hftf/shared'
 import { indeks, tinggiDi, type Terrain, type TitikBasis, type TitikPenting } from './terrain.js'
 
@@ -21,6 +21,7 @@ export function buatTerrainDariCustom(data: DataPetaCustom): { terrain: Terrain;
     jembatan: decodeRle(data.jembatanRle, total, 2),
     jalan: decodeRle(data.jalanRle, total, 1),
     bioma: data.bioma,
+    biomaGrid: decodeBiomaGrid(data.biomaRle, total, data.bioma),
   }
 
   // Pastikan setiap jembatan bisa diinjak (>= dataran) dan ramp tidak berada di atas air
@@ -82,11 +83,26 @@ export function serialisasiTerrainCustom(
   meta: { id: string; nama: string; diubahPada: number },
   entitas: EntitasPetaCustom,
 ): DataPetaCustom {
+  let biomaDasar: TemaBioma = t.bioma ?? 1
+  let biomaRle: string | undefined
+  if (t.biomaGrid && t.biomaGrid.length === t.kolom * t.baris) {
+    const pertama = t.biomaGrid[0]!
+    let seragam = pertama >= 1 && pertama <= 5
+    for (let i = 1; i < t.biomaGrid.length && seragam; i++) {
+      if (t.biomaGrid[i] !== pertama) seragam = false
+    }
+    if (seragam) {
+      biomaDasar = pertama as TemaBioma
+    } else {
+      biomaRle = encodeRle(t.biomaGrid)
+    }
+  }
   return {
     versi: 1,
     id: meta.id,
     nama: meta.nama,
-    bioma: t.bioma ?? 1,
+    bioma: biomaDasar,
+    ...(biomaRle ? { biomaRle } : {}),
     kolom: t.kolom,
     baris: t.baris,
     tinggiRle: encodeRle(t.tinggi),

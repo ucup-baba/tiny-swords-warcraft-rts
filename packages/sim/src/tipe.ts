@@ -1,6 +1,6 @@
 import type { DekoPetaCustom, JenisPeta, Tim, TimPemain, VarianPohonCustom } from '@hftf/shared'
 import type { JenisBangunan } from './definisi/bangunan.js'
-import type { JenisCamp } from './definisi/goblin.js'
+import type { JenisCamp, PeranGoblin } from './definisi/goblin.js'
 import type { JenisRiset } from './definisi/riset.js'
 import type { JenisSerangan } from './definisi/tempur.js'
 import type { PeranHero, PeranUnit } from './definisi/unit.js'
@@ -232,6 +232,8 @@ export interface Camp {
   respawn: number
   /** Tim yang menjatuhkan goblin terakhir — yang berhak atas kredit camp. */
   pembunuhTerakhir: Tim | null
+  /** Jika terisi, ini adalah penjaga Goblin satuan buatan Map Editor (tanpa gubuk camp, respawn 1 unit saja). */
+  satuan?: PeranGoblin
 }
 
 export interface HeroGugur {

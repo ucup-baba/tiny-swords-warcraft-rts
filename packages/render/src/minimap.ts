@@ -1,4 +1,4 @@
-import { DUNIA_H, DUNIA_W, INFO_BIOMA, TILE, TINGGI, WARNA_TIM, type Tim } from '@hftf/shared'
+import { DUNIA_H, DUNIA_W, INFO_BIOMA, TILE, TINGGI, WARNA_TIM, type TemaBioma, type Tim } from '@hftf/shared'
 import { pernahLihat, sekutu, terlihatDi, TICK_PER_FOG, type Dunia } from '@hftf/sim'
 import type { Kamera } from './kamera.js'
 
@@ -34,13 +34,15 @@ export class Minimap {
     if (!c) return k
 
     const t = this.dunia.terrain
-    const bioma = INFO_BIOMA[t.bioma ?? 1]
+    const biomaDef = t.bioma ?? 1
     const sx = w / t.kolom
     const sy = h / t.baris
     for (let ty = 0; ty < t.baris; ty++) {
       for (let tx = 0; tx < t.kolom; tx++) {
         const idx = ty * t.kolom + tx
         const v = t.tinggi[idx]!
+        const bVal = t.biomaGrid?.[idx]
+        const bioma = INFO_BIOMA[(bVal && bVal >= 1 && bVal <= 5 ? bVal : biomaDef) as TemaBioma]
         const bawahPuncak = ty > 0 && v < TINGGI.puncak && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.puncak
         const bawahPlat = ty > 0 && v < TINGGI.plateau && t.tinggi[(ty - 1) * t.kolom + tx] === TINGGI.plateau
         const bawahLaut = ty > 0 && v === TINGGI.air && t.tinggi[(ty - 1) * t.kolom + tx] !== TINGGI.air && (t.jembatan[(ty - 1) * t.kolom + tx] ?? 0) === 0
@@ -131,6 +133,7 @@ export class Minimap {
 
     // Camp goblin tampil di ATAS fog (ala titik creep Warcraft III) agar lokasi Goblin jelas terlihat!
     for (const c of this.dunia.camp) {
+      if (c.satuan) continue
       const hidup = c.respawn <= 0 && this.dunia.unit.some((u) => u.campId === c.id)
       const segeraKembali = !hidup && c.respawn > 0 && c.respawn < 10
       if (!hidup && !segeraKembali) continue

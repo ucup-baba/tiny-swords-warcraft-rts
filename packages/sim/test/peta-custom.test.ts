@@ -1,11 +1,12 @@
 import {
-  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, balikKodeRamp, cekValidasiPeta, decodeRle, encodeRle,
-  hitungTitikSimetri, validasiDataPetaCustom, type DataPetaCustom,
+  PETA_BARIS, PETA_KOLOM, RAMP_MAKS, TINGGI, balikKodeRamp, cekValidasiPeta, decodeBiomaGrid,
+  decodeRle, encodeRle, hitungTitikSimetri, validasiDataPetaCustom, type DataPetaCustom,
 } from '@hftf/shared'
 import { describe, expect, it } from 'vitest'
 import {
   bolehLangkah, buatDunia, buatTemplatePetaCustom, buatTerrainDariCustom, cariJalur,
-  eksporPetaBawaanKeCustom, hashDunia, keTengahPiksel, keTile, langkahBanyak, type Terrain,
+  eksporPetaBawaanKeCustom, hashDunia, keTengahPiksel, keTile, langkahBanyak,
+  serialisasiTerrainCustom, type Terrain,
 } from '../src/index.js'
 
 function buatTerrainDatar(): Terrain {
@@ -353,5 +354,87 @@ describe('Terrain 3-Tingkat, Template, & Ekspor Peta Bawaan (@hftf/sim)', () => 
     expect(jalur).not.toBeNull()
     expect(jalur!.titik.some((p) => keTile(p.x) === 20 && keTile(p.y) === 26)).toBe(true)
     expect(jalur!.titik.some((p) => keTile(p.x) === 28 && keTile(p.y) === 24)).toBe(true)
+  })
+
+  it('bioma per-tile (biomaRle) & unit awal (kerajaan + goblin satuan) lolos validasi, serialisasi, & simulasi deterministik', () => {
+    const total = PETA_KOLOM * PETA_BARIS
+    const tinggi = new Uint8Array(total).fill(TINGGI.dataran)
+    const biomaGrid = new Uint8Array(total).fill(1)
+    const kosong = new Uint8Array(total)
+
+    // Lantai 1 sisi barat Bioma 5 (Rawa), plateau tengah Bioma 4 (Zaitun), pulau timur Bioma 3 (Zamrud)
+    for (let ty = 10; ty <= 40; ty++) {
+      for (let tx = 10; tx <= 30; tx++) biomaGrid[ty * PETA_KOLOM + tx] = 5
+    }
+    for (let ty = 20; ty <= 30; ty++) {
+      for (let tx = 40; tx <= 50; tx++) {
+        tinggi[ty * PETA_KOLOM + tx] = TINGGI.plateau
+        biomaGrid[ty * PETA_KOLOM + tx] = 4
+      }
+    }
+    for (let ty = 10; ty <= 40; ty++) {
+      for (let tx = 60; tx <= 80; tx++) biomaGrid[ty * PETA_KOLOM + tx] = 3
+    }
+
+    const tAsli: Terrain = {
+      kolom: PETA_KOLOM,
+      baris: PETA_BARIS,
+      tinggi,
+      ramp: kosong,
+      jembatan: kosong,
+      jalan: kosong,
+      bioma: 1,
+      biomaGrid,
+    }
+    const data = serialisasiTerrainCustom(tAsli, { id: 'mix-bioma', nama: 'Multi Bioma & Unit', diubahPada: 99 }, {
+      spawn: [
+        { slot: 0, tx: 18, ty: 25 },
+        { slot: 1, tx: 72, ty: 25 },
+      ],
+      pohon: [],
+      tambang: [],
+      domba: [],
+      camp: [],
+      deko: [],
+      bangunan: [],
+      bonus: [],
+      unit: [
+        { tx: 22, ty: 25, jenis: 'lancer', slot: 0 },
+        { tx: 68, ty: 25, jenis: 'mage', slot: 1 },
+        { tx: 35, ty: 25, jenis: 'goblinTnt', slot: 2 }, // slot akan disanitasi ke -1 (Netral)
+        { tx: 36, ty: 25, jenis: 'goblinBarrel', slot: -1 },
+      ],
+    })
+
+    expect(data.biomaRle).toBeTruthy()
+    const valid = validasiDataPetaCustom(JSON.parse(JSON.stringify(data)))
+    expect(valid).not.toBeNull()
+    expect(valid!.biomaRle).toBe(data.biomaRle)
+    expect(valid!.entitas.unit).toHaveLength(4)
+    expect(valid!.entitas.unit!.find((u) => u.jenis === 'goblinTnt')!.slot).toBe(-1)
+
+    // Decode bioma per-tile akurat & tetap kompatibel peta lama tanpa biomaRle
+    const decoded = decodeBiomaGrid(valid!.biomaRle, total, 1)
+    expect(decoded[25 * PETA_KOLOM + 20]).toBe(5)
+    expect(decoded[25 * PETA_KOLOM + 45]).toBe(4)
+    expect(decoded[25 * PETA_KOLOM + 70]).toBe(3)
+    const fallbackLama = decodeBiomaGrid(undefined, 16, 4)
+    expect([...fallbackLama]).toEqual(Array(16).fill(4))
+
+    // Masuk simulasi live: lancer biru, mage merah, & 2 goblin satuan muncul sesuai tempat dan deterministik
+    const d1 = buatDunia({ seed: 11, petaCustom: valid! })
+    const d2 = buatDunia({ seed: 11, petaCustom: valid! })
+    expect(d1.terrain.biomaGrid![25 * PETA_KOLOM + 45]).toBe(4)
+    expect(d1.unit.some((u) => u.tim === 'blue' && u.peran === 'lancer')).toBe(true)
+    expect(d1.unit.some((u) => u.tim === 'red' && u.peran === 'mage')).toBe(true)
+    const campSatuan = d1.camp.filter((c) => c.satuan !== undefined)
+    expect(campSatuan).toHaveLength(2)
+    for (const cs of campSatuan) {
+      expect(d1.unit.filter((u) => u.campId === cs.id)).toHaveLength(1)
+    }
+
+    langkahBanyak(d1, 90)
+    langkahBanyak(d2, 90)
+    expect(hashDunia(d1)).toBe(hashDunia(d2))
   })
 })

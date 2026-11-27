@@ -539,6 +539,7 @@ export function gambarEntitas(
   }
 
   for (const c of dunia.camp) {
+    if (c.satuan) continue
     if (!diingat(c.x, c.y)) continue
     const hidup = c.respawn <= 0 && dunia.unit.some((u) => u.campId === c.id)
     const pos = posisiCampGoblin(dunia, c.x, c.y)

@@ -1,15 +1,16 @@
 import {
   BANGUNAN_BLUE, BANGUNAN_FASE, BANGUNAN_U010_WARNA, DEKO, DEKO_FREE, EDITOR_U010,
-  GOBLIN as ASET_GOBLIN, POHON_FREE, SUMBER, TERRAIN, TERRAIN_FREE, frame, type Aset,
+  GOBLIN as ASET_GOBLIN, PAWN_FREE, POHON_FREE, SUMBER, TERRAIN, TERRAIN_FREE,
+  UNIT_BLUE, UNIT_U010_WARNA, frame, type Aset,
 } from '@hftf/aset'
 import {
   DUNIA_H, DUNIA_W, INFO_BIOMA, INFO_PETA, JENIS_PETA, PETA_BARIS, PETA_KOLOM,
   RAMP_MAKS, TILE, TIM_PEMAIN, TINGGI, WARNA_TIM, balikKodeRamp, buatIdPetaCustom, cekValidasiPeta,
-  decodeRle, encodeRle, hitungTitikSimetri, type BangunanPetaCustom, type BonusPetaCustom,
-  type CampPetaCustom, type DataPetaCustom, type DekoPetaCustom, type EntitasPetaCustom,
-  type JenisBangunanCustom, type JenisDekoCustom, type JenisPeta, type ModeSimetri,
-  type PohonPetaCustom, type SpawnPetaCustom, type TambangPetaCustom, type TemaBioma,
-  type Tinggi, type VarianPohonCustom,
+  decodeBiomaGrid, decodeRle, encodeRle, hitungTitikSimetri, type BangunanPetaCustom,
+  type BonusPetaCustom, type CampPetaCustom, type DataPetaCustom, type DekoPetaCustom,
+  type EntitasPetaCustom, type JenisBangunanCustom, type JenisDekoCustom, type JenisPeta,
+  type JenisUnitCustom, type ModeSimetri, type PohonPetaCustom, type SpawnPetaCustom,
+  type TambangPetaCustom, type TemaBioma, type Tinggi, type UnitPetaCustom, type VarianPohonCustom,
 } from '@hftf/shared'
 import {
   BANGUNAN, buatTemplatePetaCustom, eksporPetaBawaanKeCustom, serialisasiTerrainCustom,
@@ -30,13 +31,23 @@ export interface AksiEditor {
   petaTersimpan?(): void
 }
 
-type AlatEditor = 'kuas' | 'isi' | 'hapus' | 'pipet' | 'geser'
-type KategoriPalet = 'terrain' | 'sumber' | 'goblin' | 'deko' | 'bangunan'
+type AlatEditor = 'pilih' | 'kuas' | 'isi' | 'hapus' | 'pipet' | 'geser'
+type KategoriPalet = 'terrain' | 'karakter' | 'bangunan' | 'resource' | 'deko'
+type FilterLayer = 'semua' | 'terrain' | 'karakter' | 'resource' | 'deko'
+type FilterLantai = 0 | 1 | 2 | 3
+type FilterPemain = 'semua' | -1 | 0 | 1 | 2 | 3 | 4 | 5
 type BentukKuas = 'bulat' | 'kotak'
+type GrupEntitas = 'spawn' | 'unit' | 'bangunan' | 'camp' | 'tambang' | 'pohon' | 'domba' | 'bonus' | 'deko'
+
+interface RefEntitas {
+  grup: GrupEntitas
+  indeks: number
+}
 
 type JenisItem =
-  | { kat: 'terrain'; mode: 'air' | 'dataran' | 'plateau' | 'puncak' | 'jalan' | 'hapusJalan' | 'rampAuto' | 'rampNS' | 'rampBarat' | 'rampTimur' | 'rampRumputBarat' | 'rampRumputTimur' | 'jembH' | 'jembV' }
+  | { kat: 'terrain'; mode: 'air' | 'dataran' | 'plateau' | 'puncak' | 'bioma' | 'jalan' | 'hapusJalan' | 'rampAuto' | 'rampNS' | 'rampBarat' | 'rampTimur' | 'rampRumputBarat' | 'rampRumputTimur' | 'jembH' | 'jembV' }
   | { kat: 'spawn' }
+  | { kat: 'unit'; jenis: JenisUnitCustom }
   | { kat: 'tambang'; jenis: 'mine' | 'node'; varian?: number }
   | { kat: 'hutanAcak' }
   | { kat: 'pohon'; varian: VarianPohonCustom }
@@ -58,6 +69,7 @@ function asetBiomaEditor(bioma?: TemaBioma): Aset {
 
 interface SnapshotRiwayat {
   bioma: TemaBioma
+  biomaRle: string
   tinggiRle: string
   rampRle: string
   jembatanRle: string
@@ -84,6 +96,7 @@ const KATALOG_TERRAIN: readonly {
   { id: 't-lv1', label: 'Daratan Lv.1', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'dataran' } },
   { id: 't-lv2', label: 'Plateau Lv.2', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 5 * 64, sy: 0, item: { kat: 'terrain', mode: 'plateau' } },
   { id: 't-lv3', label: 'Puncak Lv.3', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 7 * 64, sy: 0, item: { kat: 'terrain', mode: 'puncak' } },
+  { id: 't-bio', label: 'Cat Bioma', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 6 * 64, sy: 2 * 64, item: { kat: 'terrain', mode: 'bioma' } },
   { id: 't-jln', label: 'Jalan Pasir', aset: TERRAIN.tanahDatar, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'jalan' } },
   { id: 't-hjln', label: 'Hapus Jalan', aset: TERRAIN_FREE.tileHijau, ikutBioma: true, sx: 6 * 64, sy: 64, item: { kat: 'terrain', mode: 'hapusJalan' } },
   { id: 't-ra', label: 'Tangga Auto', aset: TERRAIN.tanahTinggi, sx: 64, sy: 7 * 64, item: { kat: 'terrain', mode: 'rampAuto' } },
@@ -96,8 +109,22 @@ const KATALOG_TERRAIN: readonly {
   { id: 't-jv', label: 'Jemb Vert', aset: TERRAIN.jembatan, sx: 0, sy: 2 * 64, item: { kat: 'terrain', mode: 'jembV' } },
 ]
 
-const KATALOG_SUMBER: readonly { id: string; label: string; aset: Aset; item: JenisItem }[] = [
+const KATALOG_KARAKTER: readonly { id: string; label: string; aset: Aset; item: JenisItem }[] = [
   { id: 's-spawn', label: 'Spawn Pemain', aset: BANGUNAN_BLUE.castle, item: { kat: 'spawn' } },
+  { id: 'u-pawn', label: 'Pawn', aset: PAWN_FREE.idle, item: { kat: 'unit', jenis: 'pawn' } },
+  { id: 'u-warrior', label: 'Warrior', aset: UNIT_BLUE.warrior, item: { kat: 'unit', jenis: 'warrior' } },
+  { id: 'u-archer', label: 'Archer', aset: UNIT_BLUE.archer, item: { kat: 'unit', jenis: 'archer' } },
+  { id: 'u-lancer', label: 'Lancer', aset: UNIT_BLUE.lancerIdle, item: { kat: 'unit', jenis: 'lancer' } },
+  { id: 'u-monk', label: 'Monk', aset: UNIT_BLUE.monkIdle, item: { kat: 'unit', jenis: 'monk' } },
+  { id: 'u-mage', label: 'Mage', aset: UNIT_BLUE.mageIdle, item: { kat: 'unit', jenis: 'mage' } },
+  { id: 'u-gtorch', label: 'Goblin Torch', aset: ASET_GOBLIN.torch, item: { kat: 'unit', jenis: 'goblinTorch' } },
+  { id: 'u-gtnt', label: 'Goblin TNT', aset: ASET_GOBLIN.tnt, item: { kat: 'unit', jenis: 'goblinTnt' } },
+  { id: 'u-gbarrel', label: 'Goblin Barrel', aset: ASET_GOBLIN.barrel, item: { kat: 'unit', jenis: 'goblinBarrel' } },
+  { id: 'g-kecil', label: 'Camp Kecil', aset: ASET_GOBLIN.torch, item: { kat: 'camp', jenis: 'kecil' } },
+  { id: 'g-besar', label: 'Camp Boss', aset: ASET_GOBLIN.barrel, item: { kat: 'camp', jenis: 'besar' } },
+]
+
+const KATALOG_RESOURCE: readonly { id: string; label: string; aset: Aset; item: JenisItem }[] = [
   { id: 's-mine', label: 'Tambang Emas', aset: SUMBER.tambangAktif, item: { kat: 'tambang', jenis: 'mine' } },
   { id: 's-g1', label: 'Batu Emas 1', aset: DEKO_FREE.batuEmas1, item: { kat: 'tambang', jenis: 'node', varian: 1 } },
   { id: 's-g2', label: 'Batu Emas 2', aset: DEKO_FREE.batuEmas2, item: { kat: 'tambang', jenis: 'node', varian: 2 } },
@@ -117,9 +144,13 @@ const KATALOG_SUMBER: readonly { id: string; label: string; aset: Aset; item: Je
   { id: 's-kayu', label: 'Kayu +150', aset: SUMBER.kayuDiam, item: { kat: 'bonus', jenis: 'kayu', jumlah: 150 } },
 ]
 
-const KATALOG_GOBLIN: readonly { id: string; label: string; aset: Aset; item: JenisItem }[] = [
-  { id: 'g-kecil', label: 'Camp Kecil', aset: ASET_GOBLIN.torch, item: { kat: 'camp', jenis: 'kecil' } },
-  { id: 'g-besar', label: 'Camp Boss', aset: ASET_GOBLIN.barrel, item: { kat: 'camp', jenis: 'besar' } },
+const KATALOG_BANGUNAN: readonly { id: string; label: string; aset: Aset; item: JenisItem }[] = [
+  { id: 'b-house', label: 'House', aset: BANGUNAN_BLUE.house, item: { kat: 'bangunan', jenis: 'house' } },
+  { id: 'b-tower', label: 'Guard Tower', aset: BANGUNAN_BLUE.tower, item: { kat: 'bangunan', jenis: 'tower' } },
+  { id: 'b-bar', label: 'Barracks', aset: BANGUNAN_BLUE.barracks, item: { kat: 'bangunan', jenis: 'barracks' } },
+  { id: 'b-arc', label: 'Archery', aset: BANGUNAN_BLUE.archery, item: { kat: 'bangunan', jenis: 'archery' } },
+  { id: 'b-mon', label: 'Monastery', aset: BANGUNAN_BLUE.monastery, item: { kat: 'bangunan', jenis: 'monastery' } },
+  { id: 'b-alt', label: 'Altar Hero', aset: BANGUNAN_BLUE.altar, item: { kat: 'bangunan', jenis: 'altar' } },
   { id: 'g-rumah', label: 'Gubuk Goblin', aset: ASET_GOBLIN.rumah, item: { kat: 'deko', jenis: 'gubukGoblin' } },
   { id: 'g-menara', label: 'Menara Goblin', aset: EDITOR_U010.menaraGoblinRed, item: { kat: 'deko', jenis: 'menaraGoblin' } },
   { id: 'g-hancur', label: 'Menara Hancur', aset: EDITOR_U010.menaraGoblinHancur, item: { kat: 'deko', jenis: 'menaraGoblinHancur' } },
@@ -140,15 +171,6 @@ const NAMA_DEKO_CUSTOM: readonly [JenisDekoCustom, string][] = [
   }),
 ]
 
-const KATALOG_BANGUNAN: readonly { id: string; label: string; aset: Aset; jenis: JenisBangunanCustom }[] = [
-  { id: 'b-house', label: 'House', aset: BANGUNAN_BLUE.house, jenis: 'house' },
-  { id: 'b-tower', label: 'Guard Tower', aset: BANGUNAN_BLUE.tower, jenis: 'tower' },
-  { id: 'b-bar', label: 'Barracks', aset: BANGUNAN_BLUE.barracks, jenis: 'barracks' },
-  { id: 'b-arc', label: 'Archery', aset: BANGUNAN_BLUE.archery, jenis: 'archery' },
-  { id: 'b-mon', label: 'Monastery', aset: BANGUNAN_BLUE.monastery, jenis: 'monastery' },
-  { id: 'b-alt', label: 'Altar Hero', aset: BANGUNAN_BLUE.altar, jenis: 'altar' },
-]
-
 const el = <K extends keyof HTMLElementTagNameMap>(
   tag: K, kelas?: string, isi?: string,
 ): HTMLElementTagNameMap[K] => {
@@ -158,8 +180,59 @@ const el = <K extends keyof HTMLElementTagNameMap>(
   return e
 }
 
-function klonEntitas(e: EntitasPetaCustom): EntitasPetaCustom {
-  return JSON.parse(JSON.stringify(e)) as EntitasPetaCustom
+interface EntitasEditor extends EntitasPetaCustom {
+  unit: UnitPetaCustom[]
+}
+
+function klonEntitas(e: EntitasPetaCustom): EntitasEditor {
+  const salin = JSON.parse(JSON.stringify(e)) as EntitasPetaCustom
+  return { ...salin, unit: salin.unit ? [...salin.unit] : [] }
+}
+
+function layerDariGrup(g: GrupEntitas): Exclude<FilterLayer, 'semua'> {
+  if (g === 'spawn' || g === 'unit' || g === 'bangunan' || g === 'camp') return 'karakter'
+  if (g === 'tambang' || g === 'pohon' || g === 'domba' || g === 'bonus') return 'resource'
+  return 'deko'
+}
+
+function bolehDekoDiAir(jenis: JenisDekoCustom): boolean {
+  return jenis.startsWith('batuAir') || jenis === 'bebek' || jenis.startsWith('awan')
+}
+
+function asetUnitEditor(u: UnitPetaCustom): {
+  aset: Aset
+  timWarna?: (typeof TIM_PEMAIN)[number] | 'neutral'
+  skala: number
+  pijak: number
+} {
+  if (u.jenis === 'goblinTorch') return { aset: ASET_GOBLIN.torch, skala: 0.64, pijak: 0.68 }
+  if (u.jenis === 'goblinTnt') return { aset: ASET_GOBLIN.tnt, skala: 0.64, pijak: 0.68 }
+  if (u.jenis === 'goblinBarrel') return { aset: ASET_GOBLIN.barrel, skala: 0.72, pijak: 0.68 }
+  const tim = u.slot >= 0 && u.slot < WARNA_SLOTS.length ? WARNA_SLOTS[u.slot]! : 'neutral'
+  if (u.jenis === 'pawn') return { aset: PAWN_FREE.idle, timWarna: tim, skala: 0.62, pijak: 0.68 }
+  if (u.jenis === 'warrior') {
+    if (tim === 'purple' || tim === 'yellow') return { aset: UNIT_U010_WARNA[tim].warrior, timWarna: 'blue', skala: 0.64, pijak: 0.68 }
+    return { aset: UNIT_BLUE.warrior, timWarna: tim, skala: 0.64, pijak: 0.68 }
+  }
+  if (u.jenis === 'archer') {
+    if (tim === 'purple' || tim === 'yellow') return { aset: UNIT_U010_WARNA[tim].archer, timWarna: 'blue', skala: 0.64, pijak: 0.68 }
+    return { aset: UNIT_BLUE.archer, timWarna: tim, skala: 0.64, pijak: 0.68 }
+  }
+  if (u.jenis === 'lancer') return { aset: UNIT_BLUE.lancerIdle, timWarna: tim, skala: 0.56, pijak: 0.66 }
+  if (u.jenis === 'monk') return { aset: UNIT_BLUE.monkIdle, timWarna: tim, skala: 0.64, pijak: 0.68 }
+  return { aset: UNIT_BLUE.mageIdle, timWarna: tim, skala: 0.64, pijak: 0.68 }
+}
+
+const NAMA_UNIT_LABEL: Record<JenisUnitCustom, string> = {
+  pawn: 'Pawn',
+  warrior: 'Warrior',
+  archer: 'Archer',
+  lancer: 'Lancer',
+  monk: 'Monk',
+  mage: 'Mage',
+  goblinTorch: 'Goblin Torch',
+  goblinTnt: 'Goblin TNT',
+  goblinBarrel: 'Goblin Barrel',
 }
 
 function asetPohonVarian(v: VarianPohonCustom): { aset: Aset; skala: number; pijak: number } {
@@ -229,7 +302,13 @@ export class PengendaliEditor {
   private btnUndo: HTMLButtonElement
   private btnRedo: HTMLButtonElement
   private btnGrid: HTMLButtonElement
+  private btnPathing: HTMLButtonElement
   private biomaBtns: HTMLButtonElement[] = []
+  private filterLayerBtns: HTMLButtonElement[] = []
+  private filterLantaiBtns: HTMLButtonElement[] = []
+  private filterPemainBtns: HTMLButtonElement[] = []
+  private grupFilterLantai: HTMLElement
+  private grupFilterPemain: HTMLElement
   private paletDock: HTMLElement
   private kananDock: HTMLElement
   private kontainerAlat: HTMLElement
@@ -242,6 +321,7 @@ export class PengendaliEditor {
   private ctx: CanvasRenderingContext2D | null
   private minimapKanvas: HTMLCanvasElement
   private mctx: CanvasRenderingContext2D | null
+  private inspectorEl: HTMLElement
   private validasiEl: HTMLElement
   private statistikEl: HTMLElement
   private infoTileEl: HTMLElement
@@ -255,7 +335,7 @@ export class PengendaliEditor {
   private terbuka = false
   private idPeta = buatIdPetaCustom()
   private terrain: Terrain
-  private entitas: EntitasPetaCustom
+  private entitas: EntitasEditor
   private renderTerrain: PeremajaTerrain
   private kam: Kamera = buatKamera()
 
@@ -263,13 +343,25 @@ export class PengendaliEditor {
   private kategori: KategoriPalet = 'terrain'
   private itemIdAktif = 't-lv2'
   private itemAktif: JenisItem = { kat: 'terrain', mode: 'plateau' }
+  private biomaKuas: TemaBioma = 1
   private ukuranKuas = 1
   private bentukKuas: BentukKuas = 'bulat'
   private simetri: ModeSimetri = 'mati'
   private tampilGrid = false
+  private tampilPathing = false
+  private filterLayer: FilterLayer = 'semua'
+  private filterLantai: FilterLantai = 0
+  private filterPemain: FilterPemain = 'semua'
   private slotDipilih = 0
   private bangunanHancur = false
   private hapusTanah = false
+
+  private seleksi: RefEntitas[] = []
+  private sedangSeretEntitas = false
+  private seretAsal = { tx: 0, ty: 0 }
+  private seretOffset = { dx: 0, dy: 0 }
+  private marqueeAwal: { wx: number; wy: number } | null = null
+  private marqueeAkhir: { wx: number; wy: number } | null = null
 
   private riwayatUndo: SnapshotRiwayat[] = []
   private riwayatRedo: SnapshotRiwayat[] = []
@@ -299,6 +391,7 @@ export class PengendaliEditor {
     const konv = eksporSiapTerrain(awal)
     this.terrain = konv.terrain
     this.entitas = konv.entitas
+    this.biomaKuas = this.terrain.bioma ?? 1
     this.renderTerrain = new PeremajaTerrain(this.terrain, { tanpaDekoAcak: true })
 
     this.akar = el('div')
@@ -323,25 +416,32 @@ export class PengendaliEditor {
 
     const grupTengah = el('div', 'ed-atas-grup')
     const biomaBox = el('div', 'ed-bioma-baris')
-    biomaBox.title = 'Tema Bioma (Free Pack Tilemap 1..5)'
+    biomaBox.title = 'Kuas Bioma Per-Area / Per-Pulau / Per-Lantai (Tilemap 1..5)'
     for (const bId of [1, 2, 3, 4, 5] as const) {
       const sw = el('button', 'ed-bioma-swatch')
       sw.type = 'button'
-      sw.title = `${INFO_BIOMA[bId].nama} — ${INFO_BIOMA[bId].ringkas}`
+      sw.title = `Kuas Bioma ${bId}: ${INFO_BIOMA[bId].nama} — ${INFO_BIOMA[bId].ringkas}`
       sw.style.background = INFO_BIOMA[bId].warnaPlateau
       sw.dataset['bioma'] = String(bId)
       sw.addEventListener('click', () => {
-        this.dorongUndo()
-        this.terrain.bioma = bId
+        this.biomaKuas = bId
+        this.kategori = 'terrain'
+        this.itemIdAktif = 't-bio'
+        this.itemAktif = { kat: 'terrain', mode: 'bioma' }
+        if (this.alat !== 'isi') this.setAlat('kuas')
         this.segarkanBiomaUi()
-        if (this.kategori === 'terrain') this.renderPaletItem()
-        this.renderTerrain.kotorkanSemua()
-        this.minimapKotor = true
-        this.tampilkanToast(`Bioma: ${INFO_BIOMA[bId].nama}`)
+        this.renderPaletItem()
+        this.tampilkanToast(`Kuas Bioma: ${INFO_BIOMA[bId].nama} (lukis area atau pakai 🪣 Isi per pulau/lantai)`)
       })
       this.biomaBtns.push(sw)
       biomaBox.append(sw)
     }
+    const btnBiomaSemua = el('button', 'ed-chip', '🌐')
+    btnBiomaSemua.type = 'button'
+    btnBiomaSemua.dataset['biomaTerapkanSemua'] = '1'
+    btnBiomaSemua.title = 'Terapkan Bioma aktif ke seluruh peta (atau ke Lantai aktif bila filter lantai menyala)'
+    btnBiomaSemua.addEventListener('click', () => this.terapkanBiomaMassal())
+    biomaBox.append(btnBiomaSemua)
 
     this.btnUndo = el('button', 'ed-btn', '↩')
     this.btnUndo.type = 'button'
@@ -407,19 +507,94 @@ export class PengendaliEditor {
     atas.append(grupKiri, grupTengah, grupKanan)
     this.akar.append(atas)
 
+    // === 1.5. BAR FILTER FOKUS & KUNCI LAYER (ALA WC3 WORLD EDITOR / RA3 WORLD BUILDER) ===
+    const filterBar = el('div', 'ed-filter-bar')
+
+    const grupLayer = el('div', 'ed-filter-grup')
+    grupLayer.append(el('span', 'ed-filter-lbl', 'Fokus:'))
+    for (const [id, lbl, tip] of [
+      ['semua', '🌐 Semua', 'Edit semua lapisan secara bebas'],
+      ['terrain', '⛰️ Terrain', 'Fokus & kunci ke Terrain saja (entitas lain abu-abu & aman)'],
+      ['karakter', '⚔️ Karakter', 'Fokus Spawn, Unit, Bangunan, & Camp Goblin (lainnya kabut tipis & terkunci)'],
+      ['resource', '⛏️ Resource', 'Fokus Tambang, Batu Emas, Pohon, Domba, & Bonus (lainnya terkunci)'],
+      ['deko', '🌿 Deko', 'Fokus Dekorasi saja (terrain, karakter, & resource terkunci)'],
+    ] as const) {
+      const b = el('button', 'ed-chip', lbl)
+      b.type = 'button'
+      b.title = tip
+      b.dataset['filterLayer'] = id
+      b.addEventListener('click', () => this.setFilterLayer(id))
+      this.filterLayerBtns.push(b)
+      grupLayer.append(b)
+    }
+
+    this.grupFilterLantai = el('div', 'ed-filter-grup')
+    this.grupFilterLantai.append(el('span', 'ed-filter-lbl', 'Lantai:'))
+    for (const [lv, lbl, tip] of [
+      [0, 'Semua', 'Edit semua tingkat lantai'],
+      [1, 'Lv.1', 'Kunci ketat ke Lantai 1 (Dataran) — Lv.2 & Lv.3 abu-abu & aman'],
+      [2, 'Lv.2', 'Kunci ketat ke Lantai 2 (Plateau) — Lv.1 & Lv.3 abu-abu & aman'],
+      [3, 'Lv.3', 'Kunci ketat ke Lantai 3 (Puncak) — Lv.1 & Lv.2 abu-abu & aman'],
+    ] as readonly [FilterLantai, string, string][]) {
+      const b = el('button', 'ed-chip', lbl)
+      b.type = 'button'
+      b.title = tip
+      b.dataset['filterLantai'] = String(lv)
+      b.addEventListener('click', () => this.setFilterLantai(lv))
+      this.filterLantaiBtns.push(b)
+      this.grupFilterLantai.append(b)
+    }
+
+    this.grupFilterPemain = el('div', 'ed-filter-grup')
+    this.grupFilterPemain.append(el('span', 'ed-filter-lbl', 'Pemain:'))
+    const opsiPemain: readonly { val: FilterPemain; lbl: string; warna?: string; tip: string }[] = [
+      { val: 'semua', lbl: 'Semua', tip: 'Tampilkan & edit objek semua pemain' },
+      { val: -1, lbl: 'N', warna: '#7d7360', tip: 'Fokus objek Netral & Goblin saja' },
+      ...WARNA_SLOTS.map((tim, i) => ({
+        val: i as FilterPemain,
+        lbl: `P${i + 1}`,
+        warna: WARNA_TIM[tim].utama,
+        tip: `Fokus objek Pemain ${i + 1} (${WARNA_TIM[tim].nama}) saja`,
+      })),
+    ]
+    for (const op of opsiPemain) {
+      const b = el('button', op.warna ? 'ed-chip pemain' : 'ed-chip', op.lbl)
+      b.type = 'button'
+      b.title = op.tip
+      if (op.warna) b.style.background = op.warna
+      b.dataset['filterPemain'] = String(op.val)
+      b.addEventListener('click', () => this.setFilterPemain(op.val))
+      this.filterPemainBtns.push(b)
+      this.grupFilterPemain.append(b)
+    }
+
+    this.btnPathing = el('button', 'ed-chip', '🧭 Pathing')
+    this.btnPathing.type = 'button'
+    this.btnPathing.dataset['togglePathing'] = '1'
+    this.btnPathing.title = 'Tampilkan peta jalan / chokepoint / tebing (P)'
+    this.btnPathing.addEventListener('click', () => {
+      this.tampilPathing = !this.tampilPathing
+      this.btnPathing.classList.toggle('aktif', this.tampilPathing)
+      this.tampilkanToast(this.tampilPathing ? 'Pathing Map: Hijau=Jalan · Kuning=Ramp/Jemb · Merah=Blokir' : 'Pathing Map: Off')
+    })
+
+    filterBar.append(grupLayer, this.grupFilterLantai, this.grupFilterPemain, this.btnPathing)
+    this.akar.append(filterBar)
+
     // === 2. BADAN UTAMA (PALET KIRI | KANVAS TENGAH | MINIMAP & VALIDASI KANAN) ===
     const badan = el('div', 'ed-badan')
 
     // 2a. Dock Palet Kiri
     this.paletDock = el('aside', 'ed-palet buka')
     const boxAlat = el('div', 'ed-subkotak')
-    boxAlat.append(el('div', 'ed-label', 'Alat Lukis'))
+    boxAlat.append(el('div', 'ed-label', 'Alat Editor'))
     this.kontainerAlat = el('div', 'ed-alat-baris')
     for (const [id, ikon, tip] of [
+      ['pilih', '🖱️', 'Pilih & Pindah Objek / Seret Kotak (V)'],
       ['kuas', '🖌️', 'Kuas Lukis (B)'],
-      ['isi', '🪣', 'Ember Isi Terrain (F)'],
-      ['hapus', '🧹', 'Hapus Entitas / Terrain (E)'],
-      ['pipet', '💧', 'Pipet Ambil Contoh (I)'],
+      ['isi', '🪣', 'Ember Isi Terrain / Bioma (F)'],
+      ['hapus', '🧹', 'Hapus Sesuai Filter Aktif (E)'],
+      ['pipet', '💧', 'Pipet Ambil Contoh & Bioma (I)'],
       ['geser', '✋', 'Geser Kamera (Spasi)'],
     ] as const) {
       const b = el('button', 'ed-btn', ikon)
@@ -456,15 +631,15 @@ export class PengendaliEditor {
     boxAlat.append(this.kontainerKonteks)
     this.paletDock.append(boxAlat)
 
-    // Kategori Palet (5 tab)
+    // Kategori Palet (5 tab selaras dengan Filter Layer)
     const boxKat = el('div', 'ed-subkotak')
     this.kontainerKat = el('div', 'ed-kat-tabs')
     for (const [k, ikon, tip] of [
-      ['terrain', '⛰️', 'Terrain, Elevasi 3 Tingkat, Tangga, Jembatan'],
-      ['sumber', '⛏️', 'Spawn, Tambang Emas, Pohon, Domba'],
-      ['goblin', '👹', 'Camp & Bangunan Goblin'],
-      ['deko', '🌿', 'Semak, Batu, Karang, Api, Bebek, Deko'],
-      ['bangunan', '🏰', 'Bangunan & Reruntuhan'],
+      ['terrain', '⛰️', 'Terrain, Bioma Per-Area, Elevasi 3 Tingkat, Tangga & Lereng, Jembatan'],
+      ['karakter', '⚔️', 'Spawn Pemain, Unit/Pasukan Awal, & Camp Goblin'],
+      ['bangunan', '🏰', 'Bangunan Kerajaan, Reruntuhan, & Struktur Goblin'],
+      ['resource', '⛏️', 'Tambang Emas, Batu Emas, Hutan/Pohon, Domba, & Bonus'],
+      ['deko', '🌿', '42 Dekorasi (Semak, Batu, Karang, Api, Bebek, Awan)'],
     ] as const) {
       const b = el('button', 'ed-kat-btn', ikon)
       b.type = 'button'
@@ -505,7 +680,7 @@ export class PengendaliEditor {
     this.toastEl = el('div', 'ed-toast')
     this.kanvasBox.append(this.kanvas, zoomPil, this.toastEl)
 
-    // 2c. Dock Kanan (Minimap Live + Validasi + Pintasan)
+    // 2c. Dock Kanan (Minimap Live + Inspector Objek + Validasi + Pintasan)
     this.kananDock = el('aside', 'ed-kanan')
     const miniBox = el('div', 'ed-minimap-box')
     this.minimapKanvas = el('canvas', 'ed-minimap')
@@ -513,6 +688,8 @@ export class PengendaliEditor {
     this.minimapKanvas.height = 192
     this.mctx = this.minimapKanvas.getContext('2d', { alpha: false })
     miniBox.append(this.minimapKanvas)
+
+    this.inspectorEl = el('div', 'ed-inspector')
 
     const validBox = el('div', 'ed-subkotak')
     validBox.append(el('div', 'ed-label', 'Validasi Peta'))
@@ -530,12 +707,12 @@ export class PengendaliEditor {
     const pintasanEl = el(
       'div',
       'ed-pintasan',
-      '• Klik kanan: hapus cepat\n• R: putar tangga/jembatan\n• Spasi / WASD / 2 Jari: geser & zoom\n• Ctrl+Z / Ctrl+Y: Undo/Redo',
+      '• V: Pilih & pindah objek (Del: hapus)\n• Klik kanan: hapus sesuai filter\n• R: putar tangga/lereng · P: Pathing\n• Spasi / WASD / 2 Jari: geser & zoom\n• Ctrl+Z / Ctrl+Y: Undo/Redo',
     )
     pintasanEl.style.whiteSpace = 'pre-line'
     tipBox.append(this.infoTileEl, pintasanEl)
 
-    this.kananDock.append(miniBox, validBox, statBox, tipBox)
+    this.kananDock.append(miniBox, this.inspectorEl, validBox, statBox, tipBox)
     badan.append(this.paletDock, this.kanvasBox, this.kananDock)
     this.akar.append(badan)
 
@@ -639,8 +816,10 @@ export class PengendaliEditor {
 
     this.pasangEvent()
     this.segarkanBiomaUi()
+    this.segarkanFilterUi()
     this.segarkanAlatUi()
     this.renderPaletItem()
+    this.renderInspector()
     this.perbaruiValidasiUi()
     this.ukurKanvas()
     pusatkan(this.kam, DUNIA_W / 2, DUNIA_H / 2)
@@ -701,8 +880,11 @@ export class PengendaliEditor {
       jembatan: decodeRle(data.jembatanRle, total, 2),
       jalan: decodeRle(data.jalanRle, total, 1),
       bioma: data.bioma,
+      biomaGrid: decodeBiomaGrid(data.biomaRle, total, data.bioma),
     }
+    this.biomaKuas = data.bioma
     this.entitas = klonEntitas(data.entitas)
+    this.seleksi = []
     this.riwayatUndo = []
     this.riwayatRedo = []
     this.renderTerrain.setTerrain(this.terrain, true)
@@ -710,6 +892,7 @@ export class PengendaliEditor {
     this.segarkanBiomaUi()
     if (this.kategori === 'terrain') this.renderPaletItem()
     this.segarkanAlatUi()
+    this.renderInspector()
     this.perbaruiValidasiUi()
     pusatkan(this.kam, DUNIA_W / 2, DUNIA_H / 2)
   }
@@ -790,12 +973,116 @@ export class PengendaliEditor {
 
   private setAlat(a: AlatEditor): void {
     this.alat = a
-    this.kanvas.style.cursor = a === 'geser' ? 'grab' : a === 'pipet' ? 'copy' : 'crosshair'
+    if (a !== 'pilih') {
+      this.seleksi = []
+      this.renderInspector()
+    }
+    this.kanvas.style.cursor = a === 'geser' ? 'grab' : a === 'pipet' ? 'copy' : a === 'pilih' ? 'default' : 'crosshair'
     this.segarkanAlatUi()
   }
 
+  private setFilterLayer(layer: FilterLayer): void {
+    this.filterLayer = layer
+    if (layer !== 'semua' && layer !== 'terrain') {
+      this.filterLantai = 0
+    }
+    this.seleksi = this.seleksi.filter((r) => this.refLolosFilter(r))
+    this.segarkanFilterUi()
+    this.renderInspector()
+    const nama: Record<FilterLayer, string> = {
+      semua: 'Semua Lapisan',
+      terrain: 'Terrain (entitas lain terkunci)',
+      karakter: 'Karakter & Bangunan (terrain & lainnya terkunci)',
+      resource: 'Resource (lainnya terkunci)',
+      deko: 'Dekorasi (lainnya terkunci)',
+    }
+    this.tampilkanToast(`Fokus: ${nama[layer]}`)
+  }
+
+  private setFilterLantai(lv: FilterLantai): void {
+    this.filterLantai = lv
+    if (lv !== 0 && this.filterLayer !== 'semua' && this.filterLayer !== 'terrain') {
+      this.filterLayer = 'terrain'
+    }
+    this.seleksi = this.seleksi.filter((r) => this.refLolosFilter(r))
+    this.segarkanFilterUi()
+    this.renderInspector()
+    this.tampilkanToast(lv === 0 ? 'Filter Lantai: Semua Lantai' : `Kunci Lantai Lv.${lv} — lantai lain abu-abu & terkunci!`)
+  }
+
+  private setFilterPemain(p: FilterPemain): void {
+    this.filterPemain = p
+    if (p !== 'semua') {
+      this.slotDipilih = p
+      if (this.filterLayer === 'terrain' || this.filterLayer === 'resource' || this.filterLayer === 'deko') {
+        this.filterLayer = 'karakter'
+        this.filterLantai = 0
+      }
+    }
+    this.seleksi = this.seleksi.filter((r) => this.refLolosFilter(r))
+    this.segarkanFilterUi()
+    this.renderKonteksAlat()
+    this.renderInspector()
+    const lbl = p === 'semua' ? 'Semua Pemain' : p === -1 ? 'Netral & Goblin' : `Pemain ${p + 1} (${WARNA_TIM[WARNA_SLOTS[p]!].nama})`
+    this.tampilkanToast(`Filter Pemain: ${lbl}`)
+  }
+
+  private segarkanFilterUi(): void {
+    for (const b of this.filterLayerBtns) {
+      b.classList.toggle('aktif', b.dataset['filterLayer'] === this.filterLayer)
+    }
+    for (const b of this.filterLantaiBtns) {
+      b.classList.toggle('aktif', Number(b.dataset['filterLantai']) === this.filterLantai)
+    }
+    for (const b of this.filterPemainBtns) {
+      b.classList.toggle('aktif', b.dataset['filterPemain'] === String(this.filterPemain))
+    }
+    this.grupFilterLantai.style.opacity = (this.filterLayer === 'semua' || this.filterLayer === 'terrain') ? '1' : '0.45'
+    this.grupFilterPemain.style.opacity = (this.filterLayer === 'semua' || this.filterLayer === 'karakter') ? '1' : '0.45'
+  }
+
+  private terapkanBiomaMassal(): void {
+    if (this.filterLayer !== 'semua' && this.filterLayer !== 'terrain') {
+      this.tampilkanToast('Filter bukan Terrain — ubah Fokus ke Semua / Terrain dulu!', true)
+      return
+    }
+    const grid = this.pastikanBiomaGrid()
+    this.dorongUndo()
+    let ubah = 0
+    for (let i = 0; i < grid.length; i++) {
+      if (this.filterLantai !== 0 && this.terrain.tinggi[i] !== this.filterLantai) continue
+      if (grid[i] !== this.biomaKuas) {
+        grid[i] = this.biomaKuas
+        ubah++
+      }
+    }
+    if (this.filterLantai === 0) this.terrain.bioma = this.biomaKuas
+    if (ubah === 0) {
+      this.riwayatUndo.pop()
+      this.segarkanAlatUi()
+      this.tampilkanToast('Bioma target sudah sama.')
+      return
+    }
+    this.renderTerrain.kotorkanSemua()
+    this.minimapKotor = true
+    this.segarkanBiomaUi()
+    this.tampilkanToast(
+      this.filterLantai === 0
+        ? `Seluruh peta diubah ke Bioma: ${INFO_BIOMA[this.biomaKuas].nama}`
+        : `Semua Lantai Lv.${this.filterLantai} diubah ke Bioma: ${INFO_BIOMA[this.biomaKuas].nama}`,
+    )
+  }
+
+  private pastikanBiomaGrid(): Uint8Array {
+    const total = PETA_KOLOM * PETA_BARIS
+    if (!this.terrain.biomaGrid || this.terrain.biomaGrid.length !== total) {
+      this.terrain.biomaGrid = new Uint8Array(total).fill(this.terrain.bioma ?? 1)
+    }
+    return this.terrain.biomaGrid
+  }
+
   private segarkanBiomaUi(): void {
-    const b = this.terrain.bioma ?? 1
+    const b = this.biomaKuas
     for (const btn of this.biomaBtns) {
       btn.classList.toggle('aktif', Number(btn.dataset['bioma']) === b)
     }
@@ -830,10 +1117,14 @@ export class PengendaliEditor {
       this.kontainerKonteks.append(btn)
       return
     }
-    if (this.itemAktif.kat === 'spawn' || this.itemAktif.kat === 'bangunan') {
+    if (
+      this.itemAktif.kat === 'spawn' ||
+      this.itemAktif.kat === 'bangunan' ||
+      (this.itemAktif.kat === 'unit' && !this.itemAktif.jenis.startsWith('goblin'))
+    ) {
       const box = el('div', 'ed-slot-baris')
       box.style.marginTop = '4px'
-      if (this.itemAktif.kat === 'bangunan') {
+      if (this.itemAktif.kat === 'bangunan' || this.itemAktif.kat === 'unit') {
         const btnNet = el('button', `ed-slot-dot${this.slotDipilih === -1 ? ' aktif' : ''}`, 'N')
         btnNet.type = 'button'
         btnNet.title = 'Netral'
@@ -903,7 +1194,7 @@ export class PengendaliEditor {
       btn.addEventListener('click', () => {
         this.itemIdAktif = id
         this.itemAktif = item
-        if (this.alat === 'geser' || this.alat === 'hapus' || this.alat === 'pipet') {
+        if (this.alat === 'pilih' || this.alat === 'geser' || this.alat === 'hapus' || this.alat === 'pipet') {
           this.setAlat('kuas')
         }
         this.segarkanPilihanItemUi()
@@ -913,21 +1204,19 @@ export class PengendaliEditor {
     }
 
     if (this.kategori === 'terrain') {
-      const asetBio = asetBiomaEditor(this.terrain.bioma)
+      const asetBio = asetBiomaEditor(this.biomaKuas)
       for (const it of KATALOG_TERRAIN) {
         tambahTombol(it.id, it.label, it.ikutBioma ? asetBio : it.aset, it.item, it.sx, it.sy, it.sw, it.sh)
       }
-    } else if (this.kategori === 'sumber') {
-      for (const it of KATALOG_SUMBER) tambahTombol(it.id, it.label, it.aset, it.item)
-    } else if (this.kategori === 'goblin') {
-      for (const it of KATALOG_GOBLIN) tambahTombol(it.id, it.label, it.aset, it.item)
-    } else if (this.kategori === 'deko') {
+    } else if (this.kategori === 'karakter') {
+      for (const it of KATALOG_KARAKTER) tambahTombol(it.id, it.label, it.aset, it.item)
+    } else if (this.kategori === 'bangunan') {
+      for (const it of KATALOG_BANGUNAN) tambahTombol(it.id, it.label, it.aset, it.item)
+    } else if (this.kategori === 'resource') {
+      for (const it of KATALOG_RESOURCE) tambahTombol(it.id, it.label, it.aset, it.item)
+    } else {
       for (const [jenis, label] of NAMA_DEKO_CUSTOM) {
         tambahTombol(`dk-${jenis}`, label, infoAsetDekoCustom(jenis).aset, { kat: 'deko', jenis })
-      }
-    } else {
-      for (const it of KATALOG_BANGUNAN) {
-        tambahTombol(it.id, it.label, it.aset, { kat: 'bangunan', jenis: it.jenis })
       }
     }
   }
@@ -949,6 +1238,7 @@ export class PengendaliEditor {
   private tangkapSnapshot(): SnapshotRiwayat {
     return {
       bioma: this.terrain.bioma ?? 1,
+      biomaRle: encodeRle(this.pastikanBiomaGrid()),
       tinggiRle: encodeRle(this.terrain.tinggi),
       rampRle: encodeRle(this.terrain.ramp),
       jembatanRle: encodeRle(this.terrain.jembatan),
@@ -960,16 +1250,19 @@ export class PengendaliEditor {
   private pulihkanSnapshot(s: SnapshotRiwayat): void {
     const total = PETA_KOLOM * PETA_BARIS
     this.terrain.bioma = s.bioma
+    this.pastikanBiomaGrid().set(decodeBiomaGrid(s.biomaRle, total, s.bioma))
     this.terrain.tinggi.set(decodeRle(s.tinggiRle, total, TINGGI.puncak))
     this.terrain.ramp.set(decodeRle(s.rampRle, total, RAMP_MAKS))
     this.terrain.jembatan.set(decodeRle(s.jembatanRle, total, 2))
     this.terrain.jalan.set(decodeRle(s.jalanRle, total, 1))
-    this.entitas = JSON.parse(s.entitasJson) as EntitasPetaCustom
+    this.entitas = klonEntitas(JSON.parse(s.entitasJson) as EntitasPetaCustom)
+    this.seleksi = []
     this.renderTerrain.kotorkanSemua()
     this.minimapKotor = true
     this.segarkanBiomaUi()
     if (this.kategori === 'terrain') this.renderPaletItem()
     this.segarkanAlatUi()
+    this.renderInspector()
     this.perbaruiValidasiUi()
   }
 
@@ -994,6 +1287,419 @@ export class PengendaliEditor {
     this.riwayatUndo.push(this.tangkapSnapshot())
     this.pulihkanSnapshot(s)
     this.tampilkanToast('↪ Redo')
+  }
+
+  // --- Filter Layer / Lantai / Pemain, Seleksi, Pindah, & Inspector ---
+
+  private bolehEditTerrainDi(tx: number, ty: number): boolean {
+    if (this.filterLayer !== 'semua' && this.filterLayer !== 'terrain') return false
+    if (this.filterLantai !== 0) {
+      return this.terrain.tinggi[ty * PETA_KOLOM + tx] === this.filterLantai
+    }
+    return true
+  }
+
+  private lolosFilterEntitas(grup: GrupEntitas, slotPemilik: number, tx: number, ty: number): boolean {
+    const lyr = layerDariGrup(grup)
+    if (this.filterLayer !== 'semua' && this.filterLayer !== lyr) return false
+    if (this.filterLantai !== 0 && this.terrain.tinggi[ty * PETA_KOLOM + tx] !== this.filterLantai) return false
+    if (this.filterPemain !== 'semua') {
+      if (lyr === 'karakter') return slotPemilik === this.filterPemain
+      if (this.filterPemain >= 0) return false
+    }
+    return true
+  }
+
+  private ambilObjekRef(ref: RefEntitas): { tx: number; ty: number; slot: number } | null {
+    switch (ref.grup) {
+      case 'spawn': {
+        const o = this.entitas.spawn[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: o.slot } : null
+      }
+      case 'unit': {
+        const o = this.entitas.unit[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: o.slot } : null
+      }
+      case 'bangunan': {
+        const o = this.entitas.bangunan[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: o.slot } : null
+      }
+      case 'camp': {
+        const o = this.entitas.camp[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+      case 'tambang': {
+        const o = this.entitas.tambang[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+      case 'pohon': {
+        const o = this.entitas.pohon[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+      case 'domba': {
+        const o = this.entitas.domba[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+      case 'bonus': {
+        const o = this.entitas.bonus[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+      case 'deko': {
+        const o = this.entitas.deko[ref.indeks]
+        return o ? { tx: o.tx, ty: o.ty, slot: -1 } : null
+      }
+    }
+  }
+
+  private refLolosFilter(ref: RefEntitas): boolean {
+    const o = this.ambilObjekRef(ref)
+    if (!o) return false
+    return this.lolosFilterEntitas(ref.grup, o.slot, o.tx, o.ty)
+  }
+
+  private apakahTerpilih(grup: GrupEntitas, indeks: number): boolean {
+    return this.seleksi.some((s) => s.grup === grup && s.indeks === indeks)
+  }
+
+  private adaEntitasSolidDi(tx: number, ty: number, kecualikan?: { grup: GrupEntitas; indeks?: number }): boolean {
+    const cek = <T extends { tx: number; ty: number }>(g: GrupEntitas, arr: T[]): boolean =>
+      arr.some((e, idx) =>
+        e.tx === tx && e.ty === ty &&
+        !(kecualikan && kecualikan.grup === g && (kecualikan.indeks === undefined || kecualikan.indeks === idx)),
+      )
+    return (
+      cek('spawn', this.entitas.spawn) ||
+      cek('bangunan', this.entitas.bangunan) ||
+      cek('tambang', this.entitas.tambang) ||
+      cek('camp', this.entitas.camp) ||
+      cek('pohon', this.entitas.pohon)
+    )
+  }
+
+  private cariEntitasDi(tx: number, ty: number): RefEntitas | null {
+    const urutan: readonly GrupEntitas[] = ['spawn', 'unit', 'bangunan', 'camp', 'tambang', 'domba', 'bonus', 'pohon', 'deko']
+    const lenGrup = (g: GrupEntitas): number => this.entitas[g].length
+    for (const g of urutan) {
+      for (let i = lenGrup(g) - 1; i >= 0; i--) {
+        const ref: RefEntitas = { grup: g, indeks: i }
+        const o = this.ambilObjekRef(ref)
+        if (!o || !this.lolosFilterEntitas(g, o.slot, o.tx, o.ty)) continue
+        if (o.tx === tx && o.ty === ty) return ref
+      }
+    }
+    return null
+  }
+
+  private cariEntitasDalamKotak(x1: number, y1: number, x2: number, y2: number): RefEntitas[] {
+    const minX = Math.min(x1, x2)
+    const maxX = Math.max(x1, x2)
+    const minY = Math.min(y1, y2)
+    const maxY = Math.max(y1, y2)
+    const hasil: RefEntitas[] = []
+    const urutan: readonly GrupEntitas[] = ['spawn', 'unit', 'bangunan', 'camp', 'tambang', 'domba', 'bonus', 'pohon', 'deko']
+    for (const g of urutan) {
+      const len = this.entitas[g].length
+      for (let i = 0; i < len; i++) {
+        const ref: RefEntitas = { grup: g, indeks: i }
+        const o = this.ambilObjekRef(ref)
+        if (!o || !this.lolosFilterEntitas(g, o.slot, o.tx, o.ty)) continue
+        const wx = o.tx * TILE + TILE / 2
+        const wy = o.ty * TILE + TILE / 2
+        if (wx >= minX && wx <= maxX && wy >= minY && wy <= maxY) hasil.push(ref)
+      }
+    }
+    return hasil
+  }
+
+  private bolehTaruhRefDi(ref: RefEntitas, nx: number, ny: number): boolean {
+    if (!this.tileDalamBatas(nx, ny)) return false
+    const lv = this.terrain.tinggi[ny * PETA_KOLOM + nx]!
+    if (this.filterLantai !== 0 && lv !== this.filterLantai) return false
+    if (ref.grup === 'deko') {
+      const d = this.entitas.deko[ref.indeks]
+      if (!d) return false
+      if (lv === TINGGI.air && !bolehDekoDiAir(d.jenis)) return false
+      return true
+    }
+    return lv !== TINGGI.air
+  }
+
+  private pindahTerpilih(dx: number, dy: number): void {
+    if (this.seleksi.length === 0 || (dx === 0 && dy === 0)) return
+    let adaValid = false
+    for (const r of this.seleksi) {
+      const o = this.ambilObjekRef(r)
+      if (o && this.bolehTaruhRefDi(r, o.tx + dx, o.ty + dy)) {
+        adaValid = true
+        break
+      }
+    }
+    if (!adaValid) {
+      this.tampilkanToast('Tujuan pindah tidak sah (air / di luar filter lantai)!', true)
+      return
+    }
+    this.dorongUndo()
+    let terpindah = 0
+    for (const r of this.seleksi) {
+      const o = this.ambilObjekRef(r)
+      if (!o) continue
+      const nx = o.tx + dx
+      const ny = o.ty + dy
+      if (!this.bolehTaruhRefDi(r, nx, ny)) continue
+      const item = this.entitas[r.grup][r.indeks]
+      if (item) {
+        item.tx = nx
+        item.ty = ny
+        terpindah++
+      }
+    }
+    if (terpindah > 0) {
+      this.minimapKotor = true
+      this.renderInspector()
+      this.perbaruiValidasiUi()
+      this.tampilkanToast(`Dipindah: ${terpindah} objek`)
+    } else {
+      this.riwayatUndo.pop()
+      this.segarkanAlatUi()
+    }
+  }
+
+  private hapusTerpilih(): void {
+    if (this.seleksi.length === 0) return
+    this.dorongUndo()
+    const perGrup = new Map<GrupEntitas, Set<number>>()
+    for (const r of this.seleksi) {
+      let s = perGrup.get(r.grup)
+      if (!s) { s = new Set<number>(); perGrup.set(r.grup, s) }
+      s.add(r.indeks)
+    }
+    const jumlah = this.seleksi.length
+    const buang = <T>(g: GrupEntitas, arr: T[]): T[] => {
+      const s = perGrup.get(g)
+      return s ? arr.filter((_, i) => !s.has(i)) : arr
+    }
+    this.entitas.spawn = buang('spawn', this.entitas.spawn)
+    this.entitas.unit = buang('unit', this.entitas.unit)
+    this.entitas.bangunan = buang('bangunan', this.entitas.bangunan)
+    this.entitas.camp = buang('camp', this.entitas.camp)
+    this.entitas.tambang = buang('tambang', this.entitas.tambang)
+    this.entitas.pohon = buang('pohon', this.entitas.pohon)
+    this.entitas.domba = buang('domba', this.entitas.domba)
+    this.entitas.bonus = buang('bonus', this.entitas.bonus)
+    this.entitas.deko = buang('deko', this.entitas.deko)
+    this.seleksi = []
+    this.minimapKotor = true
+    this.renderInspector()
+    this.perbaruiValidasiUi()
+    this.tampilkanToast(`Dihapus: ${jumlah} objek terpilih`)
+  }
+
+  private renderInspector(): void {
+    this.inspectorEl.textContent = ''
+    this.seleksi = this.seleksi.filter((r) => this.ambilObjekRef(r) !== null)
+    if (this.seleksi.length === 0) {
+      this.inspectorEl.classList.remove('tampil')
+      return
+    }
+    this.inspectorEl.classList.add('tampil')
+
+    if (this.seleksi.length > 1) {
+      const head = el('div', 'ed-label', `Inspector (${this.seleksi.length} objek)`)
+      this.inspectorEl.append(head)
+      const adaPemilik = this.seleksi.some((r) =>
+        r.grup === 'bangunan' || (r.grup === 'unit' && !this.entitas.unit[r.indeks]?.jenis.startsWith('goblin')),
+      )
+      if (adaPemilik) {
+        const barisSlot = el('div', 'ed-slot-baris')
+        const buatDot = (sl: number, lbl: string, warna: string): void => {
+          const b = el('button', 'ed-slot-dot', lbl)
+          b.type = 'button'
+          b.style.background = warna
+          b.addEventListener('click', () => {
+            this.dorongUndo()
+            for (const r of this.seleksi) {
+              if (r.grup === 'bangunan') {
+                const bg = this.entitas.bangunan[r.indeks]
+                if (bg) bg.slot = sl
+              } else if (r.grup === 'unit') {
+                const u = this.entitas.unit[r.indeks]
+                if (u && !u.jenis.startsWith('goblin')) u.slot = sl
+              }
+            }
+            this.minimapKotor = true
+            this.renderInspector()
+          })
+          barisSlot.append(b)
+        }
+        buatDot(-1, 'N', '#7d7360')
+        WARNA_SLOTS.forEach((tim, i) => buatDot(i, `P${i + 1}`, WARNA_TIM[tim].utama))
+        this.inspectorEl.append(el('div', 'ed-pintasan', 'Ubah Pemilik Massal:'), barisSlot)
+      }
+      const btnDel = el('button', 'ed-btn bahaya', `🗑 Hapus ${this.seleksi.length} Objek (Del)`)
+      btnDel.type = 'button'
+      btnDel.addEventListener('click', () => this.hapusTerpilih())
+      this.inspectorEl.append(btnDel)
+      return
+    }
+
+    const ref = this.seleksi[0]!
+    const info = this.ambilObjekRef(ref)
+    if (!info) return
+    const judulMap: Record<GrupEntitas, string> = {
+      spawn: `Spawn P${info.slot + 1}`,
+      unit: NAMA_UNIT_LABEL[this.entitas.unit[ref.indeks]?.jenis ?? 'warrior'],
+      bangunan: `Bangunan: ${this.entitas.bangunan[ref.indeks]?.jenis ?? ''}`,
+      camp: `Camp Goblin (${this.entitas.camp[ref.indeks]?.jenis ?? 'kecil'})`,
+      tambang: this.entitas.tambang[ref.indeks]?.jenis === 'mine' ? 'Tambang Emas' : 'Batu Emas',
+      pohon: `Pohon (${this.entitas.pohon[ref.indeks]?.varian ?? 'pinus1'})`,
+      domba: 'Domba',
+      bonus: `Bonus ${this.entitas.bonus[ref.indeks]?.jenis ?? ''}`,
+      deko: `Dekorasi: ${this.entitas.deko[ref.indeks]?.jenis ?? ''}`,
+    }
+    this.inspectorEl.append(
+      el('div', 'ed-label', judulMap[ref.grup]),
+      el('div', 'ed-pintasan', `Posisi: (${info.tx}, ${info.ty}) · Seret untuk pindah`),
+    )
+
+    // Kontrol pemilik (Spawn / Bangunan / Unit non-goblin)
+    if (
+      ref.grup === 'spawn' ||
+      ref.grup === 'bangunan' ||
+      (ref.grup === 'unit' && !this.entitas.unit[ref.indeks]?.jenis.startsWith('goblin'))
+    ) {
+      const box = el('div', 'ed-slot-baris')
+      const tambahDot = (sl: number, lbl: string, warna: string): void => {
+        const b = el('button', `ed-slot-dot${info.slot === sl ? ' aktif' : ''}`, lbl)
+        b.type = 'button'
+        b.style.background = warna
+        b.addEventListener('click', () => {
+          this.dorongUndo()
+          if (ref.grup === 'spawn') {
+            const sp = this.entitas.spawn[ref.indeks]
+            if (sp) {
+              const lain = this.entitas.spawn.find((s, i) => i !== ref.indeks && s.slot === sl)
+              if (lain) lain.slot = sp.slot
+              sp.slot = sl
+              this.entitas.spawn.sort((a, b2) => a.slot - b2.slot)
+              const baruIdx = this.entitas.spawn.indexOf(sp)
+              if (baruIdx >= 0) this.seleksi = [{ grup: 'spawn', indeks: baruIdx }]
+            }
+          } else if (ref.grup === 'bangunan') {
+            const bg = this.entitas.bangunan[ref.indeks]
+            if (bg) bg.slot = sl
+          } else if (ref.grup === 'unit') {
+            const u = this.entitas.unit[ref.indeks]
+            if (u) u.slot = sl
+          }
+          this.minimapKotor = true
+          this.renderInspector()
+          this.perbaruiValidasiUi()
+        })
+        box.append(b)
+      }
+      if (ref.grup !== 'spawn') tambahDot(-1, 'N', '#7d7360')
+      WARNA_SLOTS.forEach((tim, i) => tambahDot(i, `P${i + 1}`, WARNA_TIM[tim].utama))
+      this.inspectorEl.append(box)
+    }
+
+    if (ref.grup === 'bangunan') {
+      const bg = this.entitas.bangunan[ref.indeks]
+      if (bg) {
+        const btnH = el('button', `ed-btn${bg.hancur ? ' aktif' : ''}`, bg.hancur ? 'Fase: Reruntuhan' : 'Fase: Bangunan Utuh')
+        btnH.type = 'button'
+        btnH.addEventListener('click', () => {
+          this.dorongUndo()
+          if (bg.hancur) delete bg.hancur
+          else bg.hancur = true
+          this.renderInspector()
+        })
+        this.inspectorEl.append(btnH)
+      }
+    } else if (ref.grup === 'camp') {
+      const cp = this.entitas.camp[ref.indeks]
+      if (cp) {
+        const btnC = el('button', 'ed-btn', cp.jenis === 'besar' ? 'Tipe: Camp Boss (ubah ke Kecil)' : 'Tipe: Camp Kecil (ubah ke Boss)')
+        btnC.type = 'button'
+        btnC.addEventListener('click', () => {
+          this.dorongUndo()
+          cp.jenis = cp.jenis === 'besar' ? 'kecil' : 'besar'
+          this.minimapKotor = true
+          this.renderInspector()
+        })
+        this.inspectorEl.append(btnC)
+      }
+    } else if (ref.grup === 'tambang') {
+      const mb = this.entitas.tambang[ref.indeks]
+      if (mb) {
+        const row = el('div', 'ed-insp-row')
+        const inp = el('input', 'ed-insp-num')
+        inp.type = 'number'
+        inp.min = '100'
+        inp.max = '10000'
+        inp.step = '100'
+        inp.value = String(mb.gold ?? (mb.jenis === 'mine' ? 3500 : 1200))
+        inp.addEventListener('change', () => {
+          const v = Math.max(100, Math.min(10000, Math.round(Number(inp.value) || 1200)))
+          this.dorongUndo()
+          mb.gold = v
+          inp.value = String(v)
+        })
+        row.append(el('span', 'ed-pintasan', 'Gold:'), inp)
+        for (const preset of [1500, 3500, 6000]) {
+          const bp = el('button', 'ed-chip', `${preset}`)
+          bp.type = 'button'
+          bp.addEventListener('click', () => {
+            this.dorongUndo()
+            mb.gold = preset
+            this.renderInspector()
+          })
+          row.append(bp)
+        }
+        this.inspectorEl.append(row)
+      }
+    } else if (ref.grup === 'pohon') {
+      const ph = this.entitas.pohon[ref.indeks]
+      if (ph) {
+        const row = el('div', 'ed-insp-row')
+        const inp = el('input', 'ed-insp-num')
+        inp.type = 'number'
+        inp.min = '20'
+        inp.max = '500'
+        inp.step = '20'
+        inp.value = String(ph.kayu ?? 120)
+        inp.addEventListener('change', () => {
+          const v = Math.max(20, Math.min(500, Math.round(Number(inp.value) || 120)))
+          this.dorongUndo()
+          ph.kayu = v
+          inp.value = String(v)
+        })
+        row.append(el('span', 'ed-pintasan', 'Kayu:'), inp)
+        this.inspectorEl.append(row)
+      }
+    } else if (ref.grup === 'bonus') {
+      const bn = this.entitas.bonus[ref.indeks]
+      if (bn) {
+        const row = el('div', 'ed-insp-row')
+        const inp = el('input', 'ed-insp-num')
+        inp.type = 'number'
+        inp.min = '5'
+        inp.max = '500'
+        inp.value = String(bn.jumlah)
+        inp.addEventListener('change', () => {
+          const v = Math.max(5, Math.min(500, Math.round(Number(inp.value) || 25)))
+          this.dorongUndo()
+          bn.jumlah = v
+          inp.value = String(v)
+        })
+        row.append(el('span', 'ed-pintasan', 'Jumlah:'), inp)
+        this.inspectorEl.append(row)
+      }
+    }
+
+    const btnDel = el('button', 'ed-btn bahaya', '🗑 Hapus Objek (Del)')
+    btnDel.type = 'button'
+    btnDel.addEventListener('click', () => this.hapusTerpilih())
+    this.inspectorEl.append(btnDel)
   }
 
   // --- Aplikasi Kuas, Flood Fill, Hapus, & Pipet ---
@@ -1034,6 +1740,12 @@ export class PengendaliEditor {
     }
 
     if (this.itemAktif.kat === 'terrain') {
+      if (this.filterLayer !== 'semua' && this.filterLayer !== 'terrain') {
+        if (this.tergambarPadaGores.size === 0) {
+          this.tampilkanToast(`Terrain terkunci (Fokus aktif: ${this.filterLayer}) — ubah Fokus ke Semua / Terrain!`, true)
+        }
+        return
+      }
       const mode = this.itemAktif.mode
       const offsets = this.daftarOffsetKuas(this.ukuranKuas, this.bentukKuas)
       let minX = PETA_KOLOM, minY = PETA_BARIS, maxX = -1, maxY = -1
@@ -1045,6 +1757,7 @@ export class PengendaliEditor {
           const k = `${x},${y}`
           if (this.tergambarPadaGores.has(k)) continue
           this.tergambarPadaGores.add(k)
+          if (!this.bolehEditTerrainDi(x, y)) continue
           if (this.terapkanTerrainTile(x, y, mode, s.balikX)) {
             this.goresBerubah = true
             if (x < minX) minX = x
@@ -1061,6 +1774,17 @@ export class PengendaliEditor {
       return
     }
 
+    // Cek kunci layer sebelum melukis entitas
+    const targetGrup: GrupEntitas =
+      this.itemAktif.kat === 'hutanAcak' ? 'pohon' : this.itemAktif.kat
+    const targetLayer = layerDariGrup(targetGrup)
+    if (this.filterLayer !== 'semua' && this.filterLayer !== targetLayer) {
+      if (this.tergambarPadaGores.size === 0) {
+        this.tampilkanToast(`Terkunci oleh Fokus "${this.filterLayer}" — ganti Fokus ke Semua / ${targetLayer}!`, true)
+      }
+      return
+    }
+
     if (this.itemAktif.kat === 'hutanAcak') {
       const offsets = this.daftarOffsetKuas(this.ukuranKuas, this.bentukKuas)
       const vars: readonly VarianPohonCustom[] = ['pinus1', 'pinus2', 'daun1', 'daun2']
@@ -1069,8 +1793,10 @@ export class PengendaliEditor {
           const x = s.tx + dx
           const y = s.ty + dy
           if (!this.tileDalamBatas(x, y)) continue
+          if (!this.lolosFilterEntitas('pohon', -1, x, y)) continue
           const idx = y * PETA_KOLOM + x
           if (this.terrain.tinggi[idx] === TINGGI.air || this.terrain.jembatan[idx]! > 0 || this.terrain.ramp[idx]! > 0) continue
+          if (this.adaEntitasSolidDi(x, y, { grup: 'pohon' })) continue
           const jarakPohon = this.ukuranKuas > 1 ? 1.35 : 0.5
           if (this.entitas.pohon.some((p) => Math.hypot(p.tx - x, p.ty - y) < jarakPohon)) continue
           const acak = Math.abs((x * 73856093) ^ (y * 19349663)) % 10
@@ -1089,19 +1815,22 @@ export class PengendaliEditor {
     this.tergambarPadaGores.add(kSim)
 
     if (this.itemAktif.kat === 'spawn') {
-      const baseSlot = Math.max(0, this.slotDipilih)
+      const baseSlot = Math.max(0, this.filterPemain !== 'semua' && this.filterPemain >= 0 ? this.filterPemain : this.slotDipilih)
       titikSim.forEach((s, i) => {
+        const sl = (baseSlot + i) % 6
+        if (this.filterLantai !== 0 && this.terrain.tinggi[s.ty * PETA_KOLOM + s.tx] !== this.filterLantai) return
+        if (this.filterPemain !== 'semua' && sl !== this.filterPemain) return
         if (this.terrain.tinggi[s.ty * PETA_KOLOM + s.tx] === TINGGI.air) {
           this.terrain.tinggi[s.ty * PETA_KOLOM + s.tx] = TINGGI.dataran
+          this.pastikanBiomaGrid()[s.ty * PETA_KOLOM + s.tx] = this.biomaKuas
           this.renderTerrain.kotorkanArea(s.tx, s.ty, s.tx, s.ty)
         }
-        const sl = (baseSlot + i) % 6
         this.entitas.spawn = this.entitas.spawn.filter((sp) => sp.slot !== sl && !(sp.tx === s.tx && sp.ty === s.ty))
         this.entitas.spawn.push({ slot: sl, tx: s.tx, ty: s.ty })
         this.entitas.spawn.sort((a, b) => a.slot - b.slot)
         this.goresBerubah = true
       })
-      this.minimapKotor = true
+      if (this.goresBerubah) this.minimapKotor = true
       return
     }
 
@@ -1114,13 +1843,26 @@ export class PengendaliEditor {
   private taruhEntitasDi(tx: number, ty: number, item: JenisItem): void {
     const idx = ty * PETA_KOLOM + tx
     const lv = this.terrain.tinggi[idx]!
-    const bolehAtasAir = item.kat === 'deko' && (
-      item.jenis.startsWith('batuAir') || item.jenis === 'bebek' || item.jenis.startsWith('awan')
-    )
+    const bolehAtasAir = item.kat === 'deko' && bolehDekoDiAir(item.jenis)
     if (lv === TINGGI.air && !bolehAtasAir) return
+    if (this.filterLantai !== 0 && lv !== this.filterLantai) return
 
+    const slotAktif = this.filterPemain !== 'semua' ? this.filterPemain : this.slotDipilih
     switch (item.kat) {
+      case 'unit': {
+        const slot = item.jenis.startsWith('goblin') ? -1 : slotAktif
+        if (!this.lolosFilterEntitas('unit', slot, tx, ty)) return
+        this.entitas.unit = this.entitas.unit.filter((u) => !(u.tx === tx && u.ty === ty))
+        this.entitas.unit.push({ tx, ty, jenis: item.jenis, slot })
+        this.goresBerubah = true
+        break
+      }
       case 'tambang':
+        if (!this.lolosFilterEntitas('tambang', -1, tx, ty)) return
+        if (this.adaEntitasSolidDi(tx, ty, { grup: 'tambang' })) {
+          this.tampilkanToast(`Tile (${tx}, ${ty}) sudah terisi objek solid lain!`, true)
+          return
+        }
         this.entitas.tambang = this.entitas.tambang.filter((m) => !(m.tx === tx && m.ty === ty))
         this.entitas.tambang.push({
           tx, ty, jenis: item.jenis,
@@ -1130,34 +1872,49 @@ export class PengendaliEditor {
         this.goresBerubah = true
         break
       case 'pohon':
+        if (!this.lolosFilterEntitas('pohon', -1, tx, ty)) return
+        if (this.adaEntitasSolidDi(tx, ty, { grup: 'pohon' })) return
         this.entitas.pohon = this.entitas.pohon.filter((p) => !(p.tx === tx && p.ty === ty))
         this.entitas.pohon.push({ tx, ty, varian: item.varian, kayu: 120 })
         this.goresBerubah = true
         break
       case 'domba':
+        if (!this.lolosFilterEntitas('domba', -1, tx, ty)) return
         this.entitas.domba = this.entitas.domba.filter((d) => !(d.tx === tx && d.ty === ty))
         this.entitas.domba.push({ tx, ty })
         this.goresBerubah = true
         break
       case 'bonus':
+        if (!this.lolosFilterEntitas('bonus', -1, tx, ty)) return
         this.entitas.bonus = this.entitas.bonus.filter((b) => !(b.tx === tx && b.ty === ty))
         this.entitas.bonus.push({ tx, ty, jenis: item.jenis, jumlah: item.jumlah })
         this.goresBerubah = true
         break
       case 'camp':
+        if (!this.lolosFilterEntitas('camp', -1, tx, ty)) return
+        if (this.adaEntitasSolidDi(tx, ty, { grup: 'camp' })) {
+          this.tampilkanToast(`Tile (${tx}, ${ty}) sudah terisi objek solid lain!`, true)
+          return
+        }
         this.entitas.camp = this.entitas.camp.filter((c) => !(c.tx === tx && c.ty === ty))
         this.entitas.camp.push({ tx, ty, jenis: item.jenis })
         this.goresBerubah = true
         break
       case 'deko':
+        if (!this.lolosFilterEntitas('deko', -1, tx, ty)) return
         this.entitas.deko = this.entitas.deko.filter((d) => !(d.tx === tx && d.ty === ty && d.jenis === item.jenis))
         this.entitas.deko.push({ tx, ty, jenis: item.jenis })
         this.goresBerubah = true
         break
       case 'bangunan':
+        if (!this.lolosFilterEntitas('bangunan', slotAktif, tx, ty)) return
+        if (this.adaEntitasSolidDi(tx, ty, { grup: 'bangunan' })) {
+          this.tampilkanToast(`Tile (${tx}, ${ty}) sudah terisi objek solid lain!`, true)
+          return
+        }
         this.entitas.bangunan = this.entitas.bangunan.filter((b) => !(b.tx === tx && b.ty === ty))
         this.entitas.bangunan.push({
-          tx, ty, jenis: item.jenis, slot: this.slotDipilih,
+          tx, ty, jenis: item.jenis, slot: slotAktif,
           ...(this.bangunanHancur ? { hancur: true } : {}),
         })
         this.goresBerubah = true
@@ -1201,6 +1958,8 @@ export class PengendaliEditor {
     const rLama = this.terrain.ramp[idx]!
     const jLama = this.terrain.jembatan[idx]!
     const jlnLama = this.terrain.jalan[idx]!
+    const bioGrid = this.pastikanBiomaGrid()
+    const bLama = bioGrid[idx]!
 
     switch (mode) {
       case 'air':
@@ -1211,19 +1970,27 @@ export class PengendaliEditor {
         this.bersihkanEntitasAtasAir(tx, ty)
         break
       case 'dataran':
+        if (hLama === TINGGI.air) bioGrid[idx] = this.biomaKuas
         this.terrain.tinggi[idx] = TINGGI.dataran
         this.terrain.ramp[idx] = 0
         this.terrain.jembatan[idx] = 0
         break
       case 'plateau':
+        if (hLama === TINGGI.air) bioGrid[idx] = this.biomaKuas
         this.terrain.tinggi[idx] = TINGGI.plateau
         if (hLama !== TINGGI.plateau) this.terrain.ramp[idx] = 0
         this.terrain.jembatan[idx] = 0
         break
       case 'puncak':
+        if (hLama === TINGGI.air) bioGrid[idx] = this.biomaKuas
         this.terrain.tinggi[idx] = TINGGI.puncak
         if (hLama !== TINGGI.puncak) this.terrain.ramp[idx] = 0
         this.terrain.jembatan[idx] = 0
+        break
+      case 'bioma':
+        if (hLama !== TINGGI.air && jLama === 0) {
+          bioGrid[idx] = this.biomaKuas
+        }
         break
       case 'jalan':
         if (hLama !== TINGGI.air && jLama === 0 && rLama === 0) this.terrain.jalan[idx] = 1
@@ -1232,21 +1999,30 @@ export class PengendaliEditor {
         this.terrain.jalan[idx] = 0
         break
       case 'rampAuto': {
-        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
+        if (this.terrain.tinggi[idx] === TINGGI.air) {
+          this.terrain.tinggi[idx] = TINGGI.dataran
+          bioGrid[idx] = this.biomaKuas
+        }
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         this.terrain.ramp[idx] = this.deteksiArahRampAuto(tx, ty)
         break
       }
       case 'rampNS':
-        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
+        if (this.terrain.tinggi[idx] === TINGGI.air) {
+          this.terrain.tinggi[idx] = TINGGI.dataran
+          bioGrid[idx] = this.biomaKuas
+        }
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         this.terrain.ramp[idx] = 1
         break
       case 'rampBarat':
       case 'rampTimur': {
-        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
+        if (this.terrain.tinggi[idx] === TINGGI.air) {
+          this.terrain.tinggi[idx] = TINGGI.dataran
+          bioGrid[idx] = this.biomaKuas
+        }
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         const kode = mode === 'rampBarat' ? 2 : 3
@@ -1255,18 +2031,22 @@ export class PengendaliEditor {
       }
       case 'rampRumputBarat':
       case 'rampRumputTimur': {
-        if (this.terrain.tinggi[idx] === TINGGI.air) this.terrain.tinggi[idx] = TINGGI.dataran
+        if (this.terrain.tinggi[idx] === TINGGI.air) {
+          this.terrain.tinggi[idx] = TINGGI.dataran
+          bioGrid[idx] = this.biomaKuas
+        }
         this.terrain.jembatan[idx] = 0
         this.terrain.jalan[idx] = 0
         const kode = balikKodeRamp(mode === 'rampRumputBarat' ? 4 : 5, balikX)
-        // Jika diklik di samping tebing plateau/puncak (+1 level solid), otomatis samakan tinggi agar lereng menyatu mulus tanpa garis putus!
+        // Jika diklik di samping tebing plateau/puncak (+1 level solid), otomatis samakan tinggi & bioma agar lereng menyatu mulus!
         const hx = kode === 4 ? tx + 1 : tx - 1
-        if (hx >= 0 && hx < PETA_KOLOM) {
+        if (hx >= 0 && hx < PETA_KOLOM && this.filterLantai === 0) {
           const idxTinggi = ty * PETA_KOLOM + hx
           const hSamping = this.terrain.tinggi[idxTinggi]!
           const rSamping = this.terrain.ramp[idxTinggi]!
           if (rSamping === 0 && hSamping === this.terrain.tinggi[idx]! + 1 && hSamping <= TINGGI.puncak) {
             this.terrain.tinggi[idx] = hSamping
+            bioGrid[idx] = bioGrid[idxTinggi]!
           }
         }
         this.terrain.ramp[idx] = kode
@@ -1284,7 +2064,8 @@ export class PengendaliEditor {
       this.terrain.tinggi[idx] !== hLama ||
       this.terrain.ramp[idx] !== rLama ||
       this.terrain.jembatan[idx] !== jLama ||
-      this.terrain.jalan[idx] !== jlnLama
+      this.terrain.jalan[idx] !== jlnLama ||
+      bioGrid[idx] !== bLama
     )
   }
 
@@ -1292,6 +2073,7 @@ export class PengendaliEditor {
     const bukanDi = <T extends { tx: number; ty: number }>(arr: T[]): T[] =>
       arr.filter((e) => !(e.tx === tx && e.ty === ty))
     this.entitas.spawn = bukanDi(this.entitas.spawn)
+    this.entitas.unit = bukanDi(this.entitas.unit)
     this.entitas.pohon = bukanDi(this.entitas.pohon)
     this.entitas.tambang = bukanDi(this.entitas.tambang)
     this.entitas.domba = bukanDi(this.entitas.domba)
@@ -1299,7 +2081,7 @@ export class PengendaliEditor {
     this.entitas.bangunan = bukanDi(this.entitas.bangunan)
     this.entitas.bonus = bukanDi(this.entitas.bonus)
     this.entitas.deko = this.entitas.deko.filter(
-      (d) => !(d.tx === tx && d.ty === ty) || d.jenis.startsWith('batuAir') || d.jenis === 'bebek' || d.jenis.startsWith('awan'),
+      (d) => !(d.tx === tx && d.ty === ty) || bolehDekoDiAir(d.jenis),
     )
   }
 
@@ -1315,39 +2097,56 @@ export class PengendaliEditor {
       }
     }
     const sebelum = JSON.stringify(this.entitas)
-    const saring = <T extends { tx: number; ty: number }>(arr: T[]): T[] =>
-      arr.filter((e) => !sel.has(e.ty * PETA_KOLOM + e.tx))
-    this.entitas.spawn = saring(this.entitas.spawn)
-    this.entitas.pohon = saring(this.entitas.pohon)
-    this.entitas.tambang = saring(this.entitas.tambang)
-    this.entitas.domba = saring(this.entitas.domba)
-    this.entitas.camp = saring(this.entitas.camp)
-    this.entitas.bangunan = saring(this.entitas.bangunan)
-    this.entitas.bonus = saring(this.entitas.bonus)
-    this.entitas.deko = saring(this.entitas.deko)
-    if (JSON.stringify(this.entitas) !== sebelum) this.goresBerubah = true
+    const saringGrup = <T extends { tx: number; ty: number }>(
+      grup: GrupEntitas,
+      arr: T[],
+      ambilSlot: (e: T) => number,
+    ): T[] => arr.filter((e) => {
+      if (!sel.has(e.ty * PETA_KOLOM + e.tx)) return true
+      // Hapus HANYA entitas yang lolos filter layer, lantai, & pemain aktif!
+      return !this.lolosFilterEntitas(grup, ambilSlot(e), e.tx, e.ty)
+    })
 
-    for (const idx of sel) {
-      const tx = idx % PETA_KOLOM
-      const ty = (idx - tx) / PETA_KOLOM
-      let ubah = false
-      if (this.terrain.ramp[idx]! > 0) { this.terrain.ramp[idx] = 0; ubah = true }
-      if (this.terrain.jembatan[idx]! > 0) {
-        this.terrain.jembatan[idx] = 0
-        this.terrain.tinggi[idx] = TINGGI.air
-        ubah = true
-      }
-      if (this.terrain.jalan[idx]! > 0) { this.terrain.jalan[idx] = 0; ubah = true }
-      if (this.hapusTanah && this.terrain.tinggi[idx] !== TINGGI.air) {
-        this.terrain.tinggi[idx] = TINGGI.air
-        ubah = true
-      }
-      if (ubah) {
-        this.goresBerubah = true
-        if (tx < minX) minX = tx
-        if (ty < minY) minY = ty
-        if (tx > maxX) maxX = tx
-        if (ty > maxY) maxY = ty
+    this.entitas.spawn = saringGrup('spawn', this.entitas.spawn, (e) => e.slot)
+    this.entitas.unit = saringGrup('unit', this.entitas.unit, (e) => e.slot)
+    this.entitas.pohon = saringGrup('pohon', this.entitas.pohon, () => -1)
+    this.entitas.tambang = saringGrup('tambang', this.entitas.tambang, () => -1)
+    this.entitas.domba = saringGrup('domba', this.entitas.domba, () => -1)
+    this.entitas.camp = saringGrup('camp', this.entitas.camp, () => -1)
+    this.entitas.bangunan = saringGrup('bangunan', this.entitas.bangunan, (e) => e.slot)
+    this.entitas.bonus = saringGrup('bonus', this.entitas.bonus, () => -1)
+    this.entitas.deko = saringGrup('deko', this.entitas.deko, () => -1)
+    if (JSON.stringify(this.entitas) !== sebelum) {
+      this.goresBerubah = true
+      this.seleksi = []
+      this.renderInspector()
+    }
+
+    // Hapus fitur terrain (tangga, jembatan, jalan, tanah->air) HANYA jika filter mengizinkan edit terrain & lantai!
+    if (this.filterLayer === 'semua' || this.filterLayer === 'terrain') {
+      for (const idx of sel) {
+        const tx = idx % PETA_KOLOM
+        const ty = (idx - tx) / PETA_KOLOM
+        if (!this.bolehEditTerrainDi(tx, ty)) continue
+        let ubah = false
+        if (this.terrain.ramp[idx]! > 0) { this.terrain.ramp[idx] = 0; ubah = true }
+        if (this.terrain.jembatan[idx]! > 0) {
+          this.terrain.jembatan[idx] = 0
+          this.terrain.tinggi[idx] = TINGGI.air
+          ubah = true
+        }
+        if (this.terrain.jalan[idx]! > 0) { this.terrain.jalan[idx] = 0; ubah = true }
+        if (this.hapusTanah && this.terrain.tinggi[idx] !== TINGGI.air) {
+          this.terrain.tinggi[idx] = TINGGI.air
+          ubah = true
+        }
+        if (ubah) {
+          this.goresBerubah = true
+          if (tx < minX) minX = tx
+          if (ty < minY) minY = ty
+          if (tx > maxX) maxX = tx
+          if (ty > maxY) maxY = ty
+        }
       }
     }
     if (maxX >= 0) {
@@ -1358,10 +2157,20 @@ export class PengendaliEditor {
 
   private isiBanjir(tx0: number, ty0: number): void {
     if (this.itemAktif.kat !== 'terrain') {
-      this.tampilkanToast('Ember Isi hanya untuk kuas Terrain / Jalan / Air!', true)
+      this.tampilkanToast('Ember Isi hanya untuk kuas Terrain / Bioma / Jalan / Air!', true)
+      return
+    }
+    if (!this.bolehEditTerrainDi(tx0, ty0)) {
+      this.tampilkanToast(
+        this.filterLantai !== 0
+          ? `Tile terkunci — Fokus Lantai Lv.${this.filterLantai} aktif!`
+          : `Terrain terkunci — Fokus "${this.filterLayer}" aktif!`,
+        true,
+      )
       return
     }
     const mode = this.itemAktif.mode
+    const bioGrid = this.pastikanBiomaGrid()
     const titikSim = hitungTitikSimetri(tx0, ty0, PETA_KOLOM, PETA_BARIS, this.simetri)
     const visited = new Uint8Array(PETA_KOLOM * PETA_BARIS)
     let diubah = false
@@ -1369,9 +2178,10 @@ export class PengendaliEditor {
 
     for (const s of titikSim) {
       const start = s.ty * PETA_KOLOM + s.tx
-      if (visited[start] === 1) continue
+      if (visited[start] === 1 || !this.bolehEditTerrainDi(s.tx, s.ty)) continue
       const targetH = this.terrain.tinggi[start]!
       const targetJ = this.terrain.jembatan[start]!
+      const targetB = bioGrid[start]!
       const antre = [start]
       visited[start] = 1
       while (antre.length > 0) {
@@ -1386,6 +2196,8 @@ export class PengendaliEditor {
           const ni = ny * PETA_KOLOM + nx
           if (visited[ni] === 1) continue
           if (this.terrain.tinggi[ni] !== targetH || this.terrain.jembatan[ni] !== targetJ) continue
+          if (mode === 'bioma' && bioGrid[ni] !== targetB) continue
+          if (!this.bolehEditTerrainDi(nx, ny)) continue
           visited[ni] = 1
           antre.push(ni)
         }
@@ -1404,46 +2216,61 @@ export class PengendaliEditor {
   private ambilPipet(tx: number, ty: number): void {
     const cocok = (e: { tx: number; ty: number }): boolean => e.tx === tx && e.ty === ty
     const sp = this.entitas.spawn.find(cocok)
-    if (sp) {
+    if (sp && this.lolosFilterEntitas('spawn', sp.slot, tx, ty)) {
       this.slotDipilih = sp.slot
-      this.pilihDariPipet('sumber', 's-spawn', { kat: 'spawn' }, `Pipet: Spawn P${sp.slot + 1}`)
+      this.pilihDariPipet('karakter', 's-spawn', { kat: 'spawn' }, `Pipet: Spawn P${sp.slot + 1}`)
+      return
+    }
+    const un = this.entitas.unit.find(cocok)
+    if (un && this.lolosFilterEntitas('unit', un.slot, tx, ty)) {
+      this.slotDipilih = un.slot
+      const idUnit: Record<JenisUnitCustom, string> = {
+        pawn: 'u-pawn', warrior: 'u-warrior', archer: 'u-archer', lancer: 'u-lancer',
+        monk: 'u-monk', mage: 'u-mage', goblinTorch: 'u-gtorch', goblinTnt: 'u-gtnt', goblinBarrel: 'u-gbarrel',
+      }
+      this.pilihDariPipet('karakter', idUnit[un.jenis], { kat: 'unit', jenis: un.jenis }, `Pipet: ${NAMA_UNIT_LABEL[un.jenis]}`)
       return
     }
     const mb = this.entitas.tambang.find(cocok)
-    if (mb) {
+    if (mb && this.lolosFilterEntitas('tambang', -1, tx, ty)) {
       const id = mb.jenis === 'mine' ? 's-mine' : `s-g${mb.varian ?? 1}`
       this.pilihDariPipet(
-        'sumber', id,
+        'resource', id,
         { kat: 'tambang', jenis: mb.jenis, ...(mb.varian !== undefined ? { varian: mb.varian } : {}) },
         'Pipet: Tambang Emas',
       )
       return
     }
     const ph = this.entitas.pohon.find(cocok)
-    if (ph) {
+    if (ph && this.lolosFilterEntitas('pohon', -1, tx, ty)) {
       const idMap: Record<VarianPohonCustom, string> = { pinus1: 's-p1', pinus2: 's-p2', daun1: 's-d1', daun2: 's-d2', klasik: 's-pk' }
-      this.pilihDariPipet('sumber', idMap[ph.varian], { kat: 'pohon', varian: ph.varian }, `Pipet: Pohon ${ph.varian}`)
+      this.pilihDariPipet('resource', idMap[ph.varian], { kat: 'pohon', varian: ph.varian }, `Pipet: Pohon ${ph.varian}`)
       return
     }
     const cp = this.entitas.camp.find(cocok)
-    if (cp) {
-      this.pilihDariPipet('goblin', cp.jenis === 'besar' ? 'g-besar' : 'g-kecil', { kat: 'camp', jenis: cp.jenis }, `Pipet: Camp ${cp.jenis}`)
+    if (cp && this.lolosFilterEntitas('camp', -1, tx, ty)) {
+      this.pilihDariPipet('karakter', cp.jenis === 'besar' ? 'g-besar' : 'g-kecil', { kat: 'camp', jenis: cp.jenis }, `Pipet: Camp ${cp.jenis}`)
       return
     }
     const bg = this.entitas.bangunan.find(cocok)
-    if (bg) {
+    if (bg && this.lolosFilterEntitas('bangunan', bg.slot, tx, ty)) {
       this.slotDipilih = bg.slot
       this.bangunanHancur = Boolean(bg.hancur)
       this.pilihDariPipet('bangunan', `b-${bg.jenis === 'barracks' ? 'bar' : bg.jenis === 'archery' ? 'arc' : bg.jenis === 'monastery' ? 'mon' : bg.jenis === 'altar' ? 'alt' : bg.jenis}`, { kat: 'bangunan', jenis: bg.jenis }, `Pipet: ${bg.jenis}`)
       return
     }
     const dk = this.entitas.deko.find(cocok)
-    if (dk) {
+    if (dk && this.lolosFilterEntitas('deko', -1, tx, ty)) {
       this.pilihDariPipet('deko', `dk-${dk.jenis}`, { kat: 'deko', jenis: dk.jenis }, `Pipet: ${dk.jenis}`)
       return
     }
 
     const idx = ty * PETA_KOLOM + tx
+    const bioVal = this.pastikanBiomaGrid()[idx]!
+    if (bioVal >= 1 && bioVal <= 5) {
+      this.biomaKuas = bioVal as TemaBioma
+      this.segarkanBiomaUi()
+    }
     const jv = this.terrain.jembatan[idx]!
     if (jv > 0) {
       this.pilihDariPipet('terrain', jv === 1 ? 't-jh' : 't-jv', { kat: 'terrain', mode: jv === 1 ? 'jembH' : 'jembV' }, 'Pipet: Jembatan')
@@ -1474,7 +2301,7 @@ export class PengendaliEditor {
       3: ['t-lv3', 'puncak', 'Puncak Lv.3'],
     } as const
     const p = lvMap[h as 0 | 1 | 2 | 3] ?? lvMap[1]
-    this.pilihDariPipet('terrain', p[0], { kat: 'terrain', mode: p[1] }, `Pipet: ${p[2]}`)
+    this.pilihDariPipet('terrain', p[0], { kat: 'terrain', mode: p[1] }, `Pipet: ${p[2]} · ${INFO_BIOMA[this.biomaKuas].nama}`)
   }
 
   private pilihDariPipet(kat: KategoriPalet, id: string, item: JenisItem, toast: string): void {
@@ -1525,9 +2352,9 @@ export class PengendaliEditor {
 
     const e = this.entitas
     this.statistikEl.textContent =
-      `Spawn: ${e.spawn.length}/6 · Tambang: ${e.tambang.length}\n` +
+      `Spawn: ${e.spawn.length}/6 · Unit: ${e.unit.length} · Tambang: ${e.tambang.length}\n` +
       `Pohon: ${e.pohon.length} · Domba: ${e.domba.length}\n` +
-      `Goblin: ${e.camp.length} camp · Deko: ${e.deko.length + e.bangunan.length}`
+      `Goblin: ${e.camp.length} camp · Bangunan: ${e.bangunan.length} · Deko: ${e.deko.length}`
     this.statistikEl.style.whiteSpace = 'pre-line'
   }
 
@@ -1566,13 +2393,13 @@ export class PengendaliEditor {
     }
   }
 
-  private titikKanvas(cx: number, cy: number): { sx: number; sy: number; tx: number; ty: number } {
+  private titikKanvas(cx: number, cy: number): { sx: number; sy: number; wx: number; wy: number; tx: number; ty: number } {
     const r = this.kanvas.getBoundingClientRect()
     const sx = cx - r.left
     const sy = cy - r.top
     const wx = keDuniaX(this.kam, sx)
     const wy = keDuniaY(this.kam, sy)
-    return { sx, sy, tx: Math.floor(wx / TILE), ty: Math.floor(wy / TILE) }
+    return { sx, sy, wx, wy, tx: Math.floor(wx / TILE), ty: Math.floor(wy / TILE) }
   }
 
   private pasangEvent(): void {
@@ -1605,6 +2432,38 @@ export class PengendaliEditor {
         this.sedangGeser = true
         this.geserTerakhir = { x: e.clientX, y: e.clientY }
         this.kanvas.style.cursor = 'grabbing'
+        return
+      }
+
+      // Alat Pilih & Pindah (V): pilih objek, seret untuk pindah, atau seret kotak multi-seleksi
+      if (this.alat === 'pilih' && e.button === 0) {
+        const kena = this.cariEntitasDi(p.tx, p.ty)
+        if (kena) {
+          const sudahAda = this.apakahTerpilih(kena.grup, kena.indeks)
+          if (e.shiftKey) {
+            if (sudahAda) {
+              this.seleksi = this.seleksi.filter((s) => !(s.grup === kena.grup && s.indeks === kena.indeks))
+            } else {
+              this.seleksi.push(kena)
+            }
+          } else if (!sudahAda) {
+            this.seleksi = [kena]
+          }
+          if (this.seleksi.length > 0) {
+            this.sedangSeretEntitas = true
+            this.seretAsal = { tx: p.tx, ty: p.ty }
+            this.seretOffset = { dx: 0, dy: 0 }
+            this.kanvas.style.cursor = 'move'
+          }
+          this.renderInspector()
+        } else {
+          if (!e.shiftKey) {
+            this.seleksi = []
+            this.renderInspector()
+          }
+          this.marqueeAwal = { wx: p.wx, wy: p.wy }
+          this.marqueeAkhir = { wx: p.wx, wy: p.wy }
+        }
         return
       }
 
@@ -1649,6 +2508,14 @@ export class PengendaliEditor {
         this.geserTerakhir = { x: e.clientX, y: e.clientY }
         return
       }
+      if (this.sedangSeretEntitas) {
+        this.seretOffset = { dx: p.tx - this.seretAsal.tx, dy: p.ty - this.seretAsal.ty }
+        return
+      }
+      if (this.marqueeAwal) {
+        this.marqueeAkhir = { wx: p.wx, wy: p.wy }
+        return
+      }
       if (this.sedangLukis) {
         this.kuasDi(p.tx, p.ty, this.sedangHapusCepat)
       }
@@ -1659,7 +2526,30 @@ export class PengendaliEditor {
       if (this.jariSentuh.size < 2) this.cubitAwal = null
       if (this.sedangGeser) {
         this.sedangGeser = false
-        this.kanvas.style.cursor = this.alat === 'geser' ? 'grab' : 'crosshair'
+        this.kanvas.style.cursor = this.alat === 'geser' ? 'grab' : this.alat === 'pilih' ? 'default' : 'crosshair'
+      }
+      if (this.sedangSeretEntitas) {
+        this.sedangSeretEntitas = false
+        this.kanvas.style.cursor = 'default'
+        const { dx, dy } = this.seretOffset
+        this.seretOffset = { dx: 0, dy: 0 }
+        if (dx !== 0 || dy !== 0) {
+          this.pindahTerpilih(dx, dy)
+        }
+      }
+      if (this.marqueeAwal && this.marqueeAkhir) {
+        const hasil = this.cariEntitasDalamKotak(
+          this.marqueeAwal.wx, this.marqueeAwal.wy,
+          this.marqueeAkhir.wx, this.marqueeAkhir.wy,
+        )
+        if (hasil.length > 0) {
+          for (const h of hasil) {
+            if (!this.apakahTerpilih(h.grup, h.indeks)) this.seleksi.push(h)
+          }
+          this.renderInspector()
+        }
+        this.marqueeAwal = null
+        this.marqueeAkhir = null
       }
       if (this.sedangLukis) {
         this.sedangLukis = false
@@ -1722,18 +2612,34 @@ export class PengendaliEditor {
         this.redo()
         return
       }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.seleksi.length > 0) {
+          e.preventDefault()
+          this.hapusTerpilih()
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        if (this.seleksi.length > 0) {
+          this.seleksi = []
+          this.renderInspector()
+        }
+        return
+      }
       switch (e.key.toLowerCase()) {
         case ' ':
           e.preventDefault()
           this.spasiTahan = true
           this.kanvas.style.cursor = 'grab'
           break
+        case 'v': this.setAlat('pilih'); break
         case 'b': this.setAlat('kuas'); break
         case 'f': this.setAlat('isi'); break
         case 'e': this.setAlat('hapus'); break
         case 'i': this.setAlat('pipet'); break
         case 'r': this.putarArahItem(); break
         case 'g': this.btnGrid.click(); break
+        case 'p': this.btnPathing.click(); break
         case '1': this.ukuranKuas = 1; this.segarkanAlatUi(); break
         case '2': this.ukuranKuas = 3; this.segarkanAlatUi(); break
         case '3': this.ukuranKuas = 5; this.segarkanAlatUi(); break
@@ -1748,7 +2654,7 @@ export class PengendaliEditor {
       this.tombolPan.delete(e.key.toLowerCase())
       if (e.key === ' ') {
         this.spasiTahan = false
-        this.kanvas.style.cursor = this.alat === 'geser' ? 'grab' : 'crosshair'
+        this.kanvas.style.cursor = this.alat === 'geser' ? 'grab' : this.alat === 'pilih' ? 'default' : 'crosshair'
       }
     })
   }
@@ -1756,6 +2662,10 @@ export class PengendaliEditor {
   private batalkanGores(): void {
     this.sedangLukis = false
     this.sedangHapusCepat = false
+    this.sedangSeretEntitas = false
+    this.seretOffset = { dx: 0, dy: 0 }
+    this.marqueeAwal = null
+    this.marqueeAkhir = null
     this.tergambarPadaGores.clear()
     this.snapSebelumGores = null
     this.goresBerubah = false
@@ -1770,6 +2680,11 @@ export class PengendaliEditor {
     const h = this.terrain.tinggi[idx]!
     const namaLv = h === 0 ? 'Air' : h === 1 ? 'Daratan Lv.1' : h === 2 ? 'Plateau Lv.2' : 'Puncak Lv.3'
     const ket: string[] = [`(${tx}, ${ty}) · ${namaLv}`]
+    if (h > TINGGI.air) {
+      const bVal = this.pastikanBiomaGrid()[idx]!
+      const bio = INFO_BIOMA[(bVal >= 1 && bVal <= 5 ? bVal : 1) as TemaBioma]
+      ket.push(bio.nama)
+    }
     if (this.terrain.jembatan[idx]! > 0) ket.push('Jembatan')
     const rvInfo = this.terrain.ramp[idx]!
     if (rvInfo >= 4) ket.push(rvInfo === 4 ? 'Lereng Rumput Barat' : 'Lereng Rumput Timur')
@@ -1824,10 +2739,125 @@ export class PengendaliEditor {
     ctx.translate(-this.kam.x, -this.kam.y)
 
     this.renderTerrain.gambar(ctx, this.kam, t, true)
+    this.gambarKabutFilter(ctx)
+    if (this.tampilPathing) this.gambarPathingOverlay(ctx)
     this.gambarGridDanSimetri(ctx)
     this.gambarSemuaEntitas(ctx, t)
+    this.gambarMarquee(ctx)
     this.gambarGhost(ctx, t)
 
+    ctx.restore()
+  }
+
+  /**
+   * Meredupkan area/lantai di luar fokus filter dengan lapisan abu-abu / awan tipis
+   * (ala World Editor / World Builder) agar objek atau lantai aktif menonjol jelas.
+   */
+  private gambarKabutFilter(ctx: CanvasRenderingContext2D): void {
+    const x1 = Math.max(0, Math.floor(this.kam.x / TILE))
+    const y1 = Math.max(0, Math.floor(this.kam.y / TILE))
+    const x2 = Math.min(PETA_KOLOM - 1, Math.ceil((this.kam.x + this.kam.lebar / this.kam.zoom) / TILE))
+    const y2 = Math.min(PETA_BARIS - 1, Math.ceil((this.kam.y + this.kam.tinggi / this.kam.zoom) / TILE))
+
+    if (this.filterLantai !== 0) {
+      ctx.fillStyle = 'rgba(38, 46, 56, 0.56)'
+      for (let ty = y1; ty <= y2; ty++) {
+        const off = ty * PETA_KOLOM
+        for (let tx = x1; tx <= x2; tx++) {
+          if (this.terrain.tinggi[off + tx] !== this.filterLantai) {
+            ctx.fillRect(tx * TILE, ty * TILE, TILE, TILE)
+          }
+        }
+      }
+      return
+    }
+
+    if (this.filterLayer === 'karakter' || this.filterLayer === 'resource' || this.filterLayer === 'deko') {
+      ctx.fillStyle = 'rgba(218, 224, 232, 0.40)'
+      ctx.fillRect(x1 * TILE, y1 * TILE, (x2 - x1 + 1) * TILE, (y2 - y1 + 1) * TILE)
+    } else if (this.filterLayer === 'semua' && this.filterPemain !== 'semua') {
+      ctx.fillStyle = 'rgba(218, 224, 232, 0.24)'
+      ctx.fillRect(x1 * TILE, y1 * TILE, (x2 - x1 + 1) * TILE, (y2 - y1 + 1) * TILE)
+    }
+  }
+
+  /** Overlay Pathing Map ala Warcraft III World Editor (`P`): Hijau=Jalan, Kuning=Ramp/Jembatan, Merah=Terblokir/Tebing. */
+  private gambarPathingOverlay(ctx: CanvasRenderingContext2D): void {
+    const x1 = Math.max(0, Math.floor(this.kam.x / TILE))
+    const y1 = Math.max(0, Math.floor(this.kam.y / TILE))
+    const x2 = Math.min(PETA_KOLOM - 1, Math.ceil((this.kam.x + this.kam.lebar / this.kam.zoom) / TILE))
+    const y2 = Math.min(PETA_BARIS - 1, Math.ceil((this.kam.y + this.kam.tinggi / this.kam.zoom) / TILE))
+
+    const blokir = new Set<number>()
+    for (const p of this.entitas.pohon) blokir.add(p.ty * PETA_KOLOM + p.tx)
+    for (const m of this.entitas.tambang) blokir.add(m.ty * PETA_KOLOM + m.tx)
+    for (const sp of this.entitas.spawn) blokir.add(sp.ty * PETA_KOLOM + sp.tx)
+    for (const bg of this.entitas.bangunan) {
+      if (!bg.hancur) blokir.add(bg.ty * PETA_KOLOM + bg.tx)
+    }
+
+    ctx.save()
+    for (let ty = y1; ty <= y2; ty++) {
+      const off = ty * PETA_KOLOM
+      for (let tx = x1; tx <= x2; tx++) {
+        const idx = off + tx
+        const h = this.terrain.tinggi[idx]!
+        const j = this.terrain.jembatan[idx]!
+        const r = this.terrain.ramp[idx]!
+        if (h === TINGGI.air && j === 0) {
+          ctx.fillStyle = 'rgba(220, 56, 48, 0.34)'
+        } else if (j > 0 || r > 0) {
+          ctx.fillStyle = 'rgba(255, 214, 70, 0.44)'
+        } else if (blokir.has(idx)) {
+          ctx.fillStyle = 'rgba(235, 86, 52, 0.48)'
+        } else {
+          ctx.fillStyle = 'rgba(64, 204, 98, 0.24)'
+        }
+        ctx.fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2)
+
+        // Tandai garis tebing yang tidak bisa dipanjat (beda elevasi tanpa ramp)
+        if (h > TINGGI.air) {
+          ctx.strokeStyle = 'rgba(255, 76, 60, 0.85)'
+          ctx.lineWidth = 3 / this.kam.zoom
+          if (tx + 1 < PETA_KOLOM) {
+            const hR = this.terrain.tinggi[idx + 1]!
+            const rR = this.terrain.ramp[idx + 1]!
+            if (hR > TINGGI.air && hR !== h && (Math.abs(hR - h) > 1 || (r === 0 && rR === 0))) {
+              ctx.beginPath()
+              ctx.moveTo((tx + 1) * TILE, ty * TILE)
+              ctx.lineTo((tx + 1) * TILE, (ty + 1) * TILE)
+              ctx.stroke()
+            }
+          }
+          if (ty + 1 < PETA_BARIS) {
+            const hD = this.terrain.tinggi[idx + PETA_KOLOM]!
+            const rD = this.terrain.ramp[idx + PETA_KOLOM]!
+            if (hD > TINGGI.air && hD !== h && (Math.abs(hD - h) > 1 || (r === 0 && rD === 0))) {
+              ctx.beginPath()
+              ctx.moveTo(tx * TILE, (ty + 1) * TILE)
+              ctx.lineTo((tx + 1) * TILE, (ty + 1) * TILE)
+              ctx.stroke()
+            }
+          }
+        }
+      }
+    }
+    ctx.restore()
+  }
+
+  private gambarMarquee(ctx: CanvasRenderingContext2D): void {
+    if (!this.marqueeAwal || !this.marqueeAkhir) return
+    const x = Math.min(this.marqueeAwal.wx, this.marqueeAkhir.wx)
+    const y = Math.min(this.marqueeAwal.wy, this.marqueeAkhir.wy)
+    const w = Math.abs(this.marqueeAkhir.wx - this.marqueeAwal.wx)
+    const h = Math.abs(this.marqueeAkhir.wy - this.marqueeAwal.wy)
+    ctx.save()
+    ctx.fillStyle = 'rgba(255, 216, 107, 0.18)'
+    ctx.strokeStyle = '#ffd86b'
+    ctx.lineWidth = 2 / this.kam.zoom
+    ctx.setLineDash([8 / this.kam.zoom, 5 / this.kam.zoom])
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeRect(x, y, w, h)
     ctx.restore()
   }
 
@@ -1882,114 +2912,176 @@ export class PengendaliEditor {
     const antre: ItemDraw[] = []
     const P = (tx: number, ty: number): [number, number] => [tx * TILE + TILE / 2, ty * TILE + TILE / 2]
 
-    for (let i = 0; i < this.entitas.pohon.length; i++) {
-      const p = this.entitas.pohon[i]!
-      const [wx, wy] = P(p.tx, p.ty)
-      const info = asetPohonVarian(p.varian)
+    const bungkus = (
+      grup: GrupEntitas, indeks: number, slot: number, tx: number, ty: number,
+      gambarIsi: (wx: number, wy: number) => void,
+      yOffset = 0,
+    ): void => {
+      const lolos = this.lolosFilterEntitas(grup, slot, tx, ty)
+      const terpilih = this.apakahTerpilih(grup, indeks)
+      const geserX = terpilih && this.sedangSeretEntitas ? this.seretOffset.dx : 0
+      const geserY = terpilih && this.sedangSeretEntitas ? this.seretOffset.dy : 0
+      const drawTx = tx + geserX
+      const drawTy = ty + geserY
+      const [wx, wy] = P(drawTx, drawTy)
       antre.push({
-        y: wy,
+        y: wy + yOffset,
         fn: () => {
-          const fr = Math.floor(t * 6 + i * 0.7) % info.aset.kolom
-          sprite(ctx, info.aset, fr, wx, wy, info.skala, false, info.pijak)
+          ctx.save()
+          if (!lolos) {
+            ctx.globalAlpha = 0.22
+          } else if (terpilih && this.sedangSeretEntitas) {
+            ctx.globalAlpha = 0.78
+          }
+          // Sorotan cincin kepemilikan saat Filter Pemain aktif pada lapisan Karakter
+          if (lolos && this.filterPemain !== 'semua' && layerDariGrup(grup) === 'karakter') {
+            const warnaPem = slot >= 0 && slot < WARNA_SLOTS.length
+              ? WARNA_TIM[WARNA_SLOTS[slot]!].utama
+              : '#d4b34a'
+            ctx.strokeStyle = warnaPem
+            ctx.lineWidth = 3 / this.kam.zoom
+            ctx.beginPath()
+            ctx.ellipse(wx, wy + 12, 26, 14, 0, 0, Math.PI * 2)
+            ctx.stroke()
+          }
+          gambarIsi(wx, wy)
+          if (terpilih) {
+            const sah = !this.sedangSeretEntitas || this.bolehTaruhRefDi({ grup, indeks }, drawTx, drawTy)
+            ctx.globalAlpha = 1
+            ctx.strokeStyle = sah ? '#ffd86b' : '#ff5247'
+            ctx.fillStyle = sah ? 'rgba(255, 216, 107, 0.16)' : 'rgba(255, 82, 71, 0.26)'
+            ctx.lineWidth = 2.6 / this.kam.zoom
+            ctx.fillRect(drawTx * TILE + 2, drawTy * TILE + 2, TILE - 4, TILE - 4)
+            ctx.strokeRect(drawTx * TILE + 2, drawTy * TILE + 2, TILE - 4, TILE - 4)
+          }
+          ctx.restore()
         },
       })
     }
 
-    for (const m of this.entitas.tambang) {
-      const [wx, wy] = P(m.tx, m.ty)
-      antre.push({
-        y: wy,
-        fn: () => {
-          if (m.jenis === 'node' && m.varian && m.varian >= 1 && m.varian <= 6) {
-            sprite(ctx, BATU_EMAS_ASET[m.varian - 1]!, 0, wx, wy, 0.78, false, 0.80)
-          } else {
-            sprite(ctx, SUMBER.tambangAktif, 0, wx, wy, 0.9, false, 0.82)
-          }
-        },
+    for (let i = 0; i < this.entitas.pohon.length; i++) {
+      const p = this.entitas.pohon[i]!
+      const info = asetPohonVarian(p.varian)
+      bungkus('pohon', i, -1, p.tx, p.ty, (wx, wy) => {
+        const fr = Math.floor(t * 6 + i * 0.7) % info.aset.kolom
+        sprite(ctx, info.aset, fr, wx, wy, info.skala, false, info.pijak)
+      })
+    }
+
+    for (let i = 0; i < this.entitas.tambang.length; i++) {
+      const m = this.entitas.tambang[i]!
+      bungkus('tambang', i, -1, m.tx, m.ty, (wx, wy) => {
+        if (m.jenis === 'node' && m.varian && m.varian >= 1 && m.varian <= 6) {
+          sprite(ctx, BATU_EMAS_ASET[m.varian - 1]!, 0, wx, wy, 0.78, false, 0.80)
+        } else {
+          sprite(ctx, SUMBER.tambangAktif, 0, wx, wy, 0.9, false, 0.82)
+        }
       })
     }
 
     for (let i = 0; i < this.entitas.domba.length; i++) {
       const d = this.entitas.domba[i]!
-      const [wx, wy] = P(d.tx, d.ty)
-      antre.push({
-        y: wy,
-        fn: () => sprite(ctx, SUMBER.dombaDiam, Math.floor(t * 8 + i) % SUMBER.dombaDiam.kolom, wx, wy, 0.56, false, 0.74),
+      bungkus('domba', i, -1, d.tx, d.ty, (wx, wy) => {
+        sprite(ctx, SUMBER.dombaDiam, Math.floor(t * 8 + i) % SUMBER.dombaDiam.kolom, wx, wy, 0.56, false, 0.74)
       })
     }
 
-    for (const b of this.entitas.bonus) {
-      const [wx, wy] = P(b.tx, b.ty)
+    for (let i = 0; i < this.entitas.bonus.length; i++) {
+      const b = this.entitas.bonus[i]!
       const a = b.jenis === 'gold' ? SUMBER.goldDiam : b.jenis === 'kayu' ? SUMBER.kayuDiam : SUMBER.dagingDiam
-      antre.push({ y: wy, fn: () => sprite(ctx, a, 0, wx, wy, 0.52, false, 0.74) })
+      bungkus('bonus', i, -1, b.tx, b.ty, (wx, wy) => sprite(ctx, a, 0, wx, wy, 0.52, false, 0.74))
     }
 
     for (let i = 0; i < this.entitas.camp.length; i++) {
       const c = this.entitas.camp[i]!
-      const [wx, wy] = P(c.tx, c.ty)
-      antre.push({
-        y: wy - 20,
-        fn: () => {
-          sprite(ctx, ASET_GOBLIN.rumah, 0, wx - 130, wy - 28, 0.72, false, 0.84)
-          sprite(ctx, DEKO['deco16']!, 0, wx + 114, wy + 18, 0.92, false, 0.88)
-          const unitGob = c.jenis === 'besar'
-            ? [ASET_GOBLIN.torch, ASET_GOBLIN.tnt, ASET_GOBLIN.barrel, ASET_GOBLIN.torch, ASET_GOBLIN.tnt]
-            : [ASET_GOBLIN.torch, ASET_GOBLIN.torch, ASET_GOBLIN.tnt]
-          unitGob.forEach((a, idx) => {
-            const sd = (idx / unitGob.length) * Math.PI * 2
-            const gx = wx + Math.cos(sd) * 90
-            const gy = wy + Math.sin(sd) * 90
-            sprite(ctx, a, Math.floor(t * 8 + idx) % 6, gx, gy, a === ASET_GOBLIN.barrel ? 0.72 : 0.62, gx > wx, 0.68)
-          })
-          ctx.fillStyle = c.jenis === 'besar' ? '#ff8b4a' : '#f2c14e'
-          ctx.font = "bold 12px 'Pixelify Sans', sans-serif"
-          ctx.textAlign = 'center'
-          ctx.fillText(c.jenis === 'besar' ? 'GOBLIN BOSS' : 'CAMP GOBLIN', wx, wy - 62)
-        },
+      bungkus('camp', i, -1, c.tx, c.ty, (wx, wy) => {
+        sprite(ctx, ASET_GOBLIN.rumah, 0, wx - 130, wy - 28, 0.72, false, 0.84)
+        sprite(ctx, DEKO['deco16']!, 0, wx + 114, wy + 18, 0.92, false, 0.88)
+        const unitGob = c.jenis === 'besar'
+          ? [ASET_GOBLIN.torch, ASET_GOBLIN.tnt, ASET_GOBLIN.barrel, ASET_GOBLIN.torch, ASET_GOBLIN.tnt]
+          : [ASET_GOBLIN.torch, ASET_GOBLIN.torch, ASET_GOBLIN.tnt]
+        unitGob.forEach((a, idx) => {
+          const sd = (idx / unitGob.length) * Math.PI * 2
+          const gx = wx + Math.cos(sd) * 90
+          const gy = wy + Math.sin(sd) * 90
+          sprite(ctx, a, Math.floor(t * 8 + idx) % 6, gx, gy, a === ASET_GOBLIN.barrel ? 0.72 : 0.62, gx > wx, 0.68)
+        })
+        ctx.fillStyle = c.jenis === 'besar' ? '#ff8b4a' : '#f2c14e'
+        ctx.font = "bold 12px 'Pixelify Sans', sans-serif"
+        ctx.textAlign = 'center'
+        ctx.fillText(c.jenis === 'besar' ? 'GOBLIN BOSS' : 'CAMP GOBLIN', wx, wy - 62)
+      }, -20)
+    }
+
+    for (let i = 0; i < this.entitas.bangunan.length; i++) {
+      const bg = this.entitas.bangunan[i]!
+      const info = asetBangunanEditor(bg)
+      const def = BANGUNAN[bg.jenis]
+      bungkus('bangunan', i, bg.slot, bg.tx, bg.ty, (wx, wy) => {
+        sprite(ctx, info.aset, 0, wx, wy, def.w / info.aset.fw, false, 0.86, 0, info.timWarna)
       })
     }
 
-    for (const bg of this.entitas.bangunan) {
-      const [wx, wy] = P(bg.tx, bg.ty)
-      const info = asetBangunanEditor(bg)
-      const def = BANGUNAN[bg.jenis]
-      antre.push({
-        y: wy,
-        fn: () => sprite(ctx, info.aset, 0, wx, wy, def.w / info.aset.fw, false, 0.86, 0, info.timWarna),
+    for (let i = 0; i < this.entitas.unit.length; i++) {
+      const u = this.entitas.unit[i]!
+      const info = asetUnitEditor(u)
+      bungkus('unit', i, u.slot, u.tx, u.ty, (wx, wy) => {
+        const fr = Math.floor(t * 7 + i * 0.6) % Math.max(1, info.aset.kolom)
+        sprite(ctx, info.aset, fr, wx, wy, info.skala, false, info.pijak, 0, info.timWarna)
+        const lblTim = u.slot >= 0 ? `P${u.slot + 1}` : 'N'
+        const warna = u.slot >= 0 && u.slot < WARNA_SLOTS.length ? WARNA_TIM[WARNA_SLOTS[u.slot]!].utama : '#c9a227'
+        ctx.fillStyle = warna
+        ctx.strokeStyle = '#1b120b'
+        ctx.lineWidth = 2
+        ctx.fillRect(wx - 13, wy - 56, 26, 13)
+        ctx.strokeRect(wx - 13, wy - 56, 26, 13)
+        ctx.fillStyle = '#fff'
+        ctx.font = "bold 9px 'Pixelify Sans', sans-serif"
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(lblTim, wx, wy - 49.5)
       })
     }
 
     for (let i = 0; i < this.entitas.deko.length; i++) {
       const d = this.entitas.deko[i]!
-      const [wx, wy] = P(d.tx, d.ty)
-      const ySort = d.jenis.startsWith('awan') ? wy + 100_000 : wy
-      antre.push({ y: ySort, fn: () => gambarDekoCustom(ctx, d.jenis, wx, wy, t, i) })
+      const yOffset = d.jenis.startsWith('awan') ? 100_000 : 0
+      bungkus('deko', i, -1, d.tx, d.ty, (wx, wy) => gambarDekoCustom(ctx, d.jenis, wx, wy, t, i), yOffset)
     }
 
-    for (const sp of this.entitas.spawn) {
-      const [wx, wy] = P(sp.tx, sp.ty)
+    for (let i = 0; i < this.entitas.spawn.length; i++) {
+      const sp = this.entitas.spawn[i]!
       const tim = WARNA_SLOTS[sp.slot] ?? 'blue'
       const warna = WARNA_TIM[tim]
-      antre.push({
-        y: wy,
-        fn: () => {
+      const tampilZona = this.filterLayer === 'karakter' || this.itemAktif.kat === 'spawn' || this.apakahTerpilih('spawn', i)
+      bungkus('spawn', i, sp.slot, sp.tx, sp.ty, (wx, wy) => {
+        // Cincin zona aman markas awal (Start Location ala WC3 World Editor)
+        if (tampilZona) {
           ctx.save()
-          ctx.globalAlpha = 0.88
-          const a = tim === 'purple' || tim === 'yellow' ? BANGUNAN_U010_WARNA[tim].castle : BANGUNAN_BLUE.castle
-          const tw = tim === 'purple' || tim === 'yellow' ? 'blue' : tim
-          sprite(ctx, a, 0, wx, wy, BANGUNAN.castle.w / a.fw, false, 0.86, 0, tw)
+          ctx.strokeStyle = warna.utama
+          ctx.lineWidth = 2 / this.kam.zoom
+          ctx.setLineDash([10 / this.kam.zoom, 6 / this.kam.zoom])
+          ctx.beginPath()
+          ctx.arc(wx, wy, 4.5 * TILE, 0, Math.PI * 2)
+          ctx.stroke()
           ctx.restore()
-          ctx.fillStyle = warna.utama
-          ctx.strokeStyle = '#1b120b'
-          ctx.lineWidth = 3
-          ctx.fillRect(wx - 36, wy - 122, 72, 22)
-          ctx.strokeRect(wx - 36, wy - 122, 72, 22)
-          ctx.fillStyle = '#fff'
-          ctx.font = "bold 13px 'Pixelify Sans', sans-serif"
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(`SPAWN P${sp.slot + 1}`, wx, wy - 111)
-        },
+        }
+        ctx.save()
+        ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.88)
+        const a = tim === 'purple' || tim === 'yellow' ? BANGUNAN_U010_WARNA[tim].castle : BANGUNAN_BLUE.castle
+        const tw = tim === 'purple' || tim === 'yellow' ? 'blue' : tim
+        sprite(ctx, a, 0, wx, wy, BANGUNAN.castle.w / a.fw, false, 0.86, 0, tw)
+        ctx.restore()
+        ctx.fillStyle = warna.utama
+        ctx.strokeStyle = '#1b120b'
+        ctx.lineWidth = 3
+        ctx.fillRect(wx - 36, wy - 122, 72, 22)
+        ctx.strokeRect(wx - 36, wy - 122, 72, 22)
+        ctx.fillStyle = '#fff'
+        ctx.font = "bold 13px 'Pixelify Sans', sans-serif"
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`SPAWN P${sp.slot + 1}`, wx, wy - 111)
       })
     }
 
@@ -1998,7 +3090,7 @@ export class PengendaliEditor {
   }
 
   private gambarGhost(ctx: CanvasRenderingContext2D, t: number): void {
-    if (!this.hoverTile) return
+    if (!this.hoverTile || this.alat === 'pilih' || this.alat === 'geser') return
     const { tx, ty } = this.hoverTile
     if (!this.tileDalamBatas(tx, ty)) return
     const titikSim = hitungTitikSimetri(tx, ty, PETA_KOLOM, PETA_BARIS, this.simetri)
@@ -2013,7 +3105,7 @@ export class PengendaliEditor {
         this.itemAktif.kat === 'terrain' &&
         (this.itemAktif.mode === 'rampRumputBarat' || this.itemAktif.mode === 'rampRumputTimur')
       ) {
-        const imBio = gambarDari(asetBiomaEditor(this.terrain.bioma))
+        const imBio = gambarDari(asetBiomaEditor(this.biomaKuas))
         if (imBio) {
           const kode = balikKodeRamp(this.itemAktif.mode === 'rampRumputBarat' ? 4 : 5, s.balikX)
           const kolSrc = kode === 4 ? 0 : 3
@@ -2032,6 +3124,7 @@ export class PengendaliEditor {
         ctx.globalAlpha = 0.58
         const wx = s.tx * TILE + TILE / 2
         const wy = s.ty * TILE + TILE / 2
+        const slotPratinjau = this.filterPemain !== 'semua' ? this.filterPemain : this.slotDipilih
         if (this.itemAktif.kat === 'deko') {
           gambarDekoCustom(ctx, this.itemAktif.jenis, wx, wy, t, 0)
         } else if (this.itemAktif.kat === 'pohon') {
@@ -2042,24 +3135,29 @@ export class PengendaliEditor {
           sprite(ctx, a, 0, wx, wy, this.itemAktif.jenis === 'mine' ? 0.9 : 0.78, false, 0.82)
         } else if (this.itemAktif.kat === 'spawn') {
           sprite(ctx, BANGUNAN_BLUE.castle, 0, wx, wy, BANGUNAN.castle.w / BANGUNAN_BLUE.castle.fw, false, 0.86)
+        } else if (this.itemAktif.kat === 'unit') {
+          const sl = this.itemAktif.jenis.startsWith('goblin') ? -1 : slotPratinjau
+          const info = asetUnitEditor({ tx: s.tx, ty: s.ty, jenis: this.itemAktif.jenis, slot: sl })
+          sprite(ctx, info.aset, 0, wx, wy, info.skala, false, info.pijak, 0, info.timWarna)
         } else if (this.itemAktif.kat === 'camp') {
           sprite(ctx, ASET_GOBLIN.rumah, 0, wx - 130, wy - 28, 0.72, false, 0.84)
         } else if (this.itemAktif.kat === 'domba') {
           sprite(ctx, SUMBER.dombaDiam, 0, wx, wy, 0.56, false, 0.74)
         } else if (this.itemAktif.kat === 'bangunan') {
-          const info = asetBangunanEditor({ tx: s.tx, ty: s.ty, jenis: this.itemAktif.jenis, slot: this.slotDipilih, hancur: this.bangunanHancur })
+          const info = asetBangunanEditor({ tx: s.tx, ty: s.ty, jenis: this.itemAktif.jenis, slot: slotPratinjau, hancur: this.bangunanHancur })
           const def = BANGUNAN[this.itemAktif.jenis]
           sprite(ctx, info.aset, 0, wx, wy, def.w / info.aset.fw, false, 0.86, 0, info.timWarna)
         }
       }
       ctx.globalAlpha = 1
-      ctx.strokeStyle = this.alat === 'hapus' ? '#ff695c' : '#ffd86b'
-      ctx.fillStyle = this.alat === 'hapus' ? 'rgba(255, 80, 64, 0.20)' : 'rgba(255, 216, 107, 0.16)'
       ctx.lineWidth = 2 / this.kam.zoom
       for (const [dx, dy] of offsets) {
         const x = s.tx + dx
         const y = s.ty + dy
         if (!this.tileDalamBatas(x, y)) continue
+        const terkunci = this.alat === 'kuas' && this.itemAktif.kat === 'terrain' && !this.bolehEditTerrainDi(x, y)
+        ctx.strokeStyle = this.alat === 'hapus' || terkunci ? '#ff695c' : '#ffd86b'
+        ctx.fillStyle = this.alat === 'hapus' || terkunci ? 'rgba(255, 80, 64, 0.22)' : 'rgba(255, 216, 107, 0.16)'
         ctx.fillRect(x * TILE, y * TILE, TILE, TILE)
         ctx.strokeRect(x * TILE, y * TILE, TILE, TILE)
       }
@@ -2083,11 +3181,14 @@ export class PengendaliEditor {
       }
       const mc = this.minimapCache.getContext('2d', { alpha: false })
       if (mc) {
-        const bioma = INFO_BIOMA[this.terrain.bioma ?? 1]
+        const bioDef = this.terrain.bioma ?? 1
+        const bioGrid = this.terrain.biomaGrid
         for (let ty = 0; ty < PETA_BARIS; ty++) {
           for (let tx = 0; tx < PETA_KOLOM; tx++) {
             const idx = ty * PETA_KOLOM + tx
             const v = this.terrain.tinggi[idx]!
+            const bVal = bioGrid?.[idx]
+            const bioma = INFO_BIOMA[(bVal && bVal >= 1 && bVal <= 5 ? bVal : bioDef) as TemaBioma]
             const bawahPlat = ty > 0 && v < TINGGI.plateau && this.terrain.tinggi[(ty - 1) * PETA_KOLOM + tx] === TINGGI.plateau
             const bawahPuncak = ty > 0 && v < TINGGI.puncak && this.terrain.tinggi[(ty - 1) * PETA_KOLOM + tx] === TINGGI.puncak
             const bawahLaut = ty > 0 && v === TINGGI.air && this.terrain.tinggi[(ty - 1) * PETA_KOLOM + tx] !== TINGGI.air && this.terrain.jembatan[(ty - 1) * PETA_KOLOM + tx] === 0
@@ -2117,6 +3218,11 @@ export class PengendaliEditor {
           mc.beginPath()
           mc.arc(cp.tx * sx, cp.ty * sy, cp.jenis === 'besar' ? 4 : 2.8, 0, Math.PI * 2)
           mc.fill()
+        }
+        for (const u of this.entitas.unit) {
+          const tim = u.slot >= 0 && u.slot < WARNA_SLOTS.length ? WARNA_SLOTS[u.slot]! : 'neutral'
+          mc.fillStyle = WARNA_TIM[tim].terang
+          mc.fillRect(u.tx * sx - 1, u.ty * sy - 1, 3, 3)
         }
         for (const sp of this.entitas.spawn) {
           const tim = WARNA_SLOTS[sp.slot] ?? 'blue'
@@ -2148,7 +3254,7 @@ export class PengendaliEditor {
   }
 }
 
-function eksporSiapTerrain(data: DataPetaCustom): { terrain: Terrain; entitas: EntitasPetaCustom } {
+function eksporSiapTerrain(data: DataPetaCustom): { terrain: Terrain; entitas: EntitasEditor } {
   const total = PETA_KOLOM * PETA_BARIS
   return {
     terrain: {
@@ -2159,6 +3265,7 @@ function eksporSiapTerrain(data: DataPetaCustom): { terrain: Terrain; entitas: E
       jembatan: decodeRle(data.jembatanRle, total, 2),
       jalan: decodeRle(data.jalanRle, total, 1),
       bioma: data.bioma,
+      biomaGrid: decodeBiomaGrid(data.biomaRle, total, data.bioma),
     },
     entitas: klonEntitas(data.entitas),
   }
